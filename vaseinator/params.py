@@ -19,6 +19,7 @@ EVERYWHERE, GROWS, FADES, MIDDLE = 0, 1, 2, 3            # texture strength (OWN
 OWN_PROFILE = -1                                          # the outline has been drawn by hand
 
 ONE_COLOUR, BANDS, STRIPES, GRADIENT = 0, 1, 2, 3         # how the colours go up the vase
+REAL_VASE, FAKE_VASE = 0, 1                               # spiral vase mode, or an ordinary print with walls
 MATTE, SILK, GLOSSY, TRANSLUCENT = 0, 1, 2, 3             # how the filament looks in the 3D view
 
 MAX_BANDS = 64                                            # colour bands the 3D view can show
@@ -105,6 +106,10 @@ class VaseParams:
     look: int = SILK
 
     # --- printing -----------------------------------------------------------
+    vase_mode: int = REAL_VASE    # real: spiral vase mode, one solid, one colour (slicers won't change
+    #                               filament in it); fake: an ordinary print with walls, the colour
+    #                               bands as parts of their own filaments
+    walls: int = 2                # fake vase: walls round the vase
     max_overhang: float = 45.0    # steepest lean of the wall from upright, either way (degrees)
     soften: bool = True           # soften anything steeper until it prints without supports
     line_width: float = 0.6       # the slicer's spiral wall line width: the printed wall
@@ -159,12 +164,13 @@ class VaseParams:
                    "twist_style": (EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN),
                    "strength": (EVERYWHERE, GROWS, FADES, MIDDLE, OWN),
                    "colour_style": (ONE_COLOUR, BANDS, STRIPES, GRADIENT), "colours_used": (1, 2, 3, 4),
-                   "look": (MATTE, SILK, GLOSSY, TRANSLUCENT)}
+                   "look": (MATTE, SILK, GLOSSY, TRANSLUCENT), "vase_mode": (REAL_VASE, FAKE_VASE)}
         for key, values in allowed.items():
             if getattr(p, key) not in values:
                 setattr(p, key, getattr(fresh, key))
         if any(d <= 0 for _, d in p.silhouette):
             p.silhouette = fresh.silhouette
+        p.walls = min(max(p.walls, 1), 10)
         for key, lo, hi in (("depth1", 0.0, 0.9), ("depth2", 0.0, 0.9), ("sharp1", 0.0, 1.0),
                             ("sharp2", 0.0, 1.0), ("rib_sharp", 0.0, 1.0), ("ring_sharp", 0.0, 1.0),
                             ("facet_rough", 0.0, 1.0), ("band_spacing", -1.0, 1.0)):
@@ -175,6 +181,13 @@ class VaseParams:
             except ValueError:
                 setattr(p, f"color{k}", getattr(fresh, f"color{k}"))
         return p
+
+
+def colour_style_of(p: VaseParams) -> int:
+    """The colour style that really prints: a real spiral vase is one filament, so no bands or stripes."""
+    if p.vase_mode == REAL_VASE and p.colour_style in (BANDS, STRIPES):
+        return ONE_COLOUR
+    return p.colour_style
 
 
 def clean_curve(points):

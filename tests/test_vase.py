@@ -19,13 +19,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
 from vaseinator.geometry import (TOLERANCE, VaseDesign, edge_check, face_normals, lean_angles,  # noqa: E402
                                  mesh_volume)
-from vaseinator.params import (BANDS, CIRCLE, EVENLY, GEAR, ONE_COLOUR, OWN, POLYGON, SAME, STAR,  # noqa: E402
+from vaseinator.params import (BANDS, CIRCLE, EVENLY, FAKE_VASE, GEAR, GRADIENT, ONE_COLOUR, OWN, POLYGON,
+                               REAL_VASE, SAME, STAR,  # noqa: E402
                                STRIPES, SWING, VaseParams, load_design, save_design)
 from vaseinator.presets import GALLERY, gallery_design, surprise  # noqa: E402
 from vaseinator.shapes import PROFILES, pchip, shape_table  # noqa: E402
 from vaseinator.stl import read_stl, write_stl  # noqa: E402
-from vaseinator.threemf import (TemplateError, read_3mf, read_template, spiral_settings,  # noqa: E402
-                                write_3mf, write_project_3mf)
+from vaseinator.threemf import read_3mf, write_3mf  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -189,9 +189,9 @@ def test_3mf_round_trip():
 
 def test_colour_bands_as_parts():
     """Each band its own closed part, set to its filament, together filling the vase exactly once."""
-    for p in (gallery_design("Lagoon Twist"), gallery_design("Gear Tower"),
-              VaseParams(**{**gallery_design("Gem Facets").to_dict(), "colour_style": BANDS, "band_count": 3,
-                            "colours_used": 3})):
+    for p in (gallery_design("Tulip Bloom"), gallery_design("Gear Tower"),
+              VaseParams(**{**gallery_design("Gem Facets").to_dict(), "vase_mode": FAKE_VASE,
+                            "colour_style": BANDS, "band_count": 3, "colours_used": 3})):
         d = VaseDesign(p)
         parts = d.band_parts()
         assert [f for f, _, _ in parts] == [f for _, f in d.bands], p.name
@@ -208,7 +208,7 @@ def test_colour_bands_as_parts():
     [(fil, v, f)] = d.band_parts()
     assert fil == 1 and abs(mesh_volume(v, f) - mesh_volume(d.verts, d.faces)) < 1e-6 * mesh_volume(d.verts, d.faces)
     with tempfile.TemporaryDirectory() as tmp:
-        p = gallery_design("Lagoon Twist")
+        p = VaseParams(vase_mode=FAKE_VASE, colour_style=BANDS, band_count=3, colours_used=3)
         d = VaseDesign(p)
         colours = p.colors()
         write_3mf(os.path.join(tmp, "b.3mf"), "b", [(f"band {k}", v, f, fil, colours[fil])
@@ -217,67 +217,18 @@ def test_colour_bands_as_parts():
     assert [b[3] for b in back] == [1, 2, 3] and all(edge_check(b[2])[0] for b in back)
 
 
-def make_template(path, filaments=4, first=0.25):
-    """A stand-in for a project saved in Flash Studio: its stamp and some of its settings."""
-    cfg = {"printer_model": "Test Printer", "filament_colour": ["#111111"] * filaments,
-           "initial_layer_print_height": str(first), "layer_height": "0.12", "spiral_mode": "0", "wall_loops": "3",
-           "top_shell_layers": "4", "sparse_infill_density": "15%", "enable_support": "1",
-           "enable_wrapping_detection": "1", "outer_wall_line_width": "0.42", "brim_type": "auto_brim"}
-    with zipfile.ZipFile(path, "w") as z:
-        z.writestr("[Content_Types].xml", "<Types/>")
-        z.writestr("3D/3dmodel.model", '<model><metadata name="Application">BambuStudio-02.06.00.51</metadata>'
-                                       '<metadata name="OrcaSlicer">2.4.2</metadata></model>')
-        z.writestr("Metadata/project_settings.config", json.dumps(cfg))
-        z.writestr("Metadata/slice_info.config", "<config/>")
-
-
-def test_slicer_project_carries_the_colour_changes():
-    p = plain(height=100.0, colour_style=BANDS, band_count=3, colours_used=3)
-    d = VaseDesign(p)
-    colours = {k: getattr(p, f"color{k}").upper() for k in range(1, 5)}
-    with tempfile.TemporaryDirectory() as tmp:
-        make_template(os.path.join(tmp, "t4.3mf"))
-        tpl = read_template(os.path.join(tmp, "t4.3mf"))
-        assert tpl["printer"] == "Test Printer" and tpl["filaments"] == 4
-        out = os.path.join(tmp, "v.3mf")
-        changes = write_project_3mf(out, "v", d.verts, d.faces, tpl,
-                                    spiral_settings(d.bottom_layers, p.layer_height, p.line_width), d.bands, colours,
-                                    (128.0, 128.0, 0.0))
-        with zipfile.ZipFile(out) as z:
-            cfg = json.loads(z.read("Metadata/project_settings.config"))
-            custom = ET.fromstring(z.read("Metadata/custom_gcode_per_layer.xml"))
-            model = z.read("3D/3dmodel.model").decode()
-            mesh = ET.fromstring(z.read("3D/Objects/vase_1.model"))
-        # the saved settings, with spiral vase switched on and this vase's layers, line and colours
-        assert cfg["printer_model"] == "Test Printer" and cfg["brim_type"] == "auto_brim"
-        assert (cfg["spiral_mode"], cfg["wall_loops"], cfg["top_shell_layers"], cfg["sparse_infill_density"],
-                cfg["enable_support"], cfg["enable_wrapping_detection"]) == ("1", "1", "0", "0%", "0", "0")
-        assert cfg["layer_height"] == "0.2" and cfg["outer_wall_line_width"] == "0.6"
-        assert cfg["bottom_shell_layers"] == str(d.bottom_layers)
-        assert cfg["filament_colour"] == [colours[k] for k in range(1, 5)]
-        assert 'name="Application">BambuStudio' in model       # so the slicer opens it as one of its projects
-        assert len(mesh.find(".//{*}vertices")) == len(d.verts)
-        # one tool change per band, at the first layer of the band (the first layer here is 0.25 mm)
-        layers = custom.findall("plate/layer")
-        assert custom.find("plate/mode").get("value") == "MultiAsSingle"
-        assert [(int(e.get("type")), int(e.get("extruder"))) for e in layers] == [(2, 2), (2, 3)]
-        for e, (z, fil), (_, top, _) in zip(layers, d.bands[1:], changes):
-            assert float(e.get("top_z")) == top and e.get("color") == colours[fil]
-            assert abs((top - 0.2) - z) <= 0.1 + 1e-9, (top, z)       # the layer starts where the band does
-        # a printer with one filament pauses for each change instead
-        make_template(os.path.join(tmp, "t1.3mf"), filaments=1)
-        write_project_3mf(out, "v", d.verts, d.faces, read_template(os.path.join(tmp, "t1.3mf")), {}, d.bands, colours)
-        with zipfile.ZipFile(out) as z:
-            custom = ET.fromstring(z.read("Metadata/custom_gcode_per_layer.xml"))
-        assert custom.find("plate/mode").get("value") == "SingleExtruder"
-        assert {e.get("type") for e in custom.findall("plate/layer")} == {"0"}
-        # a file that isn't a slicer project is turned down, saying why
-        write_3mf(os.path.join(tmp, "shape.3mf"), "v", [("v", d.verts[:3], np.array([[0, 1, 2]]), 1, (1, 1, 1))])
-        try:
-            read_template(os.path.join(tmp, "shape.3mf"))
-            raise AssertionError("a shape-only 3MF was taken as slicer settings")
-        except TemplateError as exc:
-            assert "Save Project" in str(exc)
+def test_real_and_fake_spiral_vases():
+    """A real spiral vase is one filament in one line; a fake one has its bands, and walls."""
+    real = VaseDesign(VaseParams(vase_mode=REAL_VASE, colour_style=BANDS, band_count=3, colours_used=3))
+    assert real.bands == [(0.0, 1)] and len(real.band_parts()) == 1     # bands can't be printed in spiral mode
+    real_gradient = VaseDesign(VaseParams(vase_mode=REAL_VASE, colour_style=GRADIENT, colours_used=3))
+    assert real_gradient.gradient                                       # a gradient spool is still one filament
+    fake = VaseDesign(VaseParams(vase_mode=FAKE_VASE, colour_style=BANDS, band_count=3, colours_used=3, walls=2))
+    assert [f for _, f in fake.bands] == [1, 2, 3] and len(fake.band_parts()) == 3
+    # two walls of 0.6 mm: a wall 1.2 mm thick, inside the same outside, so it holds less and weighs more
+    assert abs(fake.wall - 1.2) < 1e-9 and abs(real.wall - 0.6) < 1e-9
+    assert fake.capacity < real.capacity and fake.grams > 1.8 * real.grams
+    assert np.allclose(fake.verts, real.verts)                          # the same solid either way
 
 
 def test_designs_save_and_open():
@@ -335,16 +286,16 @@ def test_your_own_function_is_safe():
 
 
 def test_colour_changes_land_on_layers():
-    p = plain(height=100.0, colour_style=BANDS, band_count=4, colours_used=2, layer_height=0.2)
+    p = plain(height=100.0, vase_mode=FAKE_VASE, colour_style=BANDS, band_count=4, colours_used=2, layer_height=0.2)
     d = VaseDesign(p)
     assert [f for _, f in d.bands] == [1, 2, 1, 2]
     for z, _ in d.bands:
         assert abs(z / 0.2 - round(z / 0.2)) < 1e-9
     assert [(layer, round(z, 2), f) for layer, z, f in d.colour_changes()] == [
         (126, 25.2, 2), (251, 50.2, 1), (376, 75.2, 2)]
-    d = VaseDesign(plain(height=100.0, colour_style=STRIPES, stripe_height=10.0, colours_used=3))
+    d = VaseDesign(plain(height=100.0, vase_mode=FAKE_VASE, colour_style=STRIPES, stripe_height=10.0, colours_used=3))
     assert len(d.bands) == 10 and [f for _, f in d.bands][:4] == [1, 2, 3, 1]
-    d = VaseDesign(plain(colour_style=BANDS, band_count=3, colours_used=1))
+    d = VaseDesign(plain(vase_mode=FAKE_VASE, colour_style=BANDS, band_count=3, colours_used=1))
     assert len(d.bands) == 1                       # one filament: no changes at all
     assert "change to filament" not in d.colour_plan()
 

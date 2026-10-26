@@ -15,22 +15,22 @@ from PySide6.QtGui import (QAction, QColor, QFontDatabase, QIcon, QKeySequence, 
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
-                               QScrollArea, QSizePolicy, QSlider, QSpinBox, QSplitter, QStyle, QTextBrowser,
+                               QScrollArea, QSlider, QSpinBox, QSplitter, QStyle, QTextBrowser,
                                QToolButton, QVBoxLayout, QWidget)
 
 from . import __version__
 from .curves import CurveEditor
 from .expr import EXAMPLES, FUNCTION_HELP, VARIABLES
 from .geometry import VaseDesign, duration
-from .params import (BANDS, CIRCLE, EASE, EVENLY, FILAMENTS, GLOSSY, GRADIENT, MATTE, ONE_COLOUR, OWN,
-                     OWN_PROFILE, POLYGON, SAME, SHAPES, SILK, SLOW_DOWN, SPEED_UP, STRIPES, SWING, TRANSLUCENT,
-                     VaseParams, load_design, save_design)
+from .params import (BANDS, CIRCLE, EASE, EVENLY, FAKE_VASE, FILAMENTS, GLOSSY, GRADIENT, MATTE, ONE_COLOUR,
+                     OWN, OWN_PROFILE, POLYGON, REAL_VASE, SAME, SHAPES, SILK, SLOW_DOWN, SPEED_UP, STRIPES,
+                     SWING, TRANSLUCENT, VaseParams, colour_style_of, load_design, save_design)
 from .plots import ShapePlots
 from .presets import GALLERY, gallery_design, outline, palette, surprise
 from .shapes import (PALETTES, PROFILES, SHAPE_LABELS, SHAPE_NAMES, change, progress, sample_points, strength,
                      strength_names, style_names)
 from .stl import write_stl
-from .threemf import TemplateError, read_template, spiral_settings, write_3mf, write_project_3mf
+from .threemf import write_3mf
 from .viewer import Viewer3D, spin_transform
 
 APP_NAME = "Vaseinator"
@@ -48,6 +48,8 @@ STRENGTHS = list(strength_names().items())
 COLOUR_STYLES = [(ONE_COLOUR, "One colour"), (BANDS, "Bands up the vase"), (STRIPES, "Stripes"),
                  (GRADIENT, "Gradient spool")]
 LOOKS = [(MATTE, "Matte"), (SILK, "Silk"), (GLOSSY, "Glossy"), (TRANSLUCENT, "Translucent")]
+VASE_MODES = [(REAL_VASE, "Real spiral vase - one colour"), (FAKE_VASE, "Fake spiral vase - colours")]
+REAL_COLOUR_STYLES = [(ONE_COLOUR, "One colour"), (GRADIENT, "Gradient spool")]
 USED = [(2, "Two"), (3, "Three"), (4, "Four")]
 
 
@@ -155,6 +157,13 @@ SPEC = [
          "the top), r (the radius so far) and H (the height). Help lists the functions."),
     ]),
     ("Colours", [
+        ("vase_mode", "Vase mode", "choice", VASE_MODES, None, None, "",
+         "Real spiral vase: the slicer's spiral vase mode - one continuous line, fast and clean.\n"
+         "It prints one filament: Flash Studio won't change filament in spiral vase mode. A\n"
+         "gradient spool still works, being one filament.\n"
+         "Fake spiral vase: an ordinary print of a hollow vase - a few walls, no infill, no top.\n"
+         "Slower, with a seam on every layer, but sturdier, and the colour bands come in the\n"
+         "3MF as parts of their own filaments, so they print in colour by themselves."),
         ("palette", "Palette", "palette", None, None, None, "", "Set all four filament colours from a palette."),
         ("color1", "Filament 1", "color", None, None, None, "",
          "Colour of filament 1. Load the same colour in slot 1 of the slicer."),
@@ -165,7 +174,7 @@ SPEC = [
          "One colour; bands of colour up the vase; thin stripes; or a gradient spool (one\n"
          "filament that changes colour along its length - shown as it will come out, by\n"
          "how much filament each height uses).\n"
-         "Bands and stripes change filament at a layer: the panel lists each change."),
+         "Bands and stripes need a fake spiral vase: each band is its own part in the 3MF."),
         ("colours_used", "Filaments", "choice", USED, None, None, "", "How many filaments the colours go through, from 1."),
         ("band_count", "Bands", "int", 2, 64, 1, "", "How many bands of colour, bottom to top."),
         ("band_spacing", "Band sizes", "slider", -1.0, 1.0, 0.01, "",
@@ -178,15 +187,9 @@ SPEC = [
         ("look", "Looks like", "choice", LOOKS, None, None, "", "How the filament looks in the 3D view."),
     ]),
     ("Printing", [
-        ("slicer_template", "Slicer settings", "template", None, None, None, "",
-         "Optional - only for a spiral vase in several colours.\n"
-         "Without it, Export 3MF writes each colour band as its own part, set to its filament, to load\n"
-         "with File ▸ Import - but the slicers won't print parts of several filaments in spiral vase\n"
-         "mode, so a banded vase prints as an ordinary hollow vase.\n"
-         "With it - a project you saved in Flash Studio (or OrcaSlicer or Bambu Studio) for your\n"
-         "printer, File ▸ Save Project there - Export 3MF writes a project on those settings with spiral\n"
-         "vase on and the bands as filament (tool) changes at their layers: open it with File ▸ Open.\n"
-         "Remembered for every design."),
+        ("walls", "Walls", "int", 1, 10, 1, "",
+         "Fake spiral vase: how many walls round the vase (the slicer's wall loops). Two make a\n"
+         "sturdy, watertight vase."),
         ("max_overhang", "Steepest overhang", "float", 10.0, 70.0, 1.0, "°",
          "How far the wall may lean from upright, out or in. A spiral wall is one line wide,\n"
          "so it leans on the line beneath it either way. 45° prints on almost any printer."),
@@ -218,9 +221,9 @@ SPEC = [
 SIMPLE_KEYS = {"height", "widest", "profile", "shape1", "count1", "depth1", "sharp1", "shape2", "count2",
                "morph", "morph_swings", "twist",
                "twist_style", "lattice", "rib_count", "rib_depth", "ring_count", "ring_depth", "bump_around",
-               "organic_depth", "facets", "palette", "color1", "color2", "color3", "color4", "colour_style",
-               "colours_used", "band_count", "look", "slicer_template", "max_overhang", "soften", "line_width",
-               "layer_height"}
+               "organic_depth", "facets", "vase_mode", "palette", "color1", "color2", "color3", "color4",
+               "colour_style", "colours_used", "band_count", "look", "walls", "max_overhang", "soften",
+               "line_width", "layer_height"}
 REMEMBERED = ("line_width", "layer_height", "bottom", "printer_height", "bed_x", "bed_y", "speed", "max_flow",
               "filament_d", "density", "max_overhang")
 LIVE_KEYS = {"band_spacing"}            # sliders: follow the hand with quick draft builds
@@ -300,26 +303,6 @@ def make_app_icon() -> QIcon:
     return QIcon()
 
 
-class ElidedButton(QPushButton):
-    """A button whose text is shortened in the middle to fit, however narrow the panel gets."""
-
-    def __init__(self):
-        super().__init__()
-        self.full = ""
-        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-
-    def set_full_text(self, text: str):
-        self.full = text
-        self._fit()
-
-    def resizeEvent(self, ev):
-        super().resizeEvent(ev)
-        self._fit()
-
-    def _fit(self):
-        self.setText(self.fontMetrics().elidedText(self.full, Qt.ElideMiddle, max(self.width() - 18, 40)))
-
-
 class FunctionHelp(QDialog):
     """What a formula can use, with examples to try."""
 
@@ -381,8 +364,6 @@ class MainWindow(QMainWindow):
         self.future: list[dict] = []
         self.spin_angle = 0.0
         self.spinning = self.settings.value("spin", True, type=bool)
-        self.template_path = str(self.settings.value("slicer_template", "") or "")
-        self._load_template(self.template_path)          # a slicer project to build 3MFs on
         self.printing = None          # the print animation: its start time
         self._last_full_ms = 0.0
         self._last_tick = time.perf_counter()
@@ -601,17 +582,6 @@ class MainWindow(QMainWindow):
             b.setMinimumHeight(24)
             self.widgets[key] = b
             return b
-        if kind == "template":                    # a slicer project to take the printer's settings from
-            b = ElidedButton()
-            b.setMinimumHeight(24)
-            b.clicked.connect(self._pick_template)
-            clear = QToolButton()
-            clear.setText("✕")
-            clear.setToolTip("Forget these settings: Export 3MF writes the colour bands as parts")
-            clear.clicked.connect(lambda: self._set_template(""))
-            self.template_clear = clear
-            self.widgets[key] = b
-            return row(b, clear)
         val = getattr(self.params, key)
         if kind == "float":
             suffix, _, special = extra.partition("|")
@@ -744,7 +714,7 @@ class MainWindow(QMainWindow):
             w.blockSignals(True)
             if key == "widest":
                 w.setValue(self._widest())
-            elif key in ("palette", "slicer_template"):
+            elif key == "palette":
                 pass
             elif isinstance(w, QComboBox):
                 w.setCurrentIndex(max(0, w.findData(getattr(self.params, key))))
@@ -801,17 +771,18 @@ class MainWindow(QMainWindow):
                 if name:
                     self.labels[key].setText(name)
             self.widgets[f"count{k}"].setMinimum(3 if kind == POLYGON else 1)
-        b = self.widgets["slicer_template"]
-        if self.template is not None:
-            text = f"{self.template['printer']} · {os.path.basename(self.template_path)}"
-        elif self.template_path:
-            text = "Not readable - choose again…"
-        else:
-            text = "Choose a saved project…"
-        b.set_full_text(text)
-        b.setToolTip(self.template_path or "Optional. Without slicer settings, Export 3MF writes the colour bands as "
-                                           "parts; with them, a spiral vase project with the colour changes in")
-        self.template_clear.setEnabled(bool(self.template_path))
+        # a real spiral vase prints one filament: only the colour styles that need no change of filament
+        real = p.vase_mode == REAL_VASE
+        styles = REAL_COLOUR_STYLES if real else COLOUR_STYLES
+        combo = self.widgets["colour_style"]
+        combo.blockSignals(True)
+        if [(combo.itemData(i), combo.itemText(i)) for i in range(combo.count())] != styles:
+            combo.clear()
+            for value, text in styles:
+                combo.addItem(text, value)
+        combo.setCurrentIndex(max(0, combo.findData(colour_style_of(p))))
+        combo.blockSignals(False)
+        self.labels["color1"].setText("Colour" if colour_style_of(p) == ONE_COLOUR else "Filament 1")
         s = p.band_spacing
         self.slider_notes["band_spacing"].setText(
             "Even" if abs(s) < 0.05 else ("Thicker towards the top" if s > 0 else "Thicker towards the bottom"))
@@ -860,16 +831,18 @@ class MainWindow(QMainWindow):
             show = patterns and p.strength == OWN
         elif key.startswith("facet") and key != "facets" and key != "facet_size":
             show = p.facets
-        elif key == "colours_used":
-            show = p.colour_style != ONE_COLOUR
+        elif key in ("colours_used", "palette"):
+            show = colour_style_of(p) != ONE_COLOUR
         elif key in ("band_count", "band_spacing"):
-            show = p.colour_style == BANDS
+            show = colour_style_of(p) == BANDS
         elif key == "stripe_height":
-            show = p.colour_style == STRIPES
+            show = colour_style_of(p) == STRIPES
         elif key == "gradient_length":
-            show = p.colour_style == GRADIENT
+            show = colour_style_of(p) == GRADIENT
         elif key.startswith("color") and key[-1] in "1234":
-            show = int(key[-1]) <= (1 if p.colour_style == ONE_COLOUR else p.colours_used)
+            show = int(key[-1]) <= (1 if colour_style_of(p) == ONE_COLOUR else p.colours_used)
+        elif key == "walls":
+            show = p.vase_mode == FAKE_VASE
         if not show:
             return False
         if key in ("silhouette",):
@@ -1221,56 +1194,46 @@ class MainWindow(QMainWindow):
             html.append("</ul>")
         if d is not None:
             p = d.p
+            real = p.vase_mode == REAL_VASE
             html.append("<h3>Colours</h3>")
             if d.gradient:
                 cycles = d.metres / max(p.gradient_length, 0.05)
                 html.append(f"<p class='k'>One gradient spool: about {cycles:.1f} colour cycles over the "
                             f"{d.metres:.1f} m this vase uses. The view shows where each colour lands.</p>")
-            else:
+            elif len(d.bands) == 1:
                 f0 = d.bands[0][1]
-                html.append(f"<table><tr><td>Start</td><td>{self._chip(d, f0)} filament {f0}</td></tr>")
-                for layer, ztop, fil in d.colour_changes(self._first_layer()):
-                    html.append(f"<tr><td class='k'>Layer {layer} ({ztop:.2f} mm)</td>"
-                                f"<td>{self._chip(d, fil)} change to filament {fil}</td></tr>")
-                html.append("</table>")
-                if len(d.bands) > 1 and self.template is not None and self.template["filaments"] > 1:
-                    html.append(
-                        f"<p class='k'><b>Export 3MF</b> puts these changes in for you: on the "
-                        f"{self.template['printer']} each one parks a toolhead and picks up the next, which "
-                        "heats up before the spiral carries on - a short pause, and a small seam.</p>")
-                elif len(d.bands) > 1 and self.template is not None:
-                    html.append(
-                        "<p class='k'><b>Export 3MF</b> puts these changes in for you, as pauses to change "
-                        "the filament by hand (the saved printer has one filament).</p>")
-                elif len(d.bands) > 1:
-                    html.append(
-                        "<p class='k'><b>Export 3MF</b> makes each band its own part, set to its filament: load "
-                        "it with File ▸ Import and change the colours there as you like. The slicers won't "
-                        "print parts of several filaments in spiral vase mode, so print it as a hollow vase - "
-                        "2 walls, 0% infill, 0 top layers - which is sturdier anyway.</p>"
-                        "<p class='k'>For a <b>spiral</b> vase in these colours instead: choose <b>Slicer "
-                        "settings</b> under Printing and Export 3MF puts the changes in at these layers, or add "
-                        "them on the slicer's layer slider yourself (Edit ▸ Copy colour changes lists them). "
-                        "Each change pauses the spiral and leaves a small seam.</p>")
-            if self.template is not None:
+                html.append(f"<p>{self._chip(d, f0)} filament {f0}</p>")
+                if real:
+                    html.append("<p class='k'>A real spiral vase prints one filament: Flash Studio won't change "
+                                "filament in spiral vase mode. For bands or stripes of colour, choose a fake "
+                                "spiral vase.</p>")
+            else:
+                html.append("<table>")
+                tops = [z for z, _ in d.bands[1:]] + [d.H]
+                for (z, fil), top in zip(d.bands, tops):
+                    html.append(f"<tr><td class='k'>{z:.1f} – {top:.1f} mm</td>"
+                                f"<td>{self._chip(d, fil)} filament {fil}</td></tr>")
+                html.append("</table><p class='k'><b>Export 3MF</b> makes each band its own part, set to its "
+                            "filament: load it with File ▸ Import, and change the colours there as you like. "
+                            "The slicer prints each band with its own filament.</p>")
+            if real:
                 html.append(
-                    f"<h3>Slicing it</h3><p class='k'><b>Export 3MF</b> writes a project for the "
-                    f"<b>{self.template['printer']}</b> on your saved settings, with spiral vase on, "
+                    "<h3>Slicing it: real spiral vase</h3>"
+                    "<p class='k'>Turn on <b>spiral vase</b> (Spiralize). "
                     f"<b>{d.bottom_layers} bottom layers</b> at <b>{p.layer_height:g} mm</b>, 0 top layers, "
-                    f"0% infill, 1 wall of <b>{p.line_width:g} mm</b> and supports off - none are needed: "
-                    f"nothing leans more than {d.worst:.0f}°. Open it in Flash Studio with <b>File ▸ Open</b> "
-                    "(not Import, which takes the shape only) and slice. For a watertight vase: a little extra "
-                    "flow (103–105%) and 5–10 °C hotter than usual for strong layer bonds.</p>")
-            html.append(
-                f"<h3>{'Or by hand' if self.template is not None else 'Slicing it'}</h3>"
-                "<p class='k'>Turn on <b>spiral vase</b> (Spiralize). "
-                f"<b>{d.bottom_layers} bottom layers</b> at <b>{p.layer_height:g} mm</b>, 0 top layers, "
-                f"0% infill, 1 wall, outer wall line width <b>{p.line_width:g} mm</b>. Supports off - "
-                f"none are needed: nothing leans more than {d.worst:.0f}°. "
-                f"For a watertight vase: a little extra flow (103–105%), 5–10 °C hotter than usual for "
-                f"strong layer bonds, and a wide line. A brim helps a narrow foot stay put.</p>"
-                "<p class='k'><b>Sturdier still:</b> slice the same STL normally with 2–3 walls, 0% infill "
-                "and 0 top layers - the walls are then several lines thick.</p>")
+                    f"0% infill, 1 wall, outer wall line width <b>{p.line_width:g} mm</b>. Supports off - "
+                    f"none are needed: nothing leans more than {d.worst:.0f}°. "
+                    "For a watertight vase: a little extra flow (103–105%), 5–10 °C hotter than usual for "
+                    "strong layer bonds, and a wide line. A brim helps a narrow foot stay put.</p>")
+            else:
+                html.append(
+                    "<h3>Slicing it: fake spiral vase</h3>"
+                    "<p class='k'>Leave spiral vase <b>off</b> - the slicer won't spiral an object of several "
+                    f"filaments. <b>{p.walls} walls</b> (wall loops), <b>0% sparse infill</b>, <b>0 top "
+                    f"layers</b>, <b>{d.bottom_layers} bottom layers</b> at <b>{p.layer_height:g} mm</b>, line "
+                    f"width <b>{p.line_width:g} mm</b>. Supports off - none are needed: nothing leans more than "
+                    f"{d.worst:.0f}°. It prints a layer at a time, so it is slower than a spiral and has a seam, "
+                    "but the walls make it sturdy and watertight. A brim helps a narrow foot stay put.</p>")
         self.info.setHtml("".join(html))
 
     @staticmethod
@@ -1485,9 +1448,14 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Export failed", str(exc))
             return
         self._remember_dir(path)
+        if d.p.vase_mode == REAL_VASE:
+            how = "slice it with spiral vase mode on"
+        else:
+            how = (f"slice it with {d.p.walls} walls, 0% infill and 0 top layers (an STL has no colours: "
+                   "Export 3MF has the bands as parts)")
         self.statusBar().showMessage(
             f"Exported {os.path.basename(path)} ({d.triangles:,} triangles, watertight) to "
-            f"{os.path.dirname(path)} — slice it with spiral vase mode on", 12000)
+            f"{os.path.dirname(path)} — {how}", 12000)
 
     def band_parts(self, d):
         """The vase for write_3mf: a part per colour band, set to its filament."""
@@ -1498,19 +1466,11 @@ class MainWindow(QMainWindow):
                 for k, (fil, verts, faces) in enumerate(parts)]
 
     def export_3mf(self):
-        """The vase with its colours: a part per band (Lenticular-style), or - with slicer settings
-        chosen - a slicer project with spiral vase on and the colour changes at their layers."""
+        """The vase for the slicer: one solid for a real spiral vase, a part per colour band for a fake one."""
         d = self._current_design()
         if d is None:
             return
         p = d.p
-        if self.template is not None:
-            used = max(f for _, f in d.bands)
-            if self.template["filaments"] > 1 and used > self.template["filaments"]:
-                QMessageBox.warning(self, "Not exported", f"The colours use filament {used}, but "
-                                    f"{self.template['printer']} has {self.template['filaments']} in the saved "
-                                    "project. Use fewer filaments, or save a project with more.")
-                return
         base = self._safe_name()
         path, _ = QFileDialog.getSaveFileName(self, "Export 3MF", os.path.join(self._last_dir(), base + ".3mf"),
                                               "3MF files (*.3mf)")
@@ -1518,80 +1478,25 @@ class MainWindow(QMainWindow):
             return
         if not path.lower().endswith(".3mf"):
             path += ".3mf"
-        fil = d.bands[0][1]
-        middle = (p.bed_x / 2.0, p.bed_y / 2.0, 0.0)
+        parts = self.band_parts(d)
         try:
-            if self.template is not None:
-                colours = {k: getattr(p, f"color{k}").upper() for k in FILAMENTS}
-                changes = write_project_3mf(path, base, d.verts, d.faces, self.template,
-                                            spiral_settings(d.bottom_layers, p.layer_height, p.line_width),
-                                            d.bands, colours, middle)
-            else:
-                parts = self.band_parts(d)
-                write_3mf(path, base, parts, middle)
+            write_3mf(path, base, parts, (p.bed_x / 2.0, p.bed_y / 2.0, 0.0))
         except OSError as exc:
             QMessageBox.critical(self, "Export failed", str(exc))
             return
         self._remember_dir(path)
-        if self.template is not None:
-            n = len(changes)
-            self.statusBar().showMessage(
-                f"Exported {os.path.basename(path)}: a project for the {self.template['printer']}, spiral vase on, "
-                f"{n} colour change{'' if n == 1 else 's'} — open it in Flash Studio with File ▸ Open (Ctrl+O), "
-                "not Import", 15000)
-        elif len(parts) > 1:
-            fils = ", ".join(str(f) for f in sorted({f for _, _, _, f, _ in parts}))
-            self.statusBar().showMessage(
-                f"Exported {os.path.basename(path)}: {len(parts)} bands set to filaments {fils} — in Flash Studio use "
-                "File ▸ Import (Ctrl+I). Bands of several filaments can't print in spiral vase mode: slice it as a "
-                "hollow vase (2 walls, 0% infill, 0 top layers)", 15000)
+        if p.vase_mode == REAL_VASE:
+            how = "turn on spiral vase"
         else:
-            self.statusBar().showMessage(
-                f"Exported {os.path.basename(path)} to {os.path.dirname(path)} — in Flash Studio use File ▸ Import "
-                f"(Ctrl+I), then turn on spiral vase", 12000)
-
-    # ------------------------------------------------------------ slicer settings
-    def _load_template(self, path):
-        """The slicer settings in a saved project, or None (the reason in self.template_error)."""
-        self.template, self.template_error = None, ""
-        if path:
-            try:
-                self.template = read_template(path)
-            except TemplateError as exc:
-                self.template_error = str(exc)
-
-    def _pick_template(self):
-        start = os.path.dirname(self.template_path) if self.template_path else self._last_dir()
-        path, _ = QFileDialog.getOpenFileName(self, "Choose a project you saved in your slicer", start,
-                                              "3MF projects (*.3mf)")
-        if path:
-            self._set_template(path)
-
-    def _set_template(self, path):
-        old = self.template_path
-        self._load_template(path)
-        if path and self.template is None:
-            QMessageBox.warning(self, "Can't use that file",
-                                f"{os.path.basename(path)} can't give slicer settings: {self.template_error}")
-            self._load_template(old)
-            return
-        self.template_path = path
-        self.settings.setValue("slicer_template", path)
-        self._sync_widgets()
-        if self.design is not None:
-            self._show_info(self.design, [], self.design.warnings)
-        if self.template is not None:
-            self.statusBar().showMessage(f"Slicer settings from {os.path.basename(path)}: {self.template['printer']}, "
-                                         f"{self.template['filaments']} filaments", 8000)
-
-    def _first_layer(self):
-        """The first layer height in the chosen slicer settings, if there are any."""
-        if self.template is None:
-            return None
-        try:
-            return float(self.template["config"].get("initial_layer_print_height"))
-        except (TypeError, ValueError):
-            return None
+            how = f"leave spiral vase off: {p.walls} walls, 0% infill, 0 top layers"
+        if len(parts) > 1:
+            fils = ", ".join(str(f) for f in sorted({f for _, _, _, f, _ in parts}))
+            what = f"{len(parts)} bands set to filaments {fils}"
+        else:
+            what = "the vase, one part"
+        self.statusBar().showMessage(
+            f"Exported {os.path.basename(path)}: {what} — in Flash Studio use File ▸ Import (Ctrl+I), then {how}",
+            15000)
 
     def save_snapshot(self):
         default = os.path.join(self._last_dir(), self._safe_name() + "_3d.png")
@@ -1608,16 +1513,24 @@ class MainWindow(QMainWindow):
         self._flush()
         if self.design is None:
             return
-        QApplication.clipboard().setText(self.design.colour_plan(self._first_layer()))
+        QApplication.clipboard().setText(self.design.colour_plan())
         self.statusBar().showMessage("Colour changes copied to the clipboard", 6000)
 
     def printing_help(self):
         QMessageBox.information(
             self, "Printing it watertight",
-            "<h3>Spiral vase mode</h3>"
-            "<p>The exported STL is <b>solid</b>: the slicer's spiral vase mode (Spiralize) prints only its "
-            "outside, as one continuous line climbing round and round, on a solid bottom. Don't slice it "
-            "normally with infill - it would print as a solid block.</p>"
+            "<p>Choose the <b>Vase mode</b> under Colours:</p>"
+            "<ul><li><b>Real spiral vase</b>: the slicer's spiral vase mode - one continuous line, fast and "
+            "clean, in <b>one filament</b> (Flash Studio won't change filament in spiral vase mode; a gradient "
+            "spool still works).</li>"
+            "<li><b>Fake spiral vase</b>: an ordinary print of a hollow vase - a few walls, no infill, no top. "
+            "Slower, with a seam on each layer, but sturdier, and in <b>colour</b>: Export 3MF makes each band "
+            "its own part, set to its filament, like Lenticular Sign Maker. Load it with File ▸ Import and "
+            "change the colours there as you like.</li></ul>"
+            "<h3>Real spiral vase</h3>"
+            "<p>The exported model is <b>solid</b>: spiral vase mode (Spiralize) prints only its outside, as one "
+            "continuous line climbing round and round, on a solid bottom. Don't slice it normally with infill - "
+            "it would print as a solid block.</p>"
             "<ul><li><b>Spiral vase / Spiralize</b> on; 1 wall; 0 top layers; 0% infill.</li>"
             "<li><b>Bottom layers</b>: the number in the panel, so the floor is as thick as set.</li>"
             "<li><b>Outer wall line width</b>: the app's line width. 0.6–0.8 mm on a 0.4 mm nozzle is much "
@@ -1629,19 +1542,12 @@ class MainWindow(QMainWindow):
             "<li>Slow down: 30–50 mm/s for the wall.</li>"
             "<li>PETG is more watertight than PLA. Silk PLA looks great but bonds a little less well.</li>"
             "<li>Test it in a sink first. A coat of clear epoxy or varnish inside seals any weep.</li>"
-            "<li>Sturdier still: slice the same STL normally with 2–3 walls, 0% infill and 0 top layers.</li></ul>"
-            "<h3>Colours</h3>"
-            "<p><b>Export 3MF</b> makes each colour band its own part, set to its filament, like Lenticular "
-            "Sign Maker: load it with File ▸ Import and change the colours as you like. The slicers won't print "
-            "an object of several filaments in spiral vase mode, so print a banded vase as a hollow vase: 2 "
-            "walls, 0% infill, 0 top layers.</p>"
-            "<p>For a <b>spiral</b> vase in colour, the bands must be filament changes at their layers instead. "
-            "Choose <b>Slicer settings</b> under Printing - a project you saved in Flash Studio for your printer "
-            "- and Export 3MF writes a project with spiral vase on and those changes already in: open it with "
-            "File ▸ Open. On a printer with several toolheads, like the Creator 5 Pro, each change swaps the "
-            "head; on one with a single filament it pauses for you to change it. Or add the changes on the "
-            "slicer's layer slider yourself. A gradient spool needs nothing: the view shows where its colours "
-            "will land.</p>")
+            "</ul>"
+            "<h3>Fake spiral vase</h3>"
+            "<ul><li><b>Spiral vase off</b>: the slicer won't spiral an object of several filaments.</li>"
+            "<li>The <b>walls</b> the app is set to (wall loops); <b>0% sparse infill</b>; <b>0 top layers</b>; "
+            "the bottom layers in the panel.</li>"
+            "<li>No supports, just as for a real spiral vase.</li></ul>")
 
     def about(self):
         QMessageBox.about(

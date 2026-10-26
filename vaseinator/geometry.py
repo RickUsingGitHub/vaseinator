@@ -22,7 +22,8 @@ import math
 import numpy as np
 
 from .expr import ExprError, compile_expression
-from .params import (BANDS, GRADIENT, MAX_BANDS, ONE_COLOUR, OWN, SAME, STRIPES, VaseParams)
+from .params import (BANDS, FAKE_VASE, GRADIENT, MAX_BANDS, ONE_COLOUR, OWN, SAME, STRIPES, VaseParams,
+                     colour_style_of)
 from .shapes import (TABLE, TAU, blur, change, lobes_needed, organic, pchip, progress, sample, shape_table,
                      smooth_max, smoothstep, strength)
 
@@ -395,7 +396,7 @@ class VaseDesign:
                     "up the back. Use whole numbers with the angle, e.g. sin(5*theta), not sin(2.5*theta).")
             r = r + add
 
-        floor_r = max(1.5, 2.0 * self.p.line_width)
+        floor_r = max(1.5, 2.0 * self.wall)
         if (r < floor_r).any():
             self.notes.append(f"Where the shape came near the middle it is kept {floor_r:.1f} mm out from it.")
         self.R_design = np.maximum(r, floor_r)
@@ -514,10 +515,16 @@ class VaseDesign:
         self.top = self.H
 
     # --------------------------------------------------------- shown shell
-    def _shell(self):
-        """What the printer really makes: one line of wall over a solid bottom, for the 3D view."""
+    @property
+    def wall(self) -> float:
+        """How thick the printed wall is: one spiral line, or a fake vase's walls side by side."""
         p = self.p
-        w = p.line_width
+        return p.line_width * (max(int(p.walls), 1) if p.vase_mode == FAKE_VASE else 1)
+
+    def _shell(self):
+        """What the printer really makes: the wall over a solid bottom, for the 3D view."""
+        p = self.p
+        w = self.wall
         zb = min(max(p.bottom, p.layer_height), 0.5 * self.H)
         self.zb = zb
         if self.rows is None:
@@ -561,7 +568,8 @@ class VaseDesign:
 
     def _measure(self):
         p = self.p
-        w, lh = p.line_width, p.layer_height
+        w, lh = self.wall, p.layer_height
+        loops = max(int(p.walls), 1) if p.vase_mode == FAKE_VASE else 1      # lines round each layer
         outer = self.rows if self.rows is not None else [(zz, self.theta, rr) for zz, rr in zip(self.z, self.R)]
         oz = np.array([o[0] for o in outer])
         o_per, o_area = self._ring_stats(outer)
@@ -578,9 +586,9 @@ class VaseDesign:
         vol = wall_area * w + bottom_vol
         self.grams = vol / 1000.0 * p.density
         self.metres = vol / fil_area / 1000.0
-        v = min(p.speed, p.max_flow / max(w * lh, 1e-6))
+        v = min(p.speed, p.max_flow / max(p.line_width * lh, 1e-6))
         layers_bottom = max(1, math.ceil(zb / lh - 1e-6))
-        path = wall_area / lh + layers_bottom * float(np.interp(0.0, oz, o_area)) / w
+        path = wall_area * loops / lh + layers_bottom * float(np.interp(0.0, oz, o_area)) / p.line_width
         self.seconds = path / max(v, 0.1) + 120.0
         self.layers = int(round(self.H / lh))
         self.bottom_layers = layers_bottom
@@ -605,11 +613,11 @@ class VaseDesign:
         lh, H = p.layer_height, self.H
         used = max(1, min(int(p.colours_used), 4))
         bands = [(0.0, 1)]
-        if p.colour_style == BANDS:
+        if colour_style_of(p) == BANDS:
             k = max(int(p.band_count), 1)
             gamma = 2.0 ** (1.3 * p.band_spacing)
             bands = [(H * (i / k) ** gamma, 1 + i % used) for i in range(k)]
-        elif p.colour_style == STRIPES:
+        elif colour_style_of(p) == STRIPES:
             stripe = max(p.stripe_height, lh)
             n = math.ceil(H / stripe - 1e-9)
             if n > MAX_BANDS:
@@ -632,7 +640,7 @@ class VaseDesign:
             if not merged or merged[-1][1] != fil:
                 merged.append((zs, fil))
         self.bands = merged or [(0.0, 1)]
-        self.gradient = p.colour_style == GRADIENT
+        self.gradient = colour_style_of(p) == GRADIENT
         self.gradient_fils = list(range(1, used + 1))
 
     def filament_of(self, k: int) -> str:
@@ -743,8 +751,8 @@ class VaseDesign:
             self.notes.append(f"The opening at the top is only {self.top_d[0]:.0f} mm across: a bud vase.")
         changes = len(self.bands) - 1
         if changes > 20:
-            self.warnings.append(f"{changes} colour changes: each one interrupts the spiral and leaves a "
-                                 "small seam. Fewer, taller bands print cleaner.")
+            self.warnings.append(f"{changes} colour changes: each one takes time and leaves a small seam. "
+                                 "Fewer, taller bands print cleaner.")
         if p.line_width < 0.45:
             self.notes.append("A wider line (0.6 to 0.8 mm on a 0.4 mm nozzle) makes a stronger, more surely "
                               "watertight wall.")
@@ -766,8 +774,9 @@ class VaseDesign:
             "Base": f"Ø {self.base_d[0]:.0f}–{self.base_d[1]:.0f} mm",
             "Opening at the top": f"Ø {self.top_d[0]:.0f}–{self.top_d[1]:.0f} mm",
             "Holds": f"about {self.capacity:.0f} ml of water",
-            "Wall": f"one {p.line_width:g} mm line, on a {self.zb:g} mm solid bottom "
-                    f"({self.bottom_layers} layers)",
+            "Wall": (f"one {p.line_width:g} mm spiral line" if p.vase_mode != FAKE_VASE else
+                     f"{max(int(p.walls), 1)} walls of {p.line_width:g} mm (about {self.wall:.1f} mm)")
+                    + f", on a {self.zb:g} mm solid bottom ({self.bottom_layers} layers)",
             "Steepest overhang": lean,
             "Filament": f"{self.grams:.0f} g, {self.metres:.1f} m",
             "Print time": f"about {duration(self.seconds)}",

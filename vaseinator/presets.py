@@ -5,14 +5,14 @@ from __future__ import annotations
 import random
 
 from .expr import EXAMPLES
-from .params import (BANDS, CIRCLE, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FLOWER, GEAR, GLOSSY,
-                     GRADIENT, GROWS, MATTE, MIDDLE, ONE_COLOUR, PEBBLE, POLYGON, SAME, SILK,
+from .params import (BANDS, CIRCLE, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FAKE_VASE, FLOWER, GEAR, GLOSSY,
+                     GRADIENT, GROWS, MATTE, MIDDLE, ONE_COLOUR, PEBBLE, POLYGON, REAL_VASE, SAME, SILK,
                      SLOW_DOWN, SPEED_UP, STAR, STRIPES, SWING, TRANSLUCENT, VaseParams)
 from .shapes import PALETTES, PROFILES
 
 # the settings that belong to the printer, not the design: kept when a design is swapped
 PRINTER_KEYS = ("line_width", "layer_height", "bottom", "printer_height", "bed_x", "bed_y", "speed",
-                "max_flow", "filament_d", "density", "facet_size", "max_overhang")
+                "max_flow", "filament_d", "density", "facet_size", "max_overhang", "walls")
 
 
 def outline(profile: int, widest: float):
@@ -42,14 +42,14 @@ GALLERY = [
      dict(shape1=POLYGON, count1=6, sharp1=0.25, twist=120, twist_style=EVENLY, colour_style=ONE_COLOUR,
           color1="#C9A227", look=SILK)),
     ("Lattice Lantern", "An octagon twisted both ways at once: a lattice of crossing ridges.",
-     dict(**_profile(4, 100), height=170, shape1=POLYGON, count1=8, sharp1=0.05, lattice=True, twist=100,
+     dict(vase_mode=FAKE_VASE, **_profile(4, 100), height=170, shape1=POLYGON, count1=8, sharp1=0.05, lattice=True, twist=100,
           twist_style=EVENLY, colour_style=BANDS, band_count=3, colours_used=3, look=GLOSSY, **palette("Ember"))),
     ("Ocean Ripple", "Rings like ripples over a gently lumpy wall, on a gradient spool.",
      dict(**_profile(2, 104), shape1=CIRCLE, ring_count=14, ring_depth=1.3, ring_sharp=0.2, organic_depth=0.8,
           organic_scale=30, twist=0, colour_style=GRADIENT, colours_used=4, gradient_length=4.0, look=SILK,
           **palette("Glacier"))),
     ("Tulip Bloom", "Six petals at the foot opening out into a round rim.",
-     dict(**_profile(6, 104), shape1=FLOWER, count1=6, depth1=0.28, sharp1=0.25, shape2=CIRCLE, morph=SLOW_DOWN,
+     dict(vase_mode=FAKE_VASE, **_profile(6, 104), shape1=FLOWER, count1=6, depth1=0.28, sharp1=0.25, shape2=CIRCLE, morph=SLOW_DOWN,
           twist=60, twist_style=EASE, colour_style=BANDS, band_count=2, colours_used=2, band_spacing=0.6,
           color1="#FF70A6", color2="#FFFFFF", look=SILK)),
     ("Gem Facets", "Low-poly facets with a slightly rough cut, like a cut stone.",
@@ -66,11 +66,11 @@ GALLERY = [
           rib_depth=1.1, rib_sharp=0.15, rib_lean=140, rib_cross=True, twist=0, fade_rim=6.0,
           colour_style=ONE_COLOUR, color1="#2B2D42", look=MATTE)),
     ("Gear Tower", "Gear teeth swinging back and forth, in stripes of gold and black.",
-     dict(profile=-1, silhouette=[[0.0, 90.0], [1.0, 74.0]], height=200, shape1=GEAR, count1=14, depth1=0.08,
+     dict(vase_mode=FAKE_VASE, profile=-1, silhouette=[[0.0, 90.0], [1.0, 74.0]], height=200, shape1=GEAR, count1=14, depth1=0.08,
           sharp1=0.5, twist=24, twist_style=SWING, swings=2, colour_style=STRIPES, stripe_height=20.0,
           colours_used=2, look=GLOSSY, **palette("Gold and black"))),
     ("Star to Moon", "A five-pointed star that turns and melts into a circle.",
-     dict(**_profile(5, 104), shape1=STAR, count1=5, depth1=0.35, sharp1=0.7, shape2=CIRCLE, morph=EASE,
+     dict(vase_mode=FAKE_VASE, **_profile(5, 104), shape1=STAR, count1=5, depth1=0.35, sharp1=0.7, shape2=CIRCLE, morph=EASE,
           twist=144, twist_style=SLOW_DOWN, colour_style=BANDS, band_count=4, colours_used=4,
           band_spacing=-0.3, look=SILK, **palette("Neon"))),
     ("Pentagon Pulse", "Circle, pentagon, circle, pentagon: the shape changes back and forth up the vase.",
@@ -81,11 +81,11 @@ GALLERY = [
      dict(**_profile(4, 100), shape1=CIRCLE, bump_around=14, bump_up=12, bump_depth=1.8, twist=0,
           colour_style=ONE_COLOUR, color1="#90E0EF", look=TRANSLUCENT)),
     ("Pagoda Rings", "A rounded square with deep rings, turning more slowly as it rises.",
-     dict(**_profile(3, 104), shape1=POLYGON, count1=4, sharp1=0.45, ring_count=7, ring_depth=2.5,
+     dict(vase_mode=FAKE_VASE, **_profile(3, 104), shape1=POLYGON, count1=4, sharp1=0.45, ring_count=7, ring_depth=2.5,
           ring_sharp=0.55, twist=90, twist_style=SLOW_DOWN, colour_style=BANDS, band_count=7, colours_used=2,
           look=GLOSSY, color1="#9D0208", color2="#1A1A1A")),
     ("Hourglass Weave", "Ten petals twisted both ways round an hourglass.",
-     dict(**_profile(7, 100), shape1=FLOWER, count1=10, depth1=0.12, sharp1=0.5, lattice=True, twist=120,
+     dict(vase_mode=FAKE_VASE, **_profile(7, 100), shape1=FLOWER, count1=10, depth1=0.12, sharp1=0.5, lattice=True, twist=120,
           twist_style=EVENLY, colour_style=BANDS, band_count=2, colours_used=2, look=SILK, **palette("Forest"))),
     ("Math Waves", "Your own function: waves winding round the vase.",
      dict(profile=-1, silhouette=[[0.0, 80.0], [0.5, 92.0], [1.0, 80.0]], shape1=CIRCLE, twist=0,
@@ -193,6 +193,7 @@ def surprise(keep: VaseParams, seed: int) -> VaseParams:
     for k, v in palette(rng.choice(PALETTES)[0]).items():
         setattr(p, k, v)
     p.colour_style = rng.choices([ONE_COLOUR, BANDS, STRIPES, GRADIENT], [3, 3, 1, 2])[0]
+    p.vase_mode = FAKE_VASE if p.colour_style in (BANDS, STRIPES) else REAL_VASE
     p.colours_used = rng.randint(2, 4)
     p.band_count = rng.randint(2, 6)
     p.band_spacing = round(rng.uniform(-0.6, 0.6), 2)

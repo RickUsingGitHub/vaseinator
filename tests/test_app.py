@@ -3,12 +3,9 @@
 Run:  .venv\\Scripts\\python -m tests.test_app
 """
 
-import json
 import os
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
-import zipfile
 
 import numpy as np
 
@@ -20,9 +17,8 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E4
 
 from vaseinator import app as appmod  # noqa: E402
 from vaseinator.geometry import edge_check  # noqa: E402
-from vaseinator.params import (BANDS, CIRCLE, GRADIENT, OWN, OWN_PROFILE, POLYGON, STAR, SWING,  # noqa: E402
-                               load_design)
-from tests.test_vase import make_template  # noqa: E402
+from vaseinator.params import (BANDS, CIRCLE, FAKE_VASE, GRADIENT, ONE_COLOUR, OWN, OWN_PROFILE,  # noqa: E402
+                               POLYGON, REAL_VASE, STAR, SWING, load_design)
 from vaseinator.stl import read_stl  # noqa: E402
 from vaseinator.threemf import read_3mf  # noqa: E402
 
@@ -159,32 +155,31 @@ def main():
     [(name, v3, f3, fil, pos)] = read_3mf(out["3mf"])
     check("a one-colour 3MF is the whole vase, in the middle of the bed, asking nothing",
           pos == (win.params.bed_x / 2, win.params.bed_y / 2, 0.0) and len(f3) == win.design.triangles)
+    # Real / Fake: a real spiral vase offers one colour; a fake one bands, walls and colour parts
+    choose("vase_mode", REAL_VASE)
+    styles = [win.widgets["colour_style"].itemData(i) for i in range(win.widgets["colour_style"].count())]
+    check("a real spiral vase offers one colour or a gradient spool, and no walls",
+          styles == [ONE_COLOUR, GRADIENT] and not win._wanted("walls") and not win._wanted("band_count"))
+    choose("vase_mode", FAKE_VASE)
     choose("colour_style", BANDS)
     win.widgets["band_count"].setValue(3)
     choose("colours_used", 3)
+    check("a fake one offers bands and stripes, and walls", win.widgets["colour_style"].count() == 4
+          and win._wanted("walls") and win._wanted("band_count") and "walls" in win.info.toPlainText())
     win.export_3mf()
     parts = read_3mf(out["3mf"])
-    check("a banded 3MF is a part per band, set to filaments 1, 2 and 3, each closed",
+    check("... and its 3MF is a part per band, set to filaments 1, 2 and 3, each closed",
           [p[3] for p in parts] == [1, 2, 3] and all(edge_check(p[2])[0] for p in parts)
-          and "File ▸ Import" in win.statusBar().currentMessage())
+          and "spiral vase off" in win.statusBar().currentMessage())
+    choose("vase_mode", REAL_VASE)
+    win.export_3mf()
+    check("switched back to real, the same design exports as one solid, for spiral vase mode",
+          len(read_3mf(out["3mf"])) == 1 and "turn on spiral vase" in win.statusBar().currentMessage()
+          and win.params.colour_style == BANDS)
+    choose("vase_mode", FAKE_VASE)
+    check("... and switching to fake again brings its bands back", len(win.design.bands) == 3)
     win.copy_colour_plan()
     check("the colour plan goes to the clipboard", "Vaseinator" in QApplication.clipboard().text())
-
-    # optional slicer settings chosen: Export 3MF writes a project with spiral vase on and the colour changes in
-    QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.Ok)
-    make_template(os.path.join(tmp, "printer.3mf"))
-    win._set_template(os.path.join(tmp, "printer.3mf"))
-    check("the chosen slicer settings show their printer", "Test Printer" in win.widgets["slicer_template"].full)
-    win.export_3mf()
-    with zipfile.ZipFile(out["3mf"]) as z:
-        cfg = json.loads(z.read("Metadata/project_settings.config"))
-        tops = [e.get("extruder") for e in ET.fromstring(z.read("Metadata/custom_gcode_per_layer.xml")).iter("layer")]
-    check("... a project with spiral vase on and a tool change for each band",
-          cfg["spiral_mode"] == "1" and tops == ["2", "3"] and "File ▸ Open" in win.statusBar().currentMessage())
-    check("... and the panel says the export puts the changes in", "puts these changes in" in win.info.toPlainText())
-    win._set_template("")
-    check("forgetting them goes back to band parts", win.template is None
-          and "Choose a saved project" in win.widgets["slicer_template"].full)
 
     # a broken function is reported, not crashed on
     win.widgets["expression"].setPlainText("sin(theta")
