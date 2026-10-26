@@ -2,9 +2,12 @@
 
 A 3MF file is a zip archive holding an XML model.  Two kinds are written:
 
-* **Geometry only** (:func:`write_3mf`): the vase, plus
-  ``Metadata/model_settings.config`` setting its filament.  It holds no
-  printer or print settings, so nothing in the slicer is changed by it.
+* **The vase in colour** (:func:`write_3mf`): one object with a part per
+  colour band, each set to its filament in ``Metadata/model_settings.config``
+  - as Lenticular Sign Maker and Maze Tube Designer write them.  It holds no
+  printer or print settings, so nothing in the slicer is changed by it.  The
+  slicers will not print an object of several filaments in spiral vase mode,
+  so a vase in bands prints as an ordinary hollow vase this way.
 * **A slicer project** (:func:`write_project_3mf`) for the Bambu Studio /
   OrcaSlicer family (Flash Studio is one).  Its printer and filament settings
   come from a project the user saved in their slicer, with spiral vase mode
@@ -52,9 +55,7 @@ def _hex(rgb) -> str:
     return "#" + "".join(f"{int(round(max(0.0, min(1.0, c)) * 255)):02X}" for c in rgb)
 
 
-def write_3mf(path: str, name: str, verts: np.ndarray, faces: np.ndarray, filament: int = 1,
-              color=(0.8, 0.8, 0.8), position=(0.0, 0.0, 0.0)):
-    """Write the vase as one object; the position goes into the build transform."""
+def _object_xml(obj_id: int, name: str, verts: np.ndarray, faces: np.ndarray, material: str = "") -> str:
     v = np.asarray(verts, dtype=np.float64)
     f = np.asarray(faces)
     # numpy string formatting is much faster than a Python loop for big meshes
@@ -64,35 +65,58 @@ def write_3mf(path: str, name: str, verts: np.ndarray, faces: np.ndarray, filame
     ts = np.char.add(np.char.add('<triangle v1="', np.char.mod("%d", f[:, 0])), '" v2="')
     ts = np.char.add(np.char.add(ts, np.char.mod("%d", f[:, 1])), '" v3="')
     ts = np.char.add(np.char.add(ts, np.char.mod("%d", f[:, 2])), '"/>')
+    return (f' <object id="{obj_id}" type="model" name="{_xml_escape(name)}"{material}>\n'
+            '  <mesh>\n   <vertices>\n' + "\n".join(vs.tolist()) + '\n   </vertices>\n'
+            '   <triangles>\n' + "\n".join(ts.tolist()) + '\n   </triangles>\n  </mesh>\n'
+            ' </object>\n')
+
+
+def write_3mf(path: str, name: str, parts, position=(0.0, 0.0, 0.0)):
+    """Write the vase as one object made of single-filament parts - one per colour band.
+
+    parts: list of (part name, verts (V,3), faces (F,3), filament number from 1,
+    display colour (r, g, b) in 0..1).  The same layout as Lenticular Sign Maker
+    and Maze Tube Designer: Flash Studio / OrcaSlicer read each part's filament
+    number from ``Metadata/model_settings.config`` on File ▸ Import, and the
+    colours can be reassigned there.  The position goes into the build
+    transform, so the vase sits at its place on the plate.
+    """
+    resources = [' <basematerials id="1">\n'
+                 + "".join(f'  <base name="{_xml_escape(nm)}" displaycolor="{_hex(rgb)}"/>\n'
+                           for nm, _, _, _, rgb in parts)
+                 + ' </basematerials>\n']
+    ids = []
+    for k, (nm, verts, faces, _, _) in enumerate(parts):
+        ids.append(k + 2)
+        resources.append(_object_xml(k + 2, nm, verts, faces, f' pid="1" pindex="{k}"'))
+    item = len(parts) + 2
+    comps = "".join(f'   <component objectid="{i}"/>\n' for i in ids)
+    resources.append(f' <object id="{item}" type="model" name="{_xml_escape(name)}">\n'
+                     f'  <components>\n{comps}  </components>\n </object>\n')
     x, y, z = (float(c) for c in position)
-    nm = _xml_escape(name)
     model = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<model unit="millimeter" xml:lang="en-US" '
         'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n'
-        f' <metadata name="Title">{nm}</metadata>\n'
+        f' <metadata name="Title">{_xml_escape(name)}</metadata>\n'
         ' <metadata name="Application">Vaseinator</metadata>\n'
-        ' <resources>\n'
-        f'  <basematerials id="1">\n   <base name="{nm}" displaycolor="{_hex(color)}"/>\n  </basematerials>\n'
-        f'  <object id="2" type="model" name="{nm}" pid="1" pindex="0">\n'
-        '   <mesh>\n    <vertices>\n' + "\n".join(vs.tolist()) + '\n    </vertices>\n'
-        '    <triangles>\n' + "\n".join(ts.tolist()) + '\n    </triangles>\n   </mesh>\n'
-        '  </object>\n'
-        ' </resources>\n'
+        ' <resources>\n' + "".join(resources) + ' </resources>\n'
         ' <build>\n'
-        f'  <item objectid="2" transform="1 0 0 0 1 0 0 0 1 {x:.4f} {y:.4f} {z:.4f}"/>\n'
+        f'  <item objectid="{item}" transform="1 0 0 0 1 0 0 0 1 {x:.4f} {y:.4f} {z:.4f}"/>\n'
         ' </build>\n'
         '</model>\n')
+    # the part list Orca-family slicers read names and filament numbers from
     settings = (
         '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n'
-        ' <object id="2">\n'
-        f'  <metadata key="name" value="{nm}"/>\n'
-        f'  <metadata key="extruder" value="{int(filament)}"/>\n'
-        '  <part id="2" subtype="normal_part">\n'
-        f'   <metadata key="name" value="{nm}"/>\n'
-        f'   <metadata key="extruder" value="{int(filament)}"/>\n'
-        '  </part>\n'
-        ' </object>\n</config>\n')
+        f' <object id="{item}">\n'
+        f'  <metadata key="name" value="{_xml_escape(name)}"/>\n'
+        f'  <metadata key="extruder" value="{int(parts[0][3])}"/>\n'
+        + "".join(f'  <part id="{i}" subtype="normal_part">\n'
+                  f'   <metadata key="name" value="{_xml_escape(nm)}"/>\n'
+                  f'   <metadata key="extruder" value="{int(fil)}"/>\n'
+                  f'  </part>\n'
+                  for i, (nm, _, _, fil, _) in zip(ids, parts))
+        + ' </object>\n</config>\n')
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         zf.writestr("[Content_Types].xml", _CONTENT_TYPES)
         zf.writestr("_rels/.rels", _RELS)
@@ -103,7 +127,7 @@ def write_3mf(path: str, name: str, verts: np.ndarray, faces: np.ndarray, filame
 def read_3mf(path: str):
     """Read back a 3MF written by :func:`write_3mf` (used by the tests).
 
-    Returns (name, verts, faces, filament, (x, y, z)).
+    Returns a list of (part name, verts, faces, filament number, (x, y, z)).
     """
     import xml.etree.ElementTree as ET
 
@@ -111,16 +135,27 @@ def read_3mf(path: str):
         root = ET.fromstring(zf.read("3D/3dmodel.model"))
         config = ET.fromstring(zf.read("Metadata/model_settings.config"))
     assert root.get("unit") == "millimeter"
-    fil = int(config.find("object/metadata[@key='extruder']").get("value"))
-    obj = root.find("m:resources", _NS).find("m:object", _NS)
-    mesh = obj.find("m:mesh", _NS)
-    v = np.array([[float(e.get(a)) for a in "xyz"]
-                  for e in mesh.find("m:vertices", _NS).findall("m:vertex", _NS)])
-    f = np.array([[int(e.get(a)) for a in ("v1", "v2", "v3")]
-                  for e in mesh.find("m:triangles", _NS).findall("m:triangle", _NS)])
-    item = root.find("m:build", _NS).find("m:item", _NS)
-    t = [float(x) for x in item.get("transform").split()]
-    return obj.get("name"), v, f, fil, tuple(t[9:12])
+    fils = {part.get("id"): int(part.find("metadata[@key='extruder']").get("value"))
+            for part in config.iter("part")}
+    meshes, groups = {}, {}
+    for obj in root.find("m:resources", _NS).findall("m:object", _NS):
+        mesh = obj.find("m:mesh", _NS)
+        if mesh is None:
+            groups[obj.get("id")] = [c.get("objectid") for c in
+                                     obj.find("m:components", _NS).findall("m:component", _NS)]
+            continue
+        v = np.array([[float(e.get(a)) for a in "xyz"]
+                      for e in mesh.find("m:vertices", _NS).findall("m:vertex", _NS)])
+        f = np.array([[int(e.get(a)) for a in ("v1", "v2", "v3")]
+                      for e in mesh.find("m:triangles", _NS).findall("m:triangle", _NS)])
+        meshes[obj.get("id")] = (obj.get("name"), v, f)
+    out = []
+    for item in root.find("m:build", _NS).findall("m:item", _NS):
+        t = [float(x) for x in item.get("transform").split()]
+        for oid in groups[item.get("objectid")]:
+            name, v, f = meshes[oid]
+            out.append((name, v, f, fils[oid], tuple(t[9:12])))
+    return out
 
 
 # ============================================================ slicer projects

@@ -638,6 +638,57 @@ class VaseDesign:
     def filament_of(self, k: int) -> str:
         return getattr(self.p, f"color{k}").upper()
 
+    def band_parts(self):
+        """The vase as one closed solid per colour band: [(filament, verts, faces)], bottom to top.
+
+        Neighbouring bands meet on a shared flat face at the height where the
+        colour changes, so together they fill the vase exactly once - the way
+        a slicer wants the parts of a multi-colour object.
+        """
+        tops = [zs for zs, _ in self.bands[1:]] + [self.H]
+        parts = []
+        for (lo, fil), hi in zip(self.bands, tops):
+            if self.rows is None:
+                inside = (self.z > lo + 1e-6) & (self.z < hi - 1e-6)
+                zs = np.concatenate([[lo], self.z[inside], [hi]])
+                Rs = np.vstack([self._row_at(lo), self.R[inside], self._row_at(hi)])
+                verts, faces, _, first, last = grid_side(zs, self.theta, Rs)
+            else:
+                rings = [self._ring_at(lo)] + [r for r in self.rows if lo + 1e-6 < r[0] < hi - 1e-6] + [self._ring_at(hi)]
+                verts, faces, _, first, last = loft_side(rings)
+            n = len(verts)
+            verts = np.concatenate([verts, [[0.0, 0.0, lo], [0.0, 0.0, hi]]])
+            faces = np.concatenate([faces, fan(n, first, up=False), fan(n + 1, last, up=True)])
+            parts.append((fil, verts, faces))
+        return parts
+
+    def _row_at(self, zq):
+        """The surface's radii at height zq, between the grid's rows (straight up each column)."""
+        fj = min(max(zq / self.dz, 0.0), self.M)
+        j = min(int(fj), self.M - 1)
+        return self.R[j] + (fj - j) * (self.R[j + 1] - self.R[j])
+
+    def _ring_at(self, zq):
+        """The low-poly wall's cross-section at height zq, as a ring (z, angles, radii)."""
+        for row in self.rows:
+            if abs(row[0] - zq) < 1e-6:
+                return row
+        j = max(k for k, row in enumerate(self.rows) if row[0] < zq)
+        verts, faces, *_ = loft_side(self.rows[j:j + 2])
+        tri = verts[faces]
+        d = tri[:, :, 2] - zq
+        pts = []
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            hit = d[:, a] * d[:, b] < 0
+            t = d[hit, a] / (d[hit, a] - d[hit, b])
+            pts.append(tri[hit, a] + (tri[hit, b] - tri[hit, a]) * t[:, None])
+        pts = np.unique(np.round(np.concatenate(pts)[:, :2], 6), axis=0)
+        ang = np.mod(np.arctan2(pts[:, 1], pts[:, 0]), TAU)
+        order = np.argsort(ang)
+        ang, rad = ang[order], np.hypot(pts[order, 0], pts[order, 1])
+        keep = np.concatenate([[True], np.diff(ang) > 1e-7])
+        return (zq, ang[keep], rad[keep])
+
     def colour_changes(self, first_layer: float | None = None):
         """[(layer number, height of that layer's top, filament)] for each change after the first.
 

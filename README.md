@@ -50,12 +50,12 @@ ready to slice.
   print** builds it up in real print time (wide layers take longer).
 * **The sums**: size, base and opening, how much water it holds, filament in grams and metres, print
   time, steepest overhang, and the mesh – closed and watertight.
-* **Slicer projects**: on a project saved in Flash Studio (or OrcaSlicer or Bambu Studio), Export 3MF
-  writes a ready-to-slice project with spiral vase on and the colour bands as tool or filament changes.
 * **Gallery** of seventeen ready-made vases, **Surprise me** (a new random vase that still prints), and
   **undo / redo** of everything.
-* Exports a solid **STL** for spiral vase mode, or a **3MF** placed in the middle of the bed and set to
-  the vase's first filament. Designs save as `.vase` files (JSON).
+* Exports a solid **STL** for spiral vase mode, or a **3MF** in the middle of the bed with each colour band
+  as its own part, set to its filament – as Lenticular Sign Maker and Maze Tube Designer do. Optionally, on
+  a project saved in Flash Studio, a ready-to-slice **spiral vase project** with the bands as filament
+  changes. Designs save as `.vase` files (JSON).
 * **Simple** shows the essentials; **Detailed** shows every setting and the curves.
 
 ## Download and run
@@ -126,9 +126,9 @@ shows fifteen layers stacked, so the twist and the change of shape are easy to s
 * **Sturdier still:** slice the same STL normally with 2–3 walls, 0% infill and 0 top layers – the wall is
   then several lines thick.
 * A **brim** helps a vase with a narrow foot stay put.
-* **Colour bands and stripes:** with **Slicer settings** chosen, Export 3MF puts the filament changes in for
-  you (see below). Without, add a filament change at each layer the panel lists on the slicer's layer
-  slider (**Edit ▸ Copy colour changes** puts the list on the clipboard). Each change pauses the spiral and
+* **Colour bands and stripes:** Export 3MF makes them parts of their own colours (see below). The slicers
+  won't print several filaments in spiral vase mode as parts, so print those as a hollow vase. For a
+  spiral vase in colour, the bands are filament changes at layers instead – each one pauses the spiral and
   leaves a small seam, so a few tall bands print cleaner than many thin ones. A gradient spool needs
   nothing.
 
@@ -142,10 +142,22 @@ one closed loop.
 
 ## Opening the 3MF in your slicer
 
-**With slicer settings (recommended).** Under *Printing*, choose **Slicer settings**: a project you have
-saved in Flash Studio (or OrcaSlicer or Bambu Studio) for your printer and filaments – set up any print and
-use **File ▸ Save Project** there. It is remembered. **Export 3MF** then writes a project on exactly those
-printer and filament settings, with:
+**Export 3MF** writes the vase as one object in the middle of the bed, with **each colour band its own
+part, set to its filament** – the same kind of file as Lenticular Sign Maker and Maze Tube Designer. In
+**Flash Studio or OrcaSlicer**, use **File ▸ Import** (Ctrl+I): the parts arrive set to filaments 1, 2, 3…
+in the vase's colours, and you can reassign them there as you like.
+
+* **One colour** (or a gradient spool): the vase is one part. Turn on spiral vase mode and print.
+* **Bands or stripes:** these slicers refuse to print an object of several filaments in spiral vase mode
+  ("*The spiral vase mode does not work when an object contains more than one materials*"), so print it
+  as an ordinary hollow vase: **2 walls, 0% infill, 0 top layers**, the bottom layers the panel gives.
+  It is still watertight and needs no supports – and with two walls it is the sturdier vase.
+
+**A spiral vase in colour (optional).** For that, the bands must be filament changes at their layers, and
+these slicers only read those from one of their own project files. So under *Printing*, choose **Slicer
+settings**: a project you have saved in Flash Studio (or OrcaSlicer or Bambu Studio) for your printer and
+filaments – set up any print and use **File ▸ Save Project** there. It is remembered. **Export 3MF** then
+writes a project on exactly those printer and filament settings, with:
 
 * spiral vase mode on: one wall of the app's line width, the right number of bottom layers, no top
   layers, no infill and no supports, at the app's layer height;
@@ -166,9 +178,7 @@ a window, and reports whether it spirals and where it changes colour:
 .venv\Scripts\python tools\check_with_slicer.py lagoon_twist.3mf
 ```
 
-**Without slicer settings,** Export 3MF writes the vase alone, in the middle of the bed and set to its
-first filament. In Flash Studio or OrcaSlicer, use **File ▸ Import** (Ctrl+I) and turn on spiral vase
-mode yourself.
+Click **✕** beside *Slicer settings* to go back to colour parts.
 
 ## Project layout
 

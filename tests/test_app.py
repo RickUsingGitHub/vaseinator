@@ -150,33 +150,31 @@ def main():
     QFileDialog.getSaveFileName = staticmethod(
         lambda *a, **k: (out[next(e for e in out if a[2].lower().endswith(e) or e in a[1].lower())], ""))
     QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Discard)
-
-    def answer(box):                      # Export 3MF asks how, with no slicer settings chosen: the shape only
-        for b in box.buttons():
-            if b.text() == "The shape only":
-                b.click()
-        return 0
-    QMessageBox.exec = answer
     win.save_design(as_new=True)
     check("save writes a design that opens the same", load_design(out["vase"]).to_dict() == win.params.to_dict())
     win.export_stl()
     verts, faces = read_stl(out["stl"])
     check("the exported STL is watertight", edge_check(faces)[0] and len(faces) == win.design.triangles)
     win.export_3mf()
-    name, v3, f3, fil, pos = read_3mf(out["3mf"])
-    check("the 3MF sits in the middle of the bed", pos == (win.params.bed_x / 2, win.params.bed_y / 2, 0.0)
-          and len(f3) == win.design.triangles)
+    [(name, v3, f3, fil, pos)] = read_3mf(out["3mf"])
+    check("a one-colour 3MF is the whole vase, in the middle of the bed, asking nothing",
+          pos == (win.params.bed_x / 2, win.params.bed_y / 2, 0.0) and len(f3) == win.design.triangles)
+    choose("colour_style", BANDS)
+    win.widgets["band_count"].setValue(3)
+    choose("colours_used", 3)
+    win.export_3mf()
+    parts = read_3mf(out["3mf"])
+    check("a banded 3MF is a part per band, set to filaments 1, 2 and 3, each closed",
+          [p[3] for p in parts] == [1, 2, 3] and all(edge_check(p[2])[0] for p in parts)
+          and "File ▸ Import" in win.statusBar().currentMessage())
     win.copy_colour_plan()
     check("the colour plan goes to the clipboard", "Vaseinator" in QApplication.clipboard().text())
 
-    # slicer settings chosen: Export 3MF writes a project with spiral vase on and the colour changes in
+    # optional slicer settings chosen: Export 3MF writes a project with spiral vase on and the colour changes in
     QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.Ok)
     make_template(os.path.join(tmp, "printer.3mf"))
     win._set_template(os.path.join(tmp, "printer.3mf"))
     check("the chosen slicer settings show their printer", "Test Printer" in win.widgets["slicer_template"].full)
-    choose("colour_style", BANDS)
-    win.widgets["band_count"].setValue(3)
-    choose("colours_used", 3)
     win.export_3mf()
     with zipfile.ZipFile(out["3mf"]) as z:
         cfg = json.loads(z.read("Metadata/project_settings.config"))
@@ -185,7 +183,7 @@ def main():
           cfg["spiral_mode"] == "1" and tops == ["2", "3"] and "File ▸ Open" in win.statusBar().currentMessage())
     check("... and the panel says the export puts the changes in", "puts these changes in" in win.info.toPlainText())
     win._set_template("")
-    check("forgetting them goes back to the shape only", win.template is None
+    check("forgetting them goes back to band parts", win.template is None
           and "Choose a saved project" in win.widgets["slicer_template"].full)
 
     # a broken function is reported, not crashed on

@@ -17,7 +17,8 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
-from vaseinator.geometry import TOLERANCE, VaseDesign, edge_check, lean_angles, mesh_volume  # noqa: E402
+from vaseinator.geometry import (TOLERANCE, VaseDesign, edge_check, face_normals, lean_angles,  # noqa: E402
+                                 mesh_volume)
 from vaseinator.params import (BANDS, CIRCLE, EVENLY, GEAR, ONE_COLOUR, OWN, POLYGON, SAME, STAR,  # noqa: E402
                                STRIPES, SWING, VaseParams, load_design, save_design)
 from vaseinator.presets import GALLERY, gallery_design, surprise  # noqa: E402
@@ -180,10 +181,40 @@ def test_3mf_round_trip():
     d = VaseDesign(gallery_design("Gem Facets"))
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "v.3mf")
-        write_3mf(path, "gem", d.verts, d.faces, 2, (0.5, 0.2, 0.8), (128.0, 128.0, 0.0))
-        name, v, f, fil, pos = read_3mf(path)
+        write_3mf(path, "gem", [("gem", d.verts, d.faces, 2, (0.5, 0.2, 0.8))], (128.0, 128.0, 0.0))
+        [(name, v, f, fil, pos)] = read_3mf(path)
     assert name == "gem" and fil == 2 and pos == (128.0, 128.0, 0.0)
     assert np.array_equal(f, d.faces) and np.allclose(v, d.verts, atol=1e-4)
+
+
+def test_colour_bands_as_parts():
+    """Each band its own closed part, set to its filament, together filling the vase exactly once."""
+    for p in (gallery_design("Lagoon Twist"), gallery_design("Gear Tower"),
+              VaseParams(**{**gallery_design("Gem Facets").to_dict(), "colour_style": BANDS, "band_count": 3,
+                            "colours_used": 3})):
+        d = VaseDesign(p)
+        parts = d.band_parts()
+        assert [f for f, _, _ in parts] == [f for _, f in d.bands], p.name
+        whole = mesh_volume(d.verts, d.faces)
+        assert abs(sum(mesh_volume(v, f) for _, v, f in parts) - whole) < 0.002 * whole, p.name
+        tops = [z for z, _ in d.bands[1:]] + [d.H]
+        for (fil, v, f), (lo, _), hi in zip(parts, d.bands, tops):
+            assert edge_check(f)[0], (p.name, fil)
+            assert abs(v[:, 2].min() - lo) < 1e-9 and abs(v[:, 2].max() - hi) < 1e-9
+            wall = np.abs(face_normals(v, f)[:, 2]) < 0.999
+            assert lean_angles(v, f[wall]).max() <= p.max_overhang + TOLERANCE + 0.5, p.name
+    # one colour: the vase as it is, in one part
+    d = VaseDesign(plain())
+    [(fil, v, f)] = d.band_parts()
+    assert fil == 1 and abs(mesh_volume(v, f) - mesh_volume(d.verts, d.faces)) < 1e-6 * mesh_volume(d.verts, d.faces)
+    with tempfile.TemporaryDirectory() as tmp:
+        p = gallery_design("Lagoon Twist")
+        d = VaseDesign(p)
+        colours = p.colors()
+        write_3mf(os.path.join(tmp, "b.3mf"), "b", [(f"band {k}", v, f, fil, colours[fil])
+                                                     for k, (fil, v, f) in enumerate(d.band_parts())])
+        back = read_3mf(os.path.join(tmp, "b.3mf"))
+    assert [b[3] for b in back] == [1, 2, 3] and all(edge_check(b[2])[0] for b in back)
 
 
 def make_template(path, filaments=4, first=0.25):
@@ -241,7 +272,7 @@ def test_slicer_project_carries_the_colour_changes():
         assert custom.find("plate/mode").get("value") == "SingleExtruder"
         assert {e.get("type") for e in custom.findall("plate/layer")} == {"0"}
         # a file that isn't a slicer project is turned down, saying why
-        write_3mf(os.path.join(tmp, "shape.3mf"), "v", d.verts[:3], np.array([[0, 1, 2]]))
+        write_3mf(os.path.join(tmp, "shape.3mf"), "v", [("v", d.verts[:3], np.array([[0, 1, 2]]), 1, (1, 1, 1))])
         try:
             read_template(os.path.join(tmp, "shape.3mf"))
             raise AssertionError("a shape-only 3MF was taken as slicer settings")

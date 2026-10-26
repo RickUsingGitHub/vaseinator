@@ -179,11 +179,14 @@ SPEC = [
     ]),
     ("Printing", [
         ("slicer_template", "Slicer settings", "template", None, None, None, "",
-         "A project you saved in Flash Studio (or OrcaSlicer or Bambu Studio) for your printer and\n"
-         "filaments - File ▸ Save Project there. Export 3MF then writes a project on those settings,\n"
-         "with spiral vase mode on and the colour bands as filament (tool) changes at their layers:\n"
-         "open it in the slicer with File ▸ Open, ready to slice. Remembered for every design.\n"
-         "Without one, Export 3MF writes the shape only."),
+         "Optional - only for a spiral vase in several colours.\n"
+         "Without it, Export 3MF writes each colour band as its own part, set to its filament, to load\n"
+         "with File ▸ Import - but the slicers won't print parts of several filaments in spiral vase\n"
+         "mode, so a banded vase prints as an ordinary hollow vase.\n"
+         "With it - a project you saved in Flash Studio (or OrcaSlicer or Bambu Studio) for your\n"
+         "printer, File ▸ Save Project there - Export 3MF writes a project on those settings with spiral\n"
+         "vase on and the bands as filament (tool) changes at their layers: open it with File ▸ Open.\n"
+         "Remembered for every design."),
         ("max_overhang", "Steepest overhang", "float", 10.0, 70.0, 1.0, "°",
          "How far the wall may lean from upright, out or in. A spiral wall is one line wide,\n"
          "so it leans on the line beneath it either way. 45° prints on almost any printer."),
@@ -604,7 +607,7 @@ class MainWindow(QMainWindow):
             b.clicked.connect(self._pick_template)
             clear = QToolButton()
             clear.setText("✕")
-            clear.setToolTip("Forget these settings: Export 3MF writes the shape only")
+            clear.setToolTip("Forget these settings: Export 3MF writes the colour bands as parts")
             clear.clicked.connect(lambda: self._set_template(""))
             self.template_clear = clear
             self.widgets[key] = b
@@ -806,7 +809,8 @@ class MainWindow(QMainWindow):
         else:
             text = "Choose a saved project…"
         b.set_full_text(text)
-        b.setToolTip(self.template_path or "No slicer settings chosen: Export 3MF writes the shape only")
+        b.setToolTip(self.template_path or "Optional. Without slicer settings, Export 3MF writes the colour bands as "
+                                           "parts; with them, a spiral vase project with the colour changes in")
         self.template_clear.setEnabled(bool(self.template_path))
         s = p.band_spacing
         self.slider_notes["band_spacing"].setText(
@@ -1240,10 +1244,14 @@ class MainWindow(QMainWindow):
                         "the filament by hand (the saved printer has one filament).</p>")
                 elif len(d.bands) > 1:
                     html.append(
-                        "<p class='k'>In the slicer's preview, add a filament change at each of these "
-                        "layers on the layer slider (Edit ▸ Copy colour changes puts the list on the "
-                        "clipboard) - or choose <b>Slicer settings</b> under Printing, and Export 3MF puts "
-                        "them in for you. Each change pauses the spiral and leaves a small seam.</p>")
+                        "<p class='k'><b>Export 3MF</b> makes each band its own part, set to its filament: load "
+                        "it with File ▸ Import and change the colours there as you like. The slicers won't "
+                        "print parts of several filaments in spiral vase mode, so print it as a hollow vase - "
+                        "2 walls, 0% infill, 0 top layers - which is sturdier anyway.</p>"
+                        "<p class='k'>For a <b>spiral</b> vase in these colours instead: choose <b>Slicer "
+                        "settings</b> under Printing and Export 3MF puts the changes in at these layers, or add "
+                        "them on the slicer's layer slider yourself (Edit ▸ Copy colour changes lists them). "
+                        "Each change pauses the spiral and leaves a small seam.</p>")
             if self.template is not None:
                 html.append(
                     f"<h3>Slicing it</h3><p class='k'><b>Export 3MF</b> writes a project for the "
@@ -1481,30 +1489,20 @@ class MainWindow(QMainWindow):
             f"Exported {os.path.basename(path)} ({d.triangles:,} triangles, watertight) to "
             f"{os.path.dirname(path)} — slice it with spiral vase mode on", 12000)
 
+    def band_parts(self, d):
+        """The vase for write_3mf: a part per colour band, set to its filament."""
+        colors = d.p.colors()
+        parts = d.band_parts()
+        many = len(parts) > 1
+        return [(f"{self._safe_name()} band {k + 1}" if many else self._safe_name(), verts, faces, fil, colors[fil])
+                for k, (fil, verts, faces) in enumerate(parts)]
+
     def export_3mf(self):
-        """A slicer project on the chosen settings (spiral vase on, the colour changes in), or the shape only."""
+        """The vase with its colours: a part per band (Lenticular-style), or - with slicer settings
+        chosen - a slicer project with spiral vase on and the colour changes at their layers."""
         d = self._current_design()
         if d is None:
             return
-        if self.template is None:
-            box = QMessageBox(self)
-            box.setWindowTitle("Export 3MF")
-            box.setIcon(QMessageBox.Question)
-            box.setText("To carry the colour changes and the spiral vase settings, the 3MF is built on a "
-                        "project you have saved in your slicer for your printer and filaments.")
-            box.setInformativeText("In Flash Studio, set up any print for your printer and save it with File ▸ "
-                                   "Save Project, then choose that file. It is remembered for every design.")
-            choose = box.addButton("Choose a saved project…", QMessageBox.AcceptRole)
-            shape = box.addButton("The shape only", QMessageBox.ActionRole)
-            box.addButton(QMessageBox.Cancel)
-            box.setDefaultButton(choose)
-            box.exec()
-            if box.clickedButton() is choose:
-                self._pick_template()
-                if self.template is None:
-                    return
-            elif box.clickedButton() is not shape:
-                return
         p = d.p
         if self.template is not None:
             used = max(f for _, f in d.bands)
@@ -1529,7 +1527,8 @@ class MainWindow(QMainWindow):
                                             spiral_settings(d.bottom_layers, p.layer_height, p.line_width),
                                             d.bands, colours, middle)
             else:
-                write_3mf(path, base, d.verts, d.faces, fil, p.colors()[fil], middle)
+                parts = self.band_parts(d)
+                write_3mf(path, base, parts, middle)
         except OSError as exc:
             QMessageBox.critical(self, "Export failed", str(exc))
             return
@@ -1540,10 +1539,16 @@ class MainWindow(QMainWindow):
                 f"Exported {os.path.basename(path)}: a project for the {self.template['printer']}, spiral vase on, "
                 f"{n} colour change{'' if n == 1 else 's'} — open it in Flash Studio with File ▸ Open (Ctrl+O), "
                 "not Import", 15000)
+        elif len(parts) > 1:
+            fils = ", ".join(str(f) for f in sorted({f for _, _, _, f, _ in parts}))
+            self.statusBar().showMessage(
+                f"Exported {os.path.basename(path)}: {len(parts)} bands set to filaments {fils} — in Flash Studio use "
+                "File ▸ Import (Ctrl+I). Bands of several filaments can't print in spiral vase mode: slice it as a "
+                "hollow vase (2 walls, 0% infill, 0 top layers)", 15000)
         else:
             self.statusBar().showMessage(
-                f"Exported {os.path.basename(path)} to {os.path.dirname(path)} — the shape only: load it with "
-                "File ▸ Import (Ctrl+I) and turn on spiral vase", 12000)
+                f"Exported {os.path.basename(path)} to {os.path.dirname(path)} — in Flash Studio use File ▸ Import "
+                f"(Ctrl+I), then turn on spiral vase", 12000)
 
     # ------------------------------------------------------------ slicer settings
     def _load_template(self, path):
@@ -1626,13 +1631,17 @@ class MainWindow(QMainWindow):
             "<li>Test it in a sink first. A coat of clear epoxy or varnish inside seals any weep.</li>"
             "<li>Sturdier still: slice the same STL normally with 2–3 walls, 0% infill and 0 top layers.</li></ul>"
             "<h3>Colours</h3>"
-            "<p>Bands and stripes change filament at the layers the panel lists. Choose <b>Slicer settings</b> "
-            "under Printing - a project you saved in Flash Studio for your printer - and <b>Export 3MF</b> "
-            "writes a project with spiral vase on and those changes already in: open it with File ▸ Open, not "
-            "Import. On a printer with several toolheads, like the Creator 5 Pro, each change swaps the head; "
-            "on one with a single filament it pauses for you to change it. Without slicer settings, add the "
-            "changes on the slicer's layer slider yourself. A gradient spool needs nothing: the view shows "
-            "where its colours will land.</p>")
+            "<p><b>Export 3MF</b> makes each colour band its own part, set to its filament, like Lenticular "
+            "Sign Maker: load it with File ▸ Import and change the colours as you like. The slicers won't print "
+            "an object of several filaments in spiral vase mode, so print a banded vase as a hollow vase: 2 "
+            "walls, 0% infill, 0 top layers.</p>"
+            "<p>For a <b>spiral</b> vase in colour, the bands must be filament changes at their layers instead. "
+            "Choose <b>Slicer settings</b> under Printing - a project you saved in Flash Studio for your printer "
+            "- and Export 3MF writes a project with spiral vase on and those changes already in: open it with "
+            "File ▸ Open. On a printer with several toolheads, like the Creator 5 Pro, each change swaps the "
+            "head; on one with a single filament it pauses for you to change it. Or add the changes on the "
+            "slicer's layer slider yourself. A gradient spool needs nothing: the view shows where its colours "
+            "will land.</p>")
 
     def about(self):
         QMessageBox.about(
@@ -1757,8 +1766,7 @@ def main(argv=None):
             out_dir = argv[argv.index("--export-test") + 1]
             d = win.design
             write_stl(os.path.join(out_dir, "t_vase.stl"), d.verts, d.faces, "t")
-            write_3mf(os.path.join(out_dir, "t.3mf"), "t", d.verts, d.faces, d.bands[0][1],
-                      d.p.colors()[d.bands[0][1]], (d.p.bed_x / 2, d.p.bed_y / 2, 0.0))
+            write_3mf(os.path.join(out_dir, "t.3mf"), "t", win.band_parts(d), (d.p.bed_x / 2, d.p.bed_y / 2, 0.0))
 
         def snap():
             win._fitted = None
