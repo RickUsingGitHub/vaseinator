@@ -3,9 +3,12 @@
 Run:  .venv\\Scripts\\python -m tests.test_app
 """
 
+import json
 import os
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
 
 import numpy as np
 
@@ -17,7 +20,9 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E4
 
 from vaseinator import app as appmod  # noqa: E402
 from vaseinator.geometry import edge_check  # noqa: E402
-from vaseinator.params import CIRCLE, GRADIENT, OWN, OWN_PROFILE, POLYGON, STAR, SWING, load_design  # noqa: E402
+from vaseinator.params import (BANDS, CIRCLE, GRADIENT, OWN, OWN_PROFILE, POLYGON, STAR, SWING,  # noqa: E402
+                               load_design)
+from tests.test_vase import make_template  # noqa: E402
 from vaseinator.stl import read_stl  # noqa: E402
 from vaseinator.threemf import read_3mf  # noqa: E402
 
@@ -145,6 +150,13 @@ def main():
     QFileDialog.getSaveFileName = staticmethod(
         lambda *a, **k: (out[next(e for e in out if a[2].lower().endswith(e) or e in a[1].lower())], ""))
     QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Discard)
+
+    def answer(box):                      # Export 3MF asks how, with no slicer settings chosen: the shape only
+        for b in box.buttons():
+            if b.text() == "The shape only":
+                b.click()
+        return 0
+    QMessageBox.exec = answer
     win.save_design(as_new=True)
     check("save writes a design that opens the same", load_design(out["vase"]).to_dict() == win.params.to_dict())
     win.export_stl()
@@ -156,6 +168,25 @@ def main():
           and len(f3) == win.design.triangles)
     win.copy_colour_plan()
     check("the colour plan goes to the clipboard", "Vaseinator" in QApplication.clipboard().text())
+
+    # slicer settings chosen: Export 3MF writes a project with spiral vase on and the colour changes in
+    QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.Ok)
+    make_template(os.path.join(tmp, "printer.3mf"))
+    win._set_template(os.path.join(tmp, "printer.3mf"))
+    check("the chosen slicer settings show their printer", "Test Printer" in win.widgets["slicer_template"].full)
+    choose("colour_style", BANDS)
+    win.widgets["band_count"].setValue(3)
+    choose("colours_used", 3)
+    win.export_3mf()
+    with zipfile.ZipFile(out["3mf"]) as z:
+        cfg = json.loads(z.read("Metadata/project_settings.config"))
+        tops = [e.get("extruder") for e in ET.fromstring(z.read("Metadata/custom_gcode_per_layer.xml")).iter("layer")]
+    check("... a project with spiral vase on and a tool change for each band",
+          cfg["spiral_mode"] == "1" and tops == ["2", "3"] and "File ▸ Open" in win.statusBar().currentMessage())
+    check("... and the panel says the export puts the changes in", "puts these changes in" in win.info.toPlainText())
+    win._set_template("")
+    check("forgetting them goes back to the shape only", win.template is None
+          and "Choose a saved project" in win.widgets["slicer_template"].full)
 
     # a broken function is reported, not crashed on
     win.widgets["expression"].setPlainText("sin(theta")

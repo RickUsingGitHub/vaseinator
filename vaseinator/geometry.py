@@ -220,6 +220,18 @@ def blur_around(a, sigma_cols):
     return np.fft.irfft(np.fft.rfft(a, axis=1) * gain[None, :], n=N, axis=1)
 
 
+def layer_top(z: float, layer: float, first: float | None = None) -> tuple[int, float]:
+    """The first layer that starts at height z or above: (its number from 1, the height of its top).
+
+    The first layer may be thicker than the rest, as slicers often make it.
+    """
+    first = layer if first is None else first
+    if z <= first * 0.5:
+        return 1, first
+    k = max(math.ceil((z - first) / layer - 0.5), 0)         # whole layers above the first one, below z
+    return k + 2, round(first + (k + 1) * layer, 4)
+
+
 def duration(seconds: float) -> str:
     m = int(round(seconds / 60.0))
     return f"{m // 60} h {m % 60:02d} min" if m >= 60 else f"{max(m, 1)} min"
@@ -626,24 +638,27 @@ class VaseDesign:
     def filament_of(self, k: int) -> str:
         return getattr(self.p, f"color{k}").upper()
 
-    def colour_changes(self):
-        """[(layer number, height of that layer's top, filament)] for each change after the first."""
+    def colour_changes(self, first_layer: float | None = None):
+        """[(layer number, height of that layer's top, filament)] for each change after the first.
+
+        first_layer: the slicer's first layer height, if it differs from the rest.
+        """
         lh = self.p.layer_height
-        return [(int(round(zs / lh)) + 1, (int(round(zs / lh)) + 1) * lh, fil) for zs, fil in self.bands[1:]]
+        return [(*layer_top(zs, lh, first_layer), fil) for zs, fil in self.bands[1:]]
 
     def colour_phase(self, z):
         """Colour cycles of a gradient spool used by each height."""
         length = max(self.p.gradient_length, 0.05) * 1000.0
         return np.interp(z, self.filament_z, self.filament_at) / length
 
-    def colour_plan(self) -> str:
+    def colour_plan(self, first_layer: float | None = None) -> str:
         p = self.p
         lines = [f"Vaseinator: {p.name} - spiral vase, {p.layer_height:g} mm layers"]
         if self.gradient:
             lines.append(f"Print with one gradient spool (one colour cycle every {p.gradient_length:g} m).")
             return "\n".join(lines)
         lines.append(f"Start with filament {self.bands[0][1]} ({self.filament_of(self.bands[0][1])})")
-        for layer, ztop, fil in self.colour_changes():
+        for layer, ztop, fil in self.colour_changes(first_layer):
             lines.append(f"Layer {layer} ({ztop:.2f} mm): change to filament {fil} ({self.filament_of(fil)})")
         return "\n".join(lines)
 

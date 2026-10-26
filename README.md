@@ -50,6 +50,8 @@ ready to slice.
   print** builds it up in real print time (wide layers take longer).
 * **The sums**: size, base and opening, how much water it holds, filament in grams and metres, print
   time, steepest overhang, and the mesh – closed and watertight.
+* **Slicer projects**: on a project saved in Flash Studio (or OrcaSlicer or Bambu Studio), Export 3MF
+  writes a ready-to-slice project with spiral vase on and the colour bands as tool or filament changes.
 * **Gallery** of seventeen ready-made vases, **Surprise me** (a new random vase that still prints), and
   **undo / redo** of everything.
 * Exports a solid **STL** for spiral vase mode, or a **3MF** placed in the middle of the bed and set to
@@ -124,8 +126,9 @@ shows fifteen layers stacked, so the twist and the change of shape are easy to s
 * **Sturdier still:** slice the same STL normally with 2–3 walls, 0% infill and 0 top layers – the wall is
   then several lines thick.
 * A **brim** helps a vase with a narrow foot stay put.
-* **Colour bands and stripes:** in the slicer's preview, add a filament change at each layer the panel
-  lists (**Edit ▸ Copy colour changes** puts the list on the clipboard). Each change pauses the spiral and
+* **Colour bands and stripes:** with **Slicer settings** chosen, Export 3MF puts the filament changes in for
+  you (see below). Without, add a filament change at each layer the panel lists on the slicer's layer
+  slider (**Edit ▸ Copy colour changes** puts the list on the clipboard). Each change pauses the spiral and
   leaves a small seam, so a few tall bands print cleaner than many thin ones. A gradient spool needs
   nothing.
 
@@ -139,10 +142,33 @@ one closed loop.
 
 ## Opening the 3MF in your slicer
 
-**Export 3MF** writes the vase as one object in the middle of the bed, set to its first filament. In
-**Flash Studio or OrcaSlicer**, use **File → Import** (Ctrl+I); then turn on spiral vase mode. Opening the
-file as a project instead shows "loading geometry data only": that is harmless, and your printer and
-filament settings stay as they are.
+**With slicer settings (recommended).** Under *Printing*, choose **Slicer settings**: a project you have
+saved in Flash Studio (or OrcaSlicer or Bambu Studio) for your printer and filaments – set up any print and
+use **File ▸ Save Project** there. It is remembered. **Export 3MF** then writes a project on exactly those
+printer and filament settings, with:
+
+* spiral vase mode on: one wall of the app's line width, the right number of bottom layers, no top
+  layers, no infill and no supports, at the app's layer height;
+* the filament colours of the vase;
+* the colour bands and stripes as **filament changes at their layers**, at the first layer of each band
+  (allowing for a thicker first layer).
+
+Open it in Flash Studio with **File ▸ Open** (Ctrl+O) – *not* Import, which takes the shape only – check
+the preview and print. On a printer with several toolheads, such as the **Flashforge Creator 5 Pro**, each
+change parks one toolhead and picks up the next, which heats up before the spiral carries on: a short pause
+and a small seam, and no purge tower is needed. On a printer with one filament, each change is a pause for
+you to swap it by hand.
+
+`tools\check_with_slicer.py` slices an exported project with Flash Studio's own engine, without opening
+a window, and reports whether it spirals and where it changes colour:
+
+```
+.venv\Scripts\python tools\check_with_slicer.py lagoon_twist.3mf
+```
+
+**Without slicer settings,** Export 3MF writes the vase alone, in the middle of the bed and set to its
+first filament. In Flash Studio or OrcaSlicer, use **File ▸ Import** (Ctrl+I) and turn on spiral vase
+mode yourself.
 
 ## Project layout
 
@@ -160,7 +186,7 @@ filament settings stay as they are.
 | `vaseinator/params.py` | Settings, and saving and opening designs. |
 | `vaseinator/stl.py`, `threemf.py` | The exports. |
 | `tests/test_vase.py`, `tests/test_app.py` | Self-tests of the geometry and the window. |
-| `tools/` | The icon, the example files, and the STL checker. |
+| `tools/` | The icon, the example files, the STL checker, and the slicer check. |
 
 ### How the geometry works
 

@@ -3,11 +3,14 @@
 Run:  .venv\\Scripts\\python -m tests.test_vase
 """
 
+import json
 import math
 import os
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ET
+import zipfile
 
 import numpy as np
 
@@ -20,7 +23,8 @@ from vaseinator.params import (BANDS, CIRCLE, EVENLY, GEAR, ONE_COLOUR, OWN, POL
 from vaseinator.presets import GALLERY, gallery_design, surprise  # noqa: E402
 from vaseinator.shapes import PROFILES, pchip, shape_table  # noqa: E402
 from vaseinator.stl import read_stl, write_stl  # noqa: E402
-from vaseinator.threemf import read_3mf, write_3mf  # noqa: E402
+from vaseinator.threemf import (TemplateError, read_3mf, read_template, spiral_settings,  # noqa: E402
+                                write_3mf, write_project_3mf)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -180,6 +184,69 @@ def test_3mf_round_trip():
         name, v, f, fil, pos = read_3mf(path)
     assert name == "gem" and fil == 2 and pos == (128.0, 128.0, 0.0)
     assert np.array_equal(f, d.faces) and np.allclose(v, d.verts, atol=1e-4)
+
+
+def make_template(path, filaments=4, first=0.25):
+    """A stand-in for a project saved in Flash Studio: its stamp and some of its settings."""
+    cfg = {"printer_model": "Test Printer", "filament_colour": ["#111111"] * filaments,
+           "initial_layer_print_height": str(first), "layer_height": "0.12", "spiral_mode": "0", "wall_loops": "3",
+           "top_shell_layers": "4", "sparse_infill_density": "15%", "enable_support": "1",
+           "enable_wrapping_detection": "1", "outer_wall_line_width": "0.42", "brim_type": "auto_brim"}
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("3D/3dmodel.model", '<model><metadata name="Application">BambuStudio-02.06.00.51</metadata>'
+                                       '<metadata name="OrcaSlicer">2.4.2</metadata></model>')
+        z.writestr("Metadata/project_settings.config", json.dumps(cfg))
+        z.writestr("Metadata/slice_info.config", "<config/>")
+
+
+def test_slicer_project_carries_the_colour_changes():
+    p = plain(height=100.0, colour_style=BANDS, band_count=3, colours_used=3)
+    d = VaseDesign(p)
+    colours = {k: getattr(p, f"color{k}").upper() for k in range(1, 5)}
+    with tempfile.TemporaryDirectory() as tmp:
+        make_template(os.path.join(tmp, "t4.3mf"))
+        tpl = read_template(os.path.join(tmp, "t4.3mf"))
+        assert tpl["printer"] == "Test Printer" and tpl["filaments"] == 4
+        out = os.path.join(tmp, "v.3mf")
+        changes = write_project_3mf(out, "v", d.verts, d.faces, tpl,
+                                    spiral_settings(d.bottom_layers, p.layer_height, p.line_width), d.bands, colours,
+                                    (128.0, 128.0, 0.0))
+        with zipfile.ZipFile(out) as z:
+            cfg = json.loads(z.read("Metadata/project_settings.config"))
+            custom = ET.fromstring(z.read("Metadata/custom_gcode_per_layer.xml"))
+            model = z.read("3D/3dmodel.model").decode()
+            mesh = ET.fromstring(z.read("3D/Objects/vase_1.model"))
+        # the saved settings, with spiral vase switched on and this vase's layers, line and colours
+        assert cfg["printer_model"] == "Test Printer" and cfg["brim_type"] == "auto_brim"
+        assert (cfg["spiral_mode"], cfg["wall_loops"], cfg["top_shell_layers"], cfg["sparse_infill_density"],
+                cfg["enable_support"], cfg["enable_wrapping_detection"]) == ("1", "1", "0", "0%", "0", "0")
+        assert cfg["layer_height"] == "0.2" and cfg["outer_wall_line_width"] == "0.6"
+        assert cfg["bottom_shell_layers"] == str(d.bottom_layers)
+        assert cfg["filament_colour"] == [colours[k] for k in range(1, 5)]
+        assert 'name="Application">BambuStudio' in model       # so the slicer opens it as one of its projects
+        assert len(mesh.find(".//{*}vertices")) == len(d.verts)
+        # one tool change per band, at the first layer of the band (the first layer here is 0.25 mm)
+        layers = custom.findall("plate/layer")
+        assert custom.find("plate/mode").get("value") == "MultiAsSingle"
+        assert [(int(e.get("type")), int(e.get("extruder"))) for e in layers] == [(2, 2), (2, 3)]
+        for e, (z, fil), (_, top, _) in zip(layers, d.bands[1:], changes):
+            assert float(e.get("top_z")) == top and e.get("color") == colours[fil]
+            assert abs((top - 0.2) - z) <= 0.1 + 1e-9, (top, z)       # the layer starts where the band does
+        # a printer with one filament pauses for each change instead
+        make_template(os.path.join(tmp, "t1.3mf"), filaments=1)
+        write_project_3mf(out, "v", d.verts, d.faces, read_template(os.path.join(tmp, "t1.3mf")), {}, d.bands, colours)
+        with zipfile.ZipFile(out) as z:
+            custom = ET.fromstring(z.read("Metadata/custom_gcode_per_layer.xml"))
+        assert custom.find("plate/mode").get("value") == "SingleExtruder"
+        assert {e.get("type") for e in custom.findall("plate/layer")} == {"0"}
+        # a file that isn't a slicer project is turned down, saying why
+        write_3mf(os.path.join(tmp, "shape.3mf"), "v", d.verts[:3], np.array([[0, 1, 2]]))
+        try:
+            read_template(os.path.join(tmp, "shape.3mf"))
+            raise AssertionError("a shape-only 3MF was taken as slicer settings")
+        except TemplateError as exc:
+            assert "Save Project" in str(exc)
 
 
 def test_designs_save_and_open():

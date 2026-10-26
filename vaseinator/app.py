@@ -15,8 +15,8 @@ from PySide6.QtGui import (QAction, QColor, QFontDatabase, QIcon, QKeySequence, 
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
-                               QScrollArea, QSlider, QSpinBox, QSplitter, QStyle, QTextBrowser, QToolButton,
-                               QVBoxLayout, QWidget)
+                               QScrollArea, QSizePolicy, QSlider, QSpinBox, QSplitter, QStyle, QTextBrowser,
+                               QToolButton, QVBoxLayout, QWidget)
 
 from . import __version__
 from .curves import CurveEditor
@@ -30,7 +30,7 @@ from .presets import GALLERY, gallery_design, outline, palette, surprise
 from .shapes import (PALETTES, PROFILES, SHAPE_LABELS, SHAPE_NAMES, change, progress, sample_points, strength,
                      strength_names, style_names)
 from .stl import write_stl
-from .threemf import write_3mf
+from .threemf import TemplateError, read_template, spiral_settings, write_3mf, write_project_3mf
 from .viewer import Viewer3D, spin_transform
 
 APP_NAME = "Vaseinator"
@@ -178,6 +178,12 @@ SPEC = [
         ("look", "Looks like", "choice", LOOKS, None, None, "", "How the filament looks in the 3D view."),
     ]),
     ("Printing", [
+        ("slicer_template", "Slicer settings", "template", None, None, None, "",
+         "A project you saved in Flash Studio (or OrcaSlicer or Bambu Studio) for your printer and\n"
+         "filaments - File ▸ Save Project there. Export 3MF then writes a project on those settings,\n"
+         "with spiral vase mode on and the colour bands as filament (tool) changes at their layers:\n"
+         "open it in the slicer with File ▸ Open, ready to slice. Remembered for every design.\n"
+         "Without one, Export 3MF writes the shape only."),
         ("max_overhang", "Steepest overhang", "float", 10.0, 70.0, 1.0, "°",
          "How far the wall may lean from upright, out or in. A spiral wall is one line wide,\n"
          "so it leans on the line beneath it either way. 45° prints on almost any printer."),
@@ -210,7 +216,8 @@ SIMPLE_KEYS = {"height", "widest", "profile", "shape1", "count1", "depth1", "sha
                "morph", "morph_swings", "twist",
                "twist_style", "lattice", "rib_count", "rib_depth", "ring_count", "ring_depth", "bump_around",
                "organic_depth", "facets", "palette", "color1", "color2", "color3", "color4", "colour_style",
-               "colours_used", "band_count", "look", "max_overhang", "soften", "line_width", "layer_height"}
+               "colours_used", "band_count", "look", "slicer_template", "max_overhang", "soften", "line_width",
+               "layer_height"}
 REMEMBERED = ("line_width", "layer_height", "bottom", "printer_height", "bed_x", "bed_y", "speed", "max_flow",
               "filament_d", "density", "max_overhang")
 LIVE_KEYS = {"band_spacing"}            # sliders: follow the hand with quick draft builds
@@ -290,6 +297,26 @@ def make_app_icon() -> QIcon:
     return QIcon()
 
 
+class ElidedButton(QPushButton):
+    """A button whose text is shortened in the middle to fit, however narrow the panel gets."""
+
+    def __init__(self):
+        super().__init__()
+        self.full = ""
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+
+    def set_full_text(self, text: str):
+        self.full = text
+        self._fit()
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._fit()
+
+    def _fit(self):
+        self.setText(self.fontMetrics().elidedText(self.full, Qt.ElideMiddle, max(self.width() - 18, 40)))
+
+
 class FunctionHelp(QDialog):
     """What a formula can use, with examples to try."""
 
@@ -351,6 +378,8 @@ class MainWindow(QMainWindow):
         self.future: list[dict] = []
         self.spin_angle = 0.0
         self.spinning = self.settings.value("spin", True, type=bool)
+        self.template_path = str(self.settings.value("slicer_template", "") or "")
+        self._load_template(self.template_path)          # a slicer project to build 3MFs on
         self.printing = None          # the print animation: its start time
         self._last_full_ms = 0.0
         self._last_tick = time.perf_counter()
@@ -569,6 +598,17 @@ class MainWindow(QMainWindow):
             b.setMinimumHeight(24)
             self.widgets[key] = b
             return b
+        if kind == "template":                    # a slicer project to take the printer's settings from
+            b = ElidedButton()
+            b.setMinimumHeight(24)
+            b.clicked.connect(self._pick_template)
+            clear = QToolButton()
+            clear.setText("✕")
+            clear.setToolTip("Forget these settings: Export 3MF writes the shape only")
+            clear.clicked.connect(lambda: self._set_template(""))
+            self.template_clear = clear
+            self.widgets[key] = b
+            return row(b, clear)
         val = getattr(self.params, key)
         if kind == "float":
             suffix, _, special = extra.partition("|")
@@ -701,7 +741,7 @@ class MainWindow(QMainWindow):
             w.blockSignals(True)
             if key == "widest":
                 w.setValue(self._widest())
-            elif key == "palette":
+            elif key in ("palette", "slicer_template"):
                 pass
             elif isinstance(w, QComboBox):
                 w.setCurrentIndex(max(0, w.findData(getattr(self.params, key))))
@@ -758,6 +798,16 @@ class MainWindow(QMainWindow):
                 if name:
                     self.labels[key].setText(name)
             self.widgets[f"count{k}"].setMinimum(3 if kind == POLYGON else 1)
+        b = self.widgets["slicer_template"]
+        if self.template is not None:
+            text = f"{self.template['printer']} · {os.path.basename(self.template_path)}"
+        elif self.template_path:
+            text = "Not readable - choose again…"
+        else:
+            text = "Choose a saved project…"
+        b.set_full_text(text)
+        b.setToolTip(self.template_path or "No slicer settings chosen: Export 3MF writes the shape only")
+        self.template_clear.setEnabled(bool(self.template_path))
         s = p.band_spacing
         self.slider_notes["band_spacing"].setText(
             "Even" if abs(s) < 0.05 else ("Thicker towards the top" if s > 0 else "Thicker towards the bottom"))
@@ -1175,17 +1225,37 @@ class MainWindow(QMainWindow):
             else:
                 f0 = d.bands[0][1]
                 html.append(f"<table><tr><td>Start</td><td>{self._chip(d, f0)} filament {f0}</td></tr>")
-                for layer, ztop, fil in d.colour_changes():
+                for layer, ztop, fil in d.colour_changes(self._first_layer()):
                     html.append(f"<tr><td class='k'>Layer {layer} ({ztop:.2f} mm)</td>"
                                 f"<td>{self._chip(d, fil)} change to filament {fil}</td></tr>")
                 html.append("</table>")
-                if len(d.bands) > 1:
+                if len(d.bands) > 1 and self.template is not None and self.template["filaments"] > 1:
+                    html.append(
+                        f"<p class='k'><b>Export 3MF</b> puts these changes in for you: on the "
+                        f"{self.template['printer']} each one parks a toolhead and picks up the next, which "
+                        "heats up before the spiral carries on - a short pause, and a small seam.</p>")
+                elif len(d.bands) > 1 and self.template is not None:
+                    html.append(
+                        "<p class='k'><b>Export 3MF</b> puts these changes in for you, as pauses to change "
+                        "the filament by hand (the saved printer has one filament).</p>")
+                elif len(d.bands) > 1:
                     html.append(
                         "<p class='k'>In the slicer's preview, add a filament change at each of these "
                         "layers on the layer slider (Edit ▸ Copy colour changes puts the list on the "
-                        "clipboard). Each change pauses the spiral and leaves a small seam.</p>")
+                        "clipboard) - or choose <b>Slicer settings</b> under Printing, and Export 3MF puts "
+                        "them in for you. Each change pauses the spiral and leaves a small seam.</p>")
+            if self.template is not None:
+                html.append(
+                    f"<h3>Slicing it</h3><p class='k'><b>Export 3MF</b> writes a project for the "
+                    f"<b>{self.template['printer']}</b> on your saved settings, with spiral vase on, "
+                    f"<b>{d.bottom_layers} bottom layers</b> at <b>{p.layer_height:g} mm</b>, 0 top layers, "
+                    f"0% infill, 1 wall of <b>{p.line_width:g} mm</b> and supports off - none are needed: "
+                    f"nothing leans more than {d.worst:.0f}°. Open it in Flash Studio with <b>File ▸ Open</b> "
+                    "(not Import, which takes the shape only) and slice. For a watertight vase: a little extra "
+                    "flow (103–105%) and 5–10 °C hotter than usual for strong layer bonds.</p>")
             html.append(
-                f"<h3>Slicing it</h3><p class='k'>Turn on <b>spiral vase</b> (Spiralize). "
+                f"<h3>{'Or by hand' if self.template is not None else 'Slicing it'}</h3>"
+                "<p class='k'>Turn on <b>spiral vase</b> (Spiralize). "
                 f"<b>{d.bottom_layers} bottom layers</b> at <b>{p.layer_height:g} mm</b>, 0 top layers, "
                 f"0% infill, 1 wall, outer wall line width <b>{p.line_width:g} mm</b>. Supports off - "
                 f"none are needed: nothing leans more than {d.worst:.0f}°. "
@@ -1412,9 +1482,37 @@ class MainWindow(QMainWindow):
             f"{os.path.dirname(path)} — slice it with spiral vase mode on", 12000)
 
     def export_3mf(self):
+        """A slicer project on the chosen settings (spiral vase on, the colour changes in), or the shape only."""
         d = self._current_design()
         if d is None:
             return
+        if self.template is None:
+            box = QMessageBox(self)
+            box.setWindowTitle("Export 3MF")
+            box.setIcon(QMessageBox.Question)
+            box.setText("To carry the colour changes and the spiral vase settings, the 3MF is built on a "
+                        "project you have saved in your slicer for your printer and filaments.")
+            box.setInformativeText("In Flash Studio, set up any print for your printer and save it with File ▸ "
+                                   "Save Project, then choose that file. It is remembered for every design.")
+            choose = box.addButton("Choose a saved project…", QMessageBox.AcceptRole)
+            shape = box.addButton("The shape only", QMessageBox.ActionRole)
+            box.addButton(QMessageBox.Cancel)
+            box.setDefaultButton(choose)
+            box.exec()
+            if box.clickedButton() is choose:
+                self._pick_template()
+                if self.template is None:
+                    return
+            elif box.clickedButton() is not shape:
+                return
+        p = d.p
+        if self.template is not None:
+            used = max(f for _, f in d.bands)
+            if self.template["filaments"] > 1 and used > self.template["filaments"]:
+                QMessageBox.warning(self, "Not exported", f"The colours use filament {used}, but "
+                                    f"{self.template['printer']} has {self.template['filaments']} in the saved "
+                                    "project. Use fewer filaments, or save a project with more.")
+                return
         base = self._safe_name()
         path, _ = QFileDialog.getSaveFileName(self, "Export 3MF", os.path.join(self._last_dir(), base + ".3mf"),
                                               "3MF files (*.3mf)")
@@ -1423,15 +1521,72 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".3mf"):
             path += ".3mf"
         fil = d.bands[0][1]
+        middle = (p.bed_x / 2.0, p.bed_y / 2.0, 0.0)
         try:
-            write_3mf(path, base, d.verts, d.faces, fil, d.p.colors()[fil], (d.p.bed_x / 2.0, d.p.bed_y / 2.0, 0.0))
+            if self.template is not None:
+                colours = {k: getattr(p, f"color{k}").upper() for k in FILAMENTS}
+                changes = write_project_3mf(path, base, d.verts, d.faces, self.template,
+                                            spiral_settings(d.bottom_layers, p.layer_height, p.line_width),
+                                            d.bands, colours, middle)
+            else:
+                write_3mf(path, base, d.verts, d.faces, fil, p.colors()[fil], middle)
         except OSError as exc:
             QMessageBox.critical(self, "Export failed", str(exc))
             return
         self._remember_dir(path)
-        self.statusBar().showMessage(
-            f"Exported {os.path.basename(path)} to {os.path.dirname(path)} — in Flash Studio / OrcaSlicer load "
-            "it with File → Import (Ctrl+I), then turn on spiral vase", 12000)
+        if self.template is not None:
+            n = len(changes)
+            self.statusBar().showMessage(
+                f"Exported {os.path.basename(path)}: a project for the {self.template['printer']}, spiral vase on, "
+                f"{n} colour change{'' if n == 1 else 's'} — open it in Flash Studio with File ▸ Open (Ctrl+O), "
+                "not Import", 15000)
+        else:
+            self.statusBar().showMessage(
+                f"Exported {os.path.basename(path)} to {os.path.dirname(path)} — the shape only: load it with "
+                "File ▸ Import (Ctrl+I) and turn on spiral vase", 12000)
+
+    # ------------------------------------------------------------ slicer settings
+    def _load_template(self, path):
+        """The slicer settings in a saved project, or None (the reason in self.template_error)."""
+        self.template, self.template_error = None, ""
+        if path:
+            try:
+                self.template = read_template(path)
+            except TemplateError as exc:
+                self.template_error = str(exc)
+
+    def _pick_template(self):
+        start = os.path.dirname(self.template_path) if self.template_path else self._last_dir()
+        path, _ = QFileDialog.getOpenFileName(self, "Choose a project you saved in your slicer", start,
+                                              "3MF projects (*.3mf)")
+        if path:
+            self._set_template(path)
+
+    def _set_template(self, path):
+        old = self.template_path
+        self._load_template(path)
+        if path and self.template is None:
+            QMessageBox.warning(self, "Can't use that file",
+                                f"{os.path.basename(path)} can't give slicer settings: {self.template_error}")
+            self._load_template(old)
+            return
+        self.template_path = path
+        self.settings.setValue("slicer_template", path)
+        self._sync_widgets()
+        if self.design is not None:
+            self._show_info(self.design, [], self.design.warnings)
+        if self.template is not None:
+            self.statusBar().showMessage(f"Slicer settings from {os.path.basename(path)}: {self.template['printer']}, "
+                                         f"{self.template['filaments']} filaments", 8000)
+
+    def _first_layer(self):
+        """The first layer height in the chosen slicer settings, if there are any."""
+        if self.template is None:
+            return None
+        try:
+            return float(self.template["config"].get("initial_layer_print_height"))
+        except (TypeError, ValueError):
+            return None
 
     def save_snapshot(self):
         default = os.path.join(self._last_dir(), self._safe_name() + "_3d.png")
@@ -1448,7 +1603,7 @@ class MainWindow(QMainWindow):
         self._flush()
         if self.design is None:
             return
-        QApplication.clipboard().setText(self.design.colour_plan())
+        QApplication.clipboard().setText(self.design.colour_plan(self._first_layer()))
         self.statusBar().showMessage("Colour changes copied to the clipboard", 6000)
 
     def printing_help(self):
@@ -1471,9 +1626,13 @@ class MainWindow(QMainWindow):
             "<li>Test it in a sink first. A coat of clear epoxy or varnish inside seals any weep.</li>"
             "<li>Sturdier still: slice the same STL normally with 2–3 walls, 0% infill and 0 top layers.</li></ul>"
             "<h3>Colours</h3>"
-            "<p>Bands and stripes change filament at the layers the panel lists: add them on the slicer's "
-            "layer slider in the preview. A gradient spool needs nothing: the view shows where its colours "
-            "will land.</p>")
+            "<p>Bands and stripes change filament at the layers the panel lists. Choose <b>Slicer settings</b> "
+            "under Printing - a project you saved in Flash Studio for your printer - and <b>Export 3MF</b> "
+            "writes a project with spiral vase on and those changes already in: open it with File ▸ Open, not "
+            "Import. On a printer with several toolheads, like the Creator 5 Pro, each change swaps the head; "
+            "on one with a single filament it pauses for you to change it. Without slicer settings, add the "
+            "changes on the slicer's layer slider yourself. A gradient spool needs nothing: the view shows "
+            "where its colours will land.</p>")
 
     def about(self):
         QMessageBox.about(
