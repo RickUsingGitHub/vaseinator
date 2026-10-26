@@ -34,6 +34,7 @@
     "sharp2": 0.5,
     "turn2": 0.0,
     "morph": 0,
+    "morph_swings": 3,
     "morph_curve": [
       [
         0.0,

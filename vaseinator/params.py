@@ -50,6 +50,7 @@ class VaseParams:
     sharp2: float = 0.5
     turn2: float = 0.0
     morph: int = EVENLY           # how the change of shape happens on the way up
+    morph_swings: int = 3         # back and forth: how many changes (3: bottom, top, bottom, top shape)
     morph_curve: list = _pts((0.0, 0.0), (1.0, 1.0))
 
     # --- spin ---------------------------------------------------------------
@@ -154,7 +155,7 @@ class VaseParams:
                 continue
             setattr(p, f.name, v)
         allowed = {"shape1": SHAPES, "shape2": (SAME,) + SHAPES,
-                   "morph": (EVENLY, EASE, SPEED_UP, SLOW_DOWN, OWN),
+                   "morph": (EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN),
                    "twist_style": (EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN),
                    "strength": (EVERYWHERE, GROWS, FADES, MIDDLE, OWN),
                    "colour_style": (ONE_COLOUR, BANDS, STRIPES, GRADIENT), "colours_used": (1, 2, 3, 4),

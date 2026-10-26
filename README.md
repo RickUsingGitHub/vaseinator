@@ -26,7 +26,8 @@ ready to slice.
 * **Outline** from twelve presets (classic, bulb, tulip, amphora, bottle, gourd, trumpet, …) or drawn
   by hand: drag points on the outline curve; the curve through them never overshoots.
 * **Cross-section**: circle, polygon (with rounded corners), star, flower, gear, ellipse or pebble – and
-  a second shape it **turns into** on the way up, evenly, early, late or along your own curve.
+  a second shape it **turns into** on the way up – evenly, early, late, **back and forth** as many times
+  as you like (circle → pentagon → circle → pentagon), or along your own curve.
 * **Spin**: twist the shape round as it rises – evenly, easing in and out, speeding up, slowing down,
   **back and forth**, or along your own curve – or **both ways at once** for a lattice of crossing ridges.
 * **Surface patterns**: ribs (that can spiral, or cross for diamond knurling), rings, staggered bumps
@@ -49,7 +50,7 @@ ready to slice.
   print** builds it up in real print time (wide layers take longer).
 * **The sums**: size, base and opening, how much water it holds, filament in grams and metres, print
   time, steepest overhang, and the mesh – closed and watertight.
-* **Gallery** of sixteen ready-made vases, **Surprise me** (a new random vase that still prints), and
+* **Gallery** of seventeen ready-made vases, **Surprise me** (a new random vase that still prints), and
   **undo / redo** of everything.
 * Exports a solid **STL** for spiral vase mode, or a **3MF** placed in the middle of the bed and set to
   the vase's first filament. Designs save as `.vase` files (JSON).
@@ -82,10 +83,15 @@ Sign Maker, if you have used them. Printer settings are remembered for new desig
 Pick a vase from the **Gallery** or press **Surprise me**, then change it. Every change rebuilds the vase
 at once; while you drag a point on a curve, a quicker rough version follows your hand.
 
+The curves for the twist, the change of shape and the pattern strength are ordinary graphs: the vase
+from bottom to top runs left to right, and the value runs up – drag a point up for more, down for
+less. Double-click to add a point (a few make a wave), right-click to take one away. The outline's
+curve is drawn upright and mirrored instead, like the vase from the side.
+
 | Group | What it does |
 | --- | --- |
 | **Size** | Height, the widest diameter (scales the whole outline), and the outline: a preset, or your own curve – diameter at each height, drawn as the vase seen from the side. |
-| **Shape** | The cross-section at the bottom, and what it turns into at the top. Each shape has its own settings: sides, points, petals or teeth; how deep it cuts in; how sharp it is; how far it is turned. **Change happens** says how the first shape becomes the second on the way up. |
+| **Shape** | The cross-section at the bottom, and what it turns into at the top. Each shape has its own settings: sides, points, petals or teeth; how deep it cuts in; how sharp it is; how far it is turned. **Change happens** says how the first shape becomes the second on the way up – including back and forth, as many **Changes** as you like, and your own curve. |
 | **Spin** | How far the shape turns from bottom to top, and how the turning is spread up the vase – including back and forth, and your own curve. **Both ways** twists it both ways at once. |
 | **Surface** | Ribs, rings, bumps and organic lumps; whether they turn with the twist; how strong they are up the vase; and a plain foot and rim. |
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |

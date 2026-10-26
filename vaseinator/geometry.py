@@ -23,8 +23,8 @@ import numpy as np
 
 from .expr import ExprError, compile_expression
 from .params import (BANDS, GRADIENT, MAX_BANDS, ONE_COLOUR, OWN, SAME, STRIPES, VaseParams)
-from .shapes import (TABLE, TAU, blur, lobes_needed, organic, pchip, progress, sample, shape_table, smooth_max,
-                     smoothstep, strength)
+from .shapes import (TABLE, TAU, blur, change, lobes_needed, organic, pchip, progress, sample, shape_table,
+                     smooth_max, smoothstep, strength)
 
 TOLERANCE = 0.3          # degrees over the overhang limit still counted as within it
 
@@ -328,7 +328,7 @@ class VaseDesign:
         tab1 = blur(shape_table(p.shape1, p.count1, p.depth1, p.sharp1), self.dth)
         if p.shape2 != SAME:
             tab2 = blur(shape_table(p.shape2, p.count2, p.depth2, p.sharp2), self.dth)
-            mix = progress(p.morph, h, p.morph_curve)[:, None]
+            mix = change(p.morph, h, p.morph_curve, p.morph_swings)[:, None]
             mix = np.clip(mix, 0.0, 1.0)
         a1, a2 = math.radians(p.turn1), math.radians(p.turn2)
 

@@ -15,8 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
 from vaseinator.geometry import TOLERANCE, VaseDesign, edge_check, lean_angles, mesh_volume  # noqa: E402
-from vaseinator.params import (BANDS, CIRCLE, EVENLY, GEAR, ONE_COLOUR, POLYGON, SAME, STAR,  # noqa: E402
-                               STRIPES, VaseParams, load_design, save_design)
+from vaseinator.params import (BANDS, CIRCLE, EVENLY, GEAR, ONE_COLOUR, OWN, POLYGON, SAME, STAR,  # noqa: E402
+                               STRIPES, SWING, VaseParams, load_design, save_design)
 from vaseinator.presets import GALLERY, gallery_design, surprise  # noqa: E402
 from vaseinator.shapes import PROFILES, pchip, shape_table  # noqa: E402
 from vaseinator.stl import read_stl, write_stl  # noqa: E402
@@ -93,6 +93,23 @@ def test_every_design_is_closed_and_printable():
         assert np.allclose(d.verts[down][:, :, 2], 0.0), f"{name}: the base is not flat"
         for z in np.linspace(0.3, d.H - 0.3, 9) + 0.0123:
             assert layer_loops(d, z) == 1, f"{name}: the layer at {z:.1f} mm is not one closed loop"
+
+
+def test_the_shape_can_change_back_and_forth():
+    """Circle, pentagon, circle, pentagon - by Back and forth, or by an own curve shaped like a wave."""
+    def roundness(d, h):
+        row = d.R[int(round(h * d.M))]
+        return row.min() / row.max()
+
+    pentagon = math.cos(math.pi / 5)
+    base = dict(shape1=CIRCLE, shape2=POLYGON, count2=5, sharp2=0.0, twist=0.0,
+                silhouette=[[0.0, 80.0], [1.0, 80.0]])
+    for p in (VaseParams(**base, morph=SWING, morph_swings=3),
+              VaseParams(**base, morph=OWN, morph_curve=[[0, 0], [1 / 3, 1], [2 / 3, 0], [1, 1]])):
+        d = VaseDesign(p)
+        for h, want in ((0.0, 1.0), (1 / 3, pentagon), (2 / 3, 1.0), (1.0, pentagon)):
+            assert abs(roundness(d, h) - want) < 0.02, (p.morph, h, roundness(d, h), want)
+        assert d.closed and d.worst <= p.max_overhang + TOLERANCE
 
 
 def test_overhangs_are_found_without_softening():

@@ -11,12 +11,13 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PySide6.QtCore import QSettings  # noqa: E402
+from PySide6.QtCore import QPoint, QSettings, Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
 from vaseinator import app as appmod  # noqa: E402
 from vaseinator.geometry import edge_check  # noqa: E402
-from vaseinator.params import GRADIENT, OWN, OWN_PROFILE, STAR, SWING, load_design  # noqa: E402
+from vaseinator.params import CIRCLE, GRADIENT, OWN, OWN_PROFILE, POLYGON, STAR, SWING, load_design  # noqa: E402
 from vaseinator.stl import read_stl  # noqa: E402
 from vaseinator.threemf import read_3mf  # noqa: E402
 
@@ -94,6 +95,34 @@ def main():
     win.params.twist_style = SWING
     win.undo()
     check("... and can be undone", win.params.name == "ocean_ripple")
+
+    # the shape changing back and forth, then an own curve dragged down with the mouse
+    def choose(key, value):
+        w = win.widgets[key]
+        w.setCurrentIndex(w.findData(value))
+        settle()
+
+    choose("shape1", CIRCLE)
+    choose("shape2", POLYGON)
+    win.widgets["count2"].setValue(5)
+    choose("morph", SWING)
+    check("Back and forth asks how many changes", win._wanted("morph_swings") and win.params.morph_swings == 3)
+    choose("morph", OWN)
+    values = [round(v, 2) for _, v in win.params.morph_curve]
+    check("... and an own curve starts as the same wave", values[::2] == [0.0, 1.0, 0.0, 1.0])
+    ed = win.widgets["morph_curve"]
+    ed.ensurePolished()
+    qapp.processEvents()
+    h, v = win.params.morph_curve[2]                          # the first peak: the pentagon
+    start = ed._xy(h, v).toPoint()
+    end = start + QPoint(0, int(0.8 * ed._area().height()))
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, start)
+    QTest.mouseMove(ed, end)
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, end)
+    settle()
+    h2, v2 = win.params.morph_curve[2]
+    check("dragging a point of the curve down lessens it, at the same height",
+          v2 < 0.3 and abs(h2 - h) < 0.01 and win.design.closed)
 
     # every view, spinning, and the print animation
     for i in range(4):

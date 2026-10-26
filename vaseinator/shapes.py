@@ -106,6 +106,24 @@ def progress(style: int, h, curve=None, swings: int = 1):
     return h.copy()
 
 
+def change(style: int, h, curve=None, changes: int = 3):
+    """How far the bottom shape has turned into the top one at height h: 0 the bottom shape, 1 the top.
+
+    Back and forth goes smoothly to the top shape and back, ``changes`` times
+    in all: 3 is bottom shape, top, bottom, top.
+    """
+    if style == SWING:
+        return 0.5 * (1.0 - np.cos(math.pi * max(int(changes), 1) * np.asarray(h, dtype=float)))
+    return progress(style, h, curve)
+
+
+def sample_points(fn, style: int, swings: int):
+    """Points for an own curve that follows ``fn`` - at each peak and trough of a back-and-forth."""
+    n = 2 * max(int(swings), 1) + 1 if style == SWING else 5
+    hs = np.linspace(0.0, 1.0, n)
+    return [[round(float(h), 4), float(v)] for h, v in zip(hs, fn(hs))]
+
+
 def strength(style: int, h, curve=None):
     """How strong the surface patterns are at height h."""
     h = np.asarray(h, dtype=float)

@@ -27,8 +27,8 @@ from .params import (BANDS, CIRCLE, EASE, EVENLY, FILAMENTS, GLOSSY, GRADIENT, M
                      VaseParams, load_design, save_design)
 from .plots import ShapePlots
 from .presets import GALLERY, gallery_design, outline, palette, surprise
-from .shapes import (PALETTES, PROFILES, SHAPE_LABELS, SHAPE_NAMES, progress, strength, strength_names,
-                     style_names)
+from .shapes import (PALETTES, PROFILES, SHAPE_LABELS, SHAPE_NAMES, change, progress, sample_points, strength,
+                     strength_names, style_names)
 from .stl import write_stl
 from .threemf import write_3mf
 from .viewer import Viewer3D, spin_transform
@@ -43,7 +43,7 @@ PROFILE_CHOICES = [(i, name) for i, (name, _) in enumerate(PROFILES)] + [(OWN_PR
 SHAPE_CHOICES = [(k, SHAPE_NAMES[k]) for k in SHAPES]
 TWIST_STYLES = list(style_names().items())
 MORPH_STYLES = [(EVENLY, "Evenly"), (EASE, "Eases in and out"), (SLOW_DOWN, "Mostly near the bottom"),
-                (SPEED_UP, "Mostly near the top"), (OWN, "Your own curve")]
+                (SPEED_UP, "Mostly near the top"), (SWING, "Back and forth"), (OWN, "Your own curve")]
 STRENGTHS = list(strength_names().items())
 COLOUR_STYLES = [(ONE_COLOUR, "One colour"), (BANDS, "Bands up the vase"), (STRIPES, "Stripes"),
                  (GRADIENT, "Gradient spool")]
@@ -86,9 +86,15 @@ SPEC = [
     ]),
     ("Shape", _shape(1) + _shape(2) + [
         ("morph", "Change happens", "choice", MORPH_STYLES, None, None, "",
-         "How the first shape turns into the second on the way up."),
-        ("morph_curve", "", "curve", dict(lo=0.0, hi=1.0, unit="", height=100, decimals=2), None, None, "",
-         "How far the shape has changed at each height: 0 is the bottom shape, 1 the top one."),
+         "How the first shape turns into the second on the way up. Back and forth changes\n"
+         "smoothly to the second shape and back again, as many times as you like."),
+        ("morph_swings", "Changes", "int", 1, 40, 1, "",
+         "How many times the shape changes on the way up, back and forth.\n"
+         "3: bottom shape → top shape → bottom shape → top shape."),
+        ("morph_curve", "", "curve", dict(lo=0.0, hi=1.0, unit="", height=110, decimals=2), None, None, "",
+         "How far the shape has changed at each height, from the bottom of the vase on the left to the\n"
+         "top on the right: 0 (down) is the bottom shape, 1 (up) the top one. Drag a point down to\n"
+         "go back towards the bottom shape; double-click to add points for a wave."),
     ]),
     ("Spin", [
         ("twist", "Twist", "float", -3600.0, 3600.0, 15.0, "°",
@@ -200,7 +206,8 @@ SPEC = [
     ]),
 ]
 
-SIMPLE_KEYS = {"height", "widest", "profile", "shape1", "count1", "depth1", "sharp1", "shape2", "twist",
+SIMPLE_KEYS = {"height", "widest", "profile", "shape1", "count1", "depth1", "sharp1", "shape2", "count2",
+               "morph", "morph_swings", "twist",
                "twist_style", "lattice", "rib_count", "rib_depth", "ring_count", "ring_depth", "bump_around",
                "organic_depth", "facets", "palette", "color1", "color2", "color3", "color4", "colour_style",
                "colours_used", "band_count", "look", "max_overhang", "soften", "line_width", "layer_height"}
@@ -771,6 +778,8 @@ class MainWindow(QMainWindow):
             show = getattr(p, f"shape{key[-1]}") not in (CIRCLE, SAME)
         elif key == "morph":
             show = p.shape2 != SAME
+        elif key == "morph_swings":
+            show = p.shape2 != SAME and p.morph == SWING
         elif key == "morph_curve":
             show = p.shape2 != SAME and p.morph == OWN
         elif key == "twist":
@@ -978,19 +987,18 @@ class MainWindow(QMainWindow):
                 self._set_widget("profile")
             self._set_widget("widest")
         else:
+            # an own curve starts from the curve as it was, a point at each peak of a back-and-forth
             if key == "twist_style" and value == OWN and p.twist_style != OWN:
-                # start the curve from the twist as it was
-                hs = np.linspace(0.0, 1.0, 5)
-                deg = p.twist * progress(p.twist_style, hs, swings=p.swings)
-                p.twist_curve = [[round(h, 3), round(float(d), 1)] for h, d in zip(hs, deg)]
+                p.twist_curve = [[h, round(d, 1)] for h, d in sample_points(
+                    lambda hs: p.twist * progress(p.twist_style, hs, swings=p.swings), p.twist_style, p.swings)]
                 self._set_widget("twist_curve")
             elif key == "morph" and value == OWN and p.morph != OWN:
-                hs = np.linspace(0.0, 1.0, 5)
-                p.morph_curve = [[round(h, 3), round(float(m), 3)] for h, m in zip(hs, progress(p.morph, hs))]
+                p.morph_curve = [[h, round(m, 3)] for h, m in sample_points(
+                    lambda hs: change(p.morph, hs, changes=p.morph_swings), p.morph, p.morph_swings)]
                 self._set_widget("morph_curve")
             elif key == "strength" and value == OWN and p.strength != OWN:
-                hs = np.linspace(0.0, 1.0, 5)
-                p.strength_curve = [[round(h, 3), round(float(s), 3)] for h, s in zip(hs, strength(p.strength, hs))]
+                p.strength_curve = [[h, round(s, 3)] for h, s in sample_points(
+                    lambda hs: strength(p.strength, hs), p.strength, 1)]
                 self._set_widget("strength_curve")
             elif key == "colour_style" and value != ONE_COLOUR and p.colours_used < 2:
                 p.colours_used = 3
