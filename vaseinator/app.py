@@ -1788,7 +1788,9 @@ class MainWindow(QMainWindow):
             "it in patterns or your own formula, and colour it in bands, stripes or a gradient.</p>"
             "<p><b>3D view:</b> left-drag turn · right-drag / shift-drag pan · wheel zoom · double-click or F to "
             "go back to the chosen view · S spin · F5 watch it print.</p>"
-            "<p>Exports are in millimetres, standing on the bed, ready to slice.</p>")
+            "<p>Exports are in millimetres, standing on the bed, ready to slice.</p>"
+            "<p>Vaseinator is free. If it has made you something you like, you can "
+            "<a href='https://ko-fi.com/rickapps'>buy me a coffee</a>.</p>")
 
     def closeEvent(self, ev):
         if not self._confirm_discard():
