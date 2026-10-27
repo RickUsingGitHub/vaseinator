@@ -383,6 +383,33 @@ def test_your_own_function_is_safe():
     assert d.errors
 
 
+def test_a_function_over_several_lines_is_one_formula():
+    """Lines are read as one formula, notes after # dropped; a line that doesn't carry on is pointed out."""
+    env = dict(theta=np.linspace(0, 6, 7), z=np.linspace(0, 90, 7), h=np.linspace(0, 1, 7))
+    want = compile_expression("1.5 * sin(6*theta + 4*pi*h) + 0.5 * cos(3*theta) - 2*h")(**env)
+    for text in ("1.5 * sin(6*theta + 4*pi*h)\n+ 0.5 * cos(3*theta)\n- 2*h",
+                 "1.5 * sin(6*theta\n          + 4*pi*h)\n+ 0.5 * cos(3*theta) - 2*h\n\n",
+                 "\n  1.5 * sin(6*theta + 4*pi*h)   # waves\n+ 0.5 * cos(3*theta)        # lobes\n- 2*h  # narrower",
+                 "1.5 * sin(6*theta + 4*pi*h) +\r\n0.5 * cos(3*theta) -\r\n2*h"):
+        assert np.allclose(compile_expression(text)(**env), want), text
+    assert compile_expression("# only a note\n\n") is None
+    for text, says in (("sin(theta)\ncos(theta)", "start line 2 with + - * or /"),
+                       ("2*h\n+ 0.5*cos(3*theta\n+ 1", "a ( is never closed (line 2"),
+                       ("2*h\n+ 3*", "stops part way"),
+                       ("sin(theta))", "a ) has no ("),
+                       ("2*h\n+ 3 * * h", "line 2, near character 7")):
+        try:
+            compile_expression(text)
+        except ExprError as exc:
+            assert says in str(exc), (text, str(exc))
+            continue
+        raise AssertionError(f"accepted: {text!r}")
+    # and the vase is built from it, as from the one line
+    one = VaseDesign(plain(expression="1.5 * sin(6*theta) + 2*h"))
+    two = VaseDesign(plain(expression="1.5 * sin(6*theta)   # waves\n+ 2*h"))
+    assert not two.errors and np.allclose(one.verts, two.verts)
+
+
 def test_colour_changes_land_on_layers():
     p = plain(height=100.0, vase_mode=FAKE_VASE, colour_style=BANDS, band_count=4, colours_used=2, layer_height=0.2)
     d = VaseDesign(p)

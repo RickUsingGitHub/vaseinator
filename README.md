@@ -42,8 +42,10 @@ ready to slice.
 * **Low-poly facets**: the whole vase from flat triangles, like a cut gem, with an optional rough cut.
 * **Your own function**: type a formula in millimetres – `1.5 * sin(6*theta + 4*pi*h)` – added to the
   radius everywhere. Variables for the angle, the angle turning with the twist, height, share of the
-  height and the radius so far; trig, waves, steps and smooth noise. It is checked and run safely:
-  numbers, the listed variables and functions only.
+  height and the radius so far; trig, waves, steps and smooth noise. A long formula can go over several
+  lines – they are read as one, so start each new line with + - * or / – with notes after a `#`. It is
+  checked and run safely: numbers, the listed variables and functions only; a mistake is pointed out by
+  line and character.
 * **Real or fake spiral vase**: a *real* one prints in the slicer's spiral vase mode – one continuous
   line, fast and clean, in one filament (or a gradient spool). A *fake* one is an ordinary print of a
   hollow vase – a few walls, no infill, no top – slower, but sturdier and in colour.

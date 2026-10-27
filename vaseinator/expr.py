@@ -112,9 +112,44 @@ class _Floats(ast.NodeTransformer):
         return ast.copy_location(ast.Constant(float(node.value)), node)
 
 
+def one_line(text: str):
+    """A formula written over several lines, as the one line it is read as.
+
+    Each line's note (after a #) is dropped and the lines are joined with
+    spaces, so a long formula can be laid out over lines - each new line
+    starting with + - * or / to carry on. Also returns where each line starts
+    in the joined text, to say which line a mistake is on.
+    """
+    parts, starts, at = [], [], 0
+    for line in text.splitlines() or [""]:
+        line = line.split("#", 1)[0].rstrip()
+        starts.append(at)
+        parts.append(line)
+        at += len(line) + 1
+    return " ".join(parts), starts
+
+
+def _where(joined: str, starts, pos: int) -> str:
+    """Line and character of a place in the joined formula, in words - and a hint when a line doesn't carry on
+    from the one before."""
+    if len(starts) < 2:
+        return f"near character {pos + 1}"
+    line = max(i for i, s in enumerate(starts) if s <= pos)
+    say = f"line {line + 1}, near character {pos - starts[line] + 1}"
+    if line > 0 and not joined[starts[line]:pos].strip():
+        say += (f"; the lines are read as one formula, so start line {line + 1} with + - * or / (or end the "
+                "line before with one)")
+    return say
+
+
 def compile_expression(text: str):
-    """Check a formula and return a function of the variables, or raise ExprError."""
-    text = text.strip()
+    """Check a formula and return a function of the variables, or raise ExprError.
+
+    A formula over several lines is read as one: see ``one_line``.
+    """
+    joined, starts = one_line(text)
+    lead = len(joined) - len(joined.lstrip())
+    text = joined.strip()
     if not text:
         return None
     if len(text) > MAX_LENGTH:
@@ -122,8 +157,14 @@ def compile_expression(text: str):
     try:
         tree = ast.parse(text, mode="eval")
     except SyntaxError as exc:
-        raise ExprError(f"The function doesn't read as a formula (near character {exc.offset or 0}).") \
-            from None
+        msg = str(exc.msg)
+        if not exc.offset:                                 # it ran out before the formula was finished
+            raise ExprError("The function stops part way: something should come after its last "
+                            "+ - * / or (.") from None
+        pos = lead + exc.offset - 1
+        what = ("a ( is never closed" if "never closed" in msg else
+                "a ) has no ( before it" if "unmatched" in msg else "something is missing or out of place")
+        raise ExprError(f"The function can't be read: {what} ({_where(joined, starts, pos)}).") from None
     for node in ast.walk(tree):
         if not isinstance(node, _ALLOWED_NODES):
             raise ExprError(f"“{type(node).__name__}” isn't allowed in a function: use numbers, "
