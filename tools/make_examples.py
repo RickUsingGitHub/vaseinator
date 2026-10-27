@@ -14,7 +14,7 @@ from vaseinator.params import save_design  # noqa: E402
 from vaseinator.presets import GALLERY, gallery_design  # noqa: E402
 from vaseinator.stl import write_stl  # noqa: E402
 
-STLS = ("Lagoon Twist", "Star to Moon", "Lattice Lantern", "Gem Facets", "Coral Reef", "Lobed Sketch")
+STLS = ("Lagoon Twist", "Star to Moon", "Lattice Lantern", "Gem Facets", "Coral Reef", "Claw Shell")
 
 
 def main():

@@ -1671,7 +1671,7 @@ class MainWindow(QMainWindow):
             "a <b>sharp corner</b> (a diamond) or smooth again (a circle). Right-click a point, or hover and "
             "press Delete, to take it away.</li>"
             "<li><b>Repeat around</b>: draw one lobe and have it copied round the axis - the faint copies.</li>"
-            "<li><b>Start from</b>: ready-made outlines, the two sketches the editor was made from, or "
+            "<li><b>Start from</b>: ready-made outlines - a claw, bulbs, a heart - or "
             "<b>Trace a picture…</b> - a dark closed line, or a dark filled shape, on a light or see-through "
             "ground.</li>"
             "<li>Switching a built-in shape to Drawn starts from that shape - a five-petalled flower becomes one "

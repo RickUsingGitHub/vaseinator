@@ -229,10 +229,10 @@ def main():
     oed.finished.emit([[1, 0, False], [-1, 1, False], [-1, -1, False], [1, 1, False], [0.2, -1.2, False]])
     settle()
     check("an outline that crosses itself is reported, not built", "crosses itself" in win.info.toPlainText())
-    lobes = next(q for name, q, n in sections.OUTLINES if name == "Your lobed sketch")
-    win._use_outline(1, lobes, 1)
+    claw = next(q for name, q, n in sections.OUTLINES if name == "Claw")
+    win._use_outline(1, claw, 1)
     settle()
-    check("Start from: your lobed sketch builds, closed and printable", win.params.repeat1 == 1
+    check("Start from: the claw builds, closed and printable", win.params.repeat1 == 1
           and win.design.closed and win.design.worst <= win.params.max_overhang + 0.3 and oed.repeat == 1)
     pic = QImage(400, 300, QImage.Format_RGB32)
     pic.fill(QColor("white"))

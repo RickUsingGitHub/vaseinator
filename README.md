@@ -21,7 +21,7 @@ ready to slice.
 | **Overhangs: green is easy, red needs support** | **Watch it print, in real print time** |
 | ![Overhang check](docs/images/overhangs.png) | ![Print layout and animation](docs/images/print_layout.png) |
 | **Draw any cross-section, sharp corners and all** | **Draw one lobe, repeat it: three bulbs become six** |
-| ![The cross-section editor](docs/images/drawn_lobed_sketch.png) | ![Repeat around](docs/images/drawn_bulb_swirl.png) |
+| ![The cross-section editor](docs/images/drawn_claw_shell.png) | ![Repeat around](docs/images/drawn_bulb_swirl.png) |
 
 ## Features
 
@@ -58,7 +58,7 @@ ready to slice.
   print** builds it up in real print time (wide layers take longer).
 * **The sums**: size, base and opening, how much water it holds, filament in grams and metres, print
   time, steepest overhang, and the mesh – closed and watertight.
-* **Gallery** of twenty ready-made vases, **Surprise me** (a new random vase that still prints), and
+* **Gallery** of nineteen ready-made vases, **Surprise me** (a new random vase that still prints), and
   **undo / redo** of everything.
 * Exports a solid **STL**, or a **3MF** in the middle of the bed – one solid for a real spiral vase, each
   colour band its own part, set to its filament, for a fake one – as Lenticular Sign Maker and Maze Tube
@@ -116,7 +116,7 @@ is Surprise me, **Ctrl+Z / Ctrl+Y** undo and redo.
 (the outline is scaled so its furthest point touches it). Drag a point; double-click the line to add one,
 and double-click a point to switch it between smooth (a circle) and a sharp corner (a diamond);
 right-click a point to take it away. **Repeat around** copies what you draw round the axis – draw one lobe,
-get five. **Start from** has ready-made outlines, the two sketches the editor began with, and **Trace a
+get five. **Start from** has ready-made outlines – a claw, bulbs, a heart – and **Trace a
 picture…** (a dark closed line or filled shape on a light ground). Switching a built-in shape to Drawn
 starts from it: a five-petalled flower becomes one petal, repeated five times. Twist, the change into a
 second shape, the patterns and colour bands all work on a drawn outline; it turns red if it crosses itself.

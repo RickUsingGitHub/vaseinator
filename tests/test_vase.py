@@ -50,7 +50,7 @@ def designs():
         ("bottle shoulder", plain(silhouette=[[0.0, 100.0], [0.5, 100.0], [0.55, 30.0], [1.0, 30.0]])),
         ("flared lip", plain(silhouette=[[0.0, 60.0], [0.9, 60.0], [1.0, 120.0]])),
         ("tiny", plain(height=12.0, silhouette=[[0.0, 8.0], [1.0, 8.0]])),
-        ("drawn claw, twisted, ribbed", plain(shape1=DRAWN, drawn1=sections.OUTLINES[5][1], repeat1=1, twist=200,
+        ("drawn claw, twisted, ribbed", plain(shape1=DRAWN, drawn1=sections.CLAW, repeat1=1, twist=200,
                                               rib_count=18, rib_depth=1.2)),
         ("drawn heart to five lobes", plain(shape1=DRAWN, drawn1=sections.OUTLINES[-1][1], repeat1=1, shape2=DRAWN,
                                             twist=60)),
