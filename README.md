@@ -84,6 +84,8 @@ ready to slice.
 * **Build the Windows app yourself:** `build_exe.bat` (uses PyInstaller; the result is
   `dist\Vaseinator.exe`).
 
+Vaseinator is free. If it has made you something you like, you can [buy me a coffee](https://ko-fi.com/rickapps).
+
 `examples\` holds the gallery as `.vase` designs to open. `tools\make_examples.py` writes them again, and
 six of them to `examples\stl\` as finished STLs, checked and ready to slice: Lagoon Twist, Star to Moon,
 Lattice Lantern, Gem Facets, Coral Reef and Claw Shell. (STLs are big, so they are not kept in git.)
