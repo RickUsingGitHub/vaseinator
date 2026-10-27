@@ -22,6 +22,7 @@ ONE_COLOUR, BANDS, STRIPES, GRADIENT = 0, 1, 2, 3         # how the colours go u
 REAL_VASE, FAKE_VASE = 0, 1                               # spiral vase mode, or an ordinary print with walls
 MATTE, SILK, GLOSSY, TRANSLUCENT = 0, 1, 2, 3             # how the filament looks in the 3D view
 
+MAX_REPEAT = 100                                          # most copies of a drawn piece round the axis
 MAX_BANDS = 64                                            # colour bands the 3D view can show
 
 
@@ -181,7 +182,7 @@ class VaseParams:
         if any(d <= 0 for _, d in p.silhouette):
             p.silhouette = fresh.silhouette
         p.walls = min(max(p.walls, 1), 10)
-        p.repeat1, p.repeat2 = (min(max(r, 1), 24) for r in (p.repeat1, p.repeat2))
+        p.repeat1, p.repeat2 = (min(max(r, 1), MAX_REPEAT) for r in (p.repeat1, p.repeat2))
         for key, lo, hi in (("depth1", 0.0, 0.9), ("depth2", 0.0, 0.9), ("sharp1", 0.0, 1.0),
                             ("sharp2", 0.0, 1.0), ("rib_sharp", 0.0, 1.0), ("ring_sharp", 0.0, 1.0),
                             ("facet_rough", 0.0, 1.0), ("band_spacing", -1.0, 1.0)):

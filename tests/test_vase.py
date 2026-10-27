@@ -23,7 +23,7 @@ from vaseinator.geometry import (TOLERANCE, VaseDesign, edge_check, face_normals
 from vaseinator.params import (BANDS, CIRCLE, DRAWN, EVENLY, FAKE_VASE, FLOWER, GEAR, GRADIENT,  # noqa: E402
                                ONE_COLOUR, OWN, POLYGON, REAL_VASE, SAME, STAR, STRIPES, SWING, VaseParams,
                                load_design, save_design)
-from vaseinator.presets import GALLERY, gallery_design, surprise  # noqa: E402
+from vaseinator.presets import GALLERY, PRINTER_KEYS, gallery_design, plain_design, surprise  # noqa: E402
 from vaseinator.shapes import PROFILES, pchip, shape_table  # noqa: E402
 from vaseinator.stl import read_stl, write_stl  # noqa: E402
 from vaseinator.threemf import read_3mf, write_3mf  # noqa: E402
@@ -162,6 +162,25 @@ def test_a_cylinder_has_the_right_volume():
     assert abs(d.capacity - holds) / holds < 0.01, (d.capacity, holds)
 
 
+def test_the_plain_start_is_a_plain_cylinder():
+    """A blank start: 200 mm across and 200 mm tall, everything else off, the printer kept."""
+    keep = VaseParams(line_width=0.8, layer_height=0.28, bed_x=300.0, walls=3)
+    p = plain_design(keep)
+    assert all(getattr(p, k) == getattr(keep, k) for k in PRINTER_KEYS)
+    d = VaseDesign(p)
+    assert not d.errors and not d.warnings and d.closed
+    assert abs(d.H - 200.0) < 1e-9 and abs(d.widest - 200.0) < 0.01 and d.worst < 0.01 and d.softened == 0.0
+    side = d.verts[d.faces[:d.side].ravel()]
+    assert np.allclose(np.hypot(side[:, 0], side[:, 1]), 100.0, atol=1e-6)       # round, straight, no pattern
+    assert not d.gradient and len(d.bands) == 1 and p.expression == "" and p.vase_mode == REAL_VASE
+    # ready for your own function
+    p.expression = "2 * sin(8*theta)"
+    d = VaseDesign(p)
+    side = d.verts[d.faces[:d.side].ravel()]
+    r = np.hypot(side[:, 0], side[:, 1])
+    assert d.closed and abs(r.max() - 102.0) < 0.05 and abs(r.min() - 98.0) < 0.05
+
+
 def test_low_poly_facets_are_flat():
     p = VaseParams(facets=True, facets_around=10, facets_up=6, facet_rough=0.4)
     d = VaseDesign(p)
@@ -274,6 +293,40 @@ def test_drawn_outlines():
     save_design(path, fake.p)
     back = load_design(path)
     assert back.drawn1 == fake.p.drawn1 and back.repeat1 == 5
+
+
+def test_many_repeats():
+    """A piece repeated up to a hundred times: narrowed to fit, checked quickly, built and filled."""
+    five = sections.OUTLINES[1][1]
+    hundred = sections.respace(five, 5, 100)
+    back = sections.respace(hundred, 100, 5)
+    a = [np.unwrap(np.arctan2([q[1] for q in pts], [q[0] for q in pts])) for pts in (five, back)]
+    assert np.allclose(np.diff(a[0]), np.diff(a[1]), atol=1e-3)            # there and back: the same piece
+    assert np.allclose([math.hypot(q[0], q[1]) for q in five], [math.hypot(q[0], q[1]) for q in hundred], atol=1e-3)
+    # the quick check on the drawn piece finds what the full check finds
+    for pts, n in ((hundred, 100), (five, 5), (five, 8), (sections.CLAW, 1), (sections.CLAW, 3)):
+        loop = sections.spline(pts, n, per=16)
+        assert bool(sections.piece_crossings(loop, 16 * len(pts))) == bool(sections.crossings(loop, limit=10 ** 6)), n
+    assert sections.piece_crossings(sections.spline(five, 8, per=16), 16 * len(five))    # too wide for 8: crosses
+    # filling a loop of thousands of points: every side once, no more triangles than it needs, the same area
+    loop = sections.resample(sections.normalised(sections.spline(hundred, 100)), 4000)
+    T = sections.triangulate(loop)
+    assert len(T) == len(loop) - 2
+    sides = np.sort(np.concatenate([T[:, [0, 1]], T[:, [1, 2]], T[:, [2, 0]]]), axis=1)
+    edges, uses = np.unique(sides, axis=0, return_counts=True)
+    outline = {(min(i, (i + 1) % 4000), max(i, (i + 1) % 4000)) for i in range(4000)}
+    assert all((u == 1) == (tuple(e) in outline) for e, u in zip(edges, uses)) and uses.max() == 2
+    A, B, C = loop[T[:, 0]], loop[T[:, 1]], loop[T[:, 2]]
+    cut = 0.5 * ((B[:, 0] - A[:, 0]) * (C[:, 1] - A[:, 1]) - (B[:, 1] - A[:, 1]) * (C[:, 0] - A[:, 0]))
+    assert cut.min() > -1e-12 and abs(cut.sum() - sections.area(loop)) < 1e-9
+    # and the vase: closed, one loop a layer, within the limit, in a few seconds
+    t0 = time.perf_counter()
+    d = VaseDesign(plain(shape1=DRAWN, drawn1=hundred, repeat1=100, twist=60))
+    assert time.perf_counter() - t0 < 15
+    assert not d.errors and d.closed and d.worst <= d.p.max_overhang + TOLERANCE
+    assert d.N >= 22 * 100
+    for z in (5.3, 61.7, 140.2):
+        assert layer_loops(d, z) == 1
 
 
 def test_designs_save_and_open():

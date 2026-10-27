@@ -12,7 +12,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PySide6.QtCore import QPoint, QPointF, QSettings, Qt  # noqa: E402
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF, QWheelEvent  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
@@ -89,6 +89,28 @@ def main():
     # the gallery and Surprise me keep the printer
     win.widgets["line_width"].setValue(0.8)
     settle()
+    # a plain start, for your own function or cross-section: there in Simple mode too
+    before = win.params.to_dict()
+    win.set_simple_mode(True, remember=False)
+    win.a_plain.trigger()
+    check("New plain cylinder: 200 mm across and tall, everything off, the printer kept",
+          win.params.name == "plain_cylinder" and abs(win.design.H - 200) < 1e-9 and abs(win.design.widest - 200) < 0.01
+          and win.design.worst < 0.01 and win.params.line_width == 0.8 and win.params.twist == 0
+          and win.params.shape1 == CIRCLE and win.params.rib_count == 0 and win.params.expression == "")
+    check("... and Your own function is there in Simple mode", win._wanted("expression")
+          and win.a_plain in win.gallery_menu.actions())
+    win.widgets["expression"].setPlainText("2 * sin(8*theta)")
+    settle()
+    check("... and a function typed in shapes it", win.design.closed and abs(win.design.widest - 204) < 0.2)
+    win.widgets["shape1"].setCurrentIndex(win.widgets["shape1"].findData(DRAWN))
+    settle()
+    check("... and Drawn starts from a circle", win.params.repeat1 == 1 and len(win.params.drawn1) == 8
+          and win.design.closed)
+    win.undo()
+    win.undo()
+    win.undo()
+    check("... and it can all be undone", win.params.to_dict() == before)
+    win.set_simple_mode(False, remember=False)
     win.use_gallery("Ocean Ripple")
     check("a gallery vase keeps the line width", win.params.line_width == 0.8 and win.params.name == "ocean_ripple")
     check("... and is a gradient", win.design.gradient and win.params.colour_style == GRADIENT)
@@ -222,6 +244,50 @@ def main():
     QTest.mouseDClick(oed, Qt.LeftButton, Qt.NoModifier, mid + QPoint(0, 1))
     settle()
     check("... and double-clicking the line adds a point", len(win.params.drawn1) == n + 1 and win.design.closed)
+
+    # a hundred repeats: the piece narrows to fit, shown close up, and in a window of its own
+    before = np.array([q[:2] for q in win.params.drawn1])
+    win.widgets["repeat1"].setValue(100)
+    settle()
+    after = np.array([q[:2] for q in win.params.drawn1])
+    spread = [np.ptp(np.unwrap(np.arctan2(P[:, 1], P[:, 0]))) for P in (before, after)]
+    check("Repeat around 100: the piece narrows to fit, as deep as before, and the vase builds",
+          win.params.repeat1 == 100 and abs(spread[1] - spread[0] * 3 / 100) < 1e-3
+          and np.allclose(np.hypot(*before.T), np.hypot(*after.T), atol=1e-3)
+          and win.design.closed and "drawn bottom outline crosses itself" not in win.info.toPlainText())
+    check("... and the editor shows one repeat close up", oed.close_up() and win.close_up_buttons[1].isChecked())
+    win._open_outline_window(1)
+    qapp.processEvents()
+    big = win.outline_windows[1]
+    bed = big.editor
+    check("Full window opens the editor on its own, bigger, showing the same",
+          big.isVisible() and bed.repeat == 100 and big.repeat.value() == 100 and bed.points == oed.points
+          and bed.width() > oed.width() and bed.close_up())
+    spot = QPointF(bed.width() * 0.5, bed.height() * 0.4)
+    held = bed._from(spot)
+    s0 = bed._view()[2]
+    QApplication.sendEvent(bed, QWheelEvent(spot, bed.mapToGlobal(spot), QPoint(), QPoint(0, 240), Qt.NoButton,
+                                            Qt.NoModifier, Qt.NoScrollPhase, False))
+    check("the wheel zooms in about the mouse", bed._view()[2] > 1.3 * s0
+          and (bed._to(*held) - spot).manhattanLength() < 1.0)
+    j = max(range(len(bed.points)), key=lambda q: np.hypot(*bed.points[q][:2]))       # the tip of the lobe
+    tip = list(win.params.drawn1[j])
+    at = bed._to(*bed.points[j][:2]).toPoint()
+    QTest.mousePress(bed, Qt.LeftButton, Qt.NoModifier, at)
+    QTest.mouseMove(bed, at + QPoint(0, 25))
+    QTest.mouseRelease(bed, Qt.LeftButton, Qt.NoModifier, at + QPoint(0, 25))
+    settle()
+    check("dragging a point in the full window changes the vase, and the editor in the panel",
+          win.params.drawn1[j] != tip and oed.points == [[x, y, bool(c)] for x, y, c in win.params.drawn1]
+          and win.design.closed)
+    big.repeat.setValue(6)
+    settle()
+    check("its Repeat around changes the vase and the panel, and shows the whole outline again",
+          win.params.repeat1 == 6 and win.widgets["repeat1"].value() == 6 and oed.repeat == 6
+          and not bed.close_up() and not oed.close_up() and win.design.closed)
+    big.close()
+    win.widgets["repeat1"].setValue(3)
+    settle()
     choose("shape2", DRAWN)
     check("a top shape that was the same starts as a copy of the bottom one",
           win.params.drawn2 == win.params.drawn1 and win.params.repeat2 == 3)
@@ -252,7 +318,10 @@ def main():
     win.export_stl()
     verts, faces = read_stl(out["stl"])
     check("... and its STL is watertight", edge_check(faces)[0] and len(faces) == win.design.triangles)
+    win._open_outline_window(1)
+    qapp.processEvents()
     choose("shape1", CIRCLE)
+    check("the full window closes when the shape is no longer drawn", not win.outline_windows[1].isVisible())
 
     # a broken function is reported, not crashed on
     win.widgets["expression"].setPlainText("sin(theta")

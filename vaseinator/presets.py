@@ -110,6 +110,24 @@ GALLERY = [
 ]
 
 
+# a blank start: a plain cylinder with nothing else on, to add your own function or cross-section to
+PLAIN = dict(name="plain_cylinder", height=200.0, profile=1, silhouette=outline(1, 200.0),
+             shape1=CIRCLE, turn1=0.0, shape2=SAME, twist=0.0, twist_style=EVENLY, lattice=False,
+             rib_count=0, rib_lean=0.0, rib_cross=False, ring_count=0, bump_around=0, organic_depth=0.0,
+             strength=EVERYWHERE, facets=False, expression="", vase_mode=REAL_VASE, colour_style=ONE_COLOUR,
+             colours_used=1, look=MATTE, **palette("Porcelain"))
+
+
+def plain_design(keep: VaseParams | None = None) -> VaseParams:
+    """The plain cylinder - 200 mm across and 200 mm tall, everything else off - with the printer settings of
+    ``keep``."""
+    p = VaseParams(**PLAIN)
+    if keep is not None:
+        for k in PRINTER_KEYS:
+            setattr(p, k, getattr(keep, k))
+    return p.copy()
+
+
 def gallery_design(name: str, keep: VaseParams | None = None) -> VaseParams:
     """A ready-made vase, with the printer settings of ``keep``."""
     for title, _, changes in GALLERY:

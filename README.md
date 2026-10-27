@@ -32,7 +32,8 @@ ready to slice.
   as you like (circle → pentagon → circle → pentagon), or along your own curve.
 * **Draw any cross-section**: a spline editor with smooth points and sharp **cusps**, for shapes no
   formula makes – lobes that swell past their necks, a crescent, a claw, a heart, nothing symmetrical at
-  all. Draw one lobe and **repeat it around**, start from a built-in shape, or **trace a picture**.
+  all. Draw one lobe and **repeat it around** – up to 100 times – start from a built-in shape, or
+  **trace a picture**. Draw close up on one repeat, or in a **full window** with zoom.
 * **Spin**: twist the shape round as it rises – evenly, easing in and out, speeding up, slowing down,
   **back and forth**, or along your own curve – or **both ways at once** for a lattice of crossing ridges.
 * **Surface patterns**: ribs (that can spiral, or cross for diamond knurling), rings, staggered bumps
@@ -58,12 +59,13 @@ ready to slice.
   print** builds it up in real print time (wide layers take longer).
 * **The sums**: size, base and opening, how much water it holds, filament in grams and metres, print
   time, steepest overhang, and the mesh – closed and watertight.
-* **Gallery** of nineteen ready-made vases, **Surprise me** (a new random vase that still prints), and
-  **undo / redo** of everything.
+* **Gallery** of nineteen ready-made vases, a **plain cylinder** to start from blank, **Surprise me** (a
+  new random vase that still prints), and **undo / redo** of everything.
 * Exports a solid **STL**, or a **3MF** in the middle of the bed – one solid for a real spiral vase, each
   colour band its own part, set to its filament, for a fake one – as Lenticular Sign Maker and Maze Tube
   Designer do. Designs save as `.vase` files (JSON).
-* **Simple** shows the essentials; **Detailed** shows every setting and the curves.
+* **Simple** shows the essentials, your own function among them; **Detailed** shows every setting and the
+  curves.
 
 ## Download and run
 
@@ -91,8 +93,11 @@ Sign Maker, if you have used them. Printer settings are remembered for new desig
 
 ## Using it
 
-Pick a vase from the **Gallery** or press **Surprise me**, then change it. Every change rebuilds the vase
-at once; while you drag a point on a curve, a quicker rough version follows your hand.
+Pick a vase from the **Gallery** or press **Surprise me**, then change it. Or start blank: **Plain
+cylinder**, at the top of the Gallery (or **File ▸ New plain cylinder**, Ctrl+Shift+N), is a cylinder
+200 mm across and 200 mm tall with everything else off, ready for your own function or a drawn
+cross-section; your printer settings are kept. Every change rebuilds the vase at once; while you drag a
+point on a curve, a quicker rough version follows your hand.
 
 The curves for the twist, the change of shape and the pattern strength are ordinary graphs: the vase
 from bottom to top runs left to right, and the value runs up – drag a point up for more, down for
@@ -118,7 +123,11 @@ is Surprise me, **Ctrl+Z / Ctrl+Y** undo and redo.
 (the outline is scaled so its furthest point touches it). Drag a point; double-click the line to add one,
 and double-click a point to switch it between smooth (a circle) and a sharp corner (a diamond);
 right-click a point to take it away. **Repeat around** copies what you draw round the axis – draw one lobe,
-get five. **Start from** has ready-made outlines – a claw, bulbs, a heart – and **Trace a
+get five, or up to a hundred; change the number and the lobe narrows or widens to fit, just as deep.
+**Close up** shows one repeat big, turned to point upwards (above 8 repeats the editor starts that way),
+and double-clicking any copy adds the point to the lobe you draw. **Full window…** opens the editor as big
+as the screen: the wheel zooms, a right or middle drag moves it, **F** fits it again, and the vase follows
+as you draw. **Start from** has ready-made outlines – a claw, bulbs, a heart – and **Trace a
 picture…** (a dark closed line or filled shape on a light ground). Switching a built-in shape to Drawn
 starts from it: a five-petalled flower becomes one petal, repeated five times. Twist, the change into a
 second shape, the patterns and colour bands all work on a drawn outline; it turns red if it crosses itself.
@@ -233,9 +242,11 @@ overhang limit, and one closed loop at every height tested; that leans are measu
 cylinder has the right volume and capacity; that STL and 3MF files read back the same; that designs save
 and open; that your own function can reach nothing it shouldn't; that colour changes land on layers; and
 that a drawn outline goes through its points, matches the built-in shape it came from, holds what a round
-vase holds, is refused if it crosses itself, and can be traced from a picture.
+vase holds, is refused if it crosses itself, can be traced from a picture, and repeated a hundred times –
+narrowed to fit, checked, filled and built closed in a few seconds.
 `.venv\Scripts\python -m tests.test_app` drives the window itself: edits, curves, undo, the gallery,
-Surprise me, every view, the print animation, saving and exporting, and drawing, repeating and tracing a
+Surprise me, every view, the print animation, saving and exporting, and drawing (with the mouse, close
+up and in a full window, zoomed with the wheel), repeating up to a hundred times and tracing a
 cross-section. Test windows open on the second
 screen, if there is one.
 

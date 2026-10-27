@@ -23,12 +23,12 @@ from . import sections
 from .curves import CurveEditor
 from .expr import EXAMPLES, FUNCTION_HELP, VARIABLES
 from .geometry import VaseDesign, duration
-from .outline_editor import OutlineEditor
+from .outline_editor import CLOSE_UP_FROM, OutlineEditor, OutlineWindow
 from .params import (BANDS, CIRCLE, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, FILAMENTS, GLOSSY, GRADIENT, MATTE, ONE_COLOUR,
                      OWN, OWN_PROFILE, PEBBLE, POLYGON, REAL_VASE, SAME, SHAPES, SILK, SLOW_DOWN, SPEED_UP, STRIPES,
                      SWING, TRANSLUCENT, VaseParams, colour_style_of, load_design, save_design)
 from .plots import ShapePlots
-from .presets import GALLERY, gallery_design, outline, palette, surprise
+from .presets import GALLERY, gallery_design, outline, palette, plain_design, surprise
 from .shapes import (PALETTES, PROFILES, SHAPE_LABELS, SHAPE_NAMES, change, progress, sample_points, shape_table,
                      strength, strength_names, style_names)
 from .stl import write_stl
@@ -70,7 +70,7 @@ def _shape(k: int) -> tuple:
          "(the outline is scaled so its furthest point touches it). Drag the points; double-click the\n"
          "line to add one, double-click a point to make it a sharp corner or smooth again, right-click\n"
          "a point to take it away. A red outline crosses itself and can't be built."),
-        (f"repeat{k}", "Repeat around", "int", 1, 24, 1, "",
+        (f"repeat{k}", "Repeat around", "int", 1, 100, 1, "",
          "Draw one piece - one lobe, one petal - and repeat it this many times round the axis.\n"
          "1: the whole outline is drawn, and can be lopsided."),
         (f"count{k}", "Sides", "int", 1, 99, 1, "", "How many sides, points, petals or teeth."),
@@ -231,6 +231,7 @@ SPEC = [
 ]
 
 SIMPLE_KEYS = {"height", "widest", "profile", "shape1", "drawn1", "repeat1", "count1", "depth1", "sharp1",
+               "expression",
                "shape2", "drawn2", "repeat2", "count2",
                "morph", "morph_swings", "twist",
                "twist_style", "lattice", "rib_count", "rib_depth", "ring_count", "ring_depth", "bump_around",
@@ -372,6 +373,9 @@ class MainWindow(QMainWindow):
         self._dirty = False
         self.widgets = {}
         self.labels = {}
+        self.outline_menus = {}        # Start from, for each drawn cross-section
+        self.close_up_buttons = {}
+        self.outline_windows = {}      # the cross-section editors opened full window
         self.slider_notes = {}
         self.history: list[dict] = []
         self.future: list[dict] = []
@@ -604,8 +608,8 @@ class MainWindow(QMainWindow):
             vl.setSpacing(4)
             ed = OutlineEditor()
             ed.set_outline(getattr(self.params, key), getattr(self.params, f"repeat{k}"))
-            ed.changed.connect(lambda pts, kk=key: self._on_param(kk, pts, live=True))
-            ed.finished.connect(lambda pts, kk=key: self._on_param(kk, pts))
+            ed.changed.connect(lambda pts, kk=int(k), e=ed: self._outline_edited(kk, pts, e, live=True))
+            ed.finished.connect(lambda pts, kk=int(k), e=ed: self._outline_edited(kk, pts, e))
             start = QToolButton()
             start.setText("Start from")
             start.setPopupMode(QToolButton.InstantPopup)
@@ -618,9 +622,25 @@ class MainWindow(QMainWindow):
             start.setMenu(m)
             start.setToolTip("Start again from a ready-made outline, or trace one from a picture: dark lines "
                              "drawn round a shape on a light or see-through ground.")
+            close = QToolButton()
+            close.setText("Close up")
+            close.setCheckable(True)
+            close.setToolTip("Show one repeat close up, turned to point upwards - or the whole outline.\n"
+                             f"Above {CLOSE_UP_FROM} repeats it starts close up.")
+            close.toggled.connect(ed.set_close_up)
+            ed.view_changed.connect(lambda kk=int(k): self._show_close_up(kk))
+            big = QToolButton()
+            big.setText("Full window…")
+            big.setToolTip("Draw it in a window of its own, as big as the screen: the wheel zooms, a right-drag "
+                           "moves it.")
+            big.clicked.connect(lambda _=False, kk=int(k): self._open_outline_window(kk))
+            self.outline_menus[int(k)] = m
+            self.close_up_buttons[int(k)] = close
             buttons = QHBoxLayout()
             buttons.setContentsMargins(0, 0, 0, 0)
             buttons.addWidget(start)
+            buttons.addWidget(close)
+            buttons.addWidget(big)
             buttons.addStretch(1)
             vl.addWidget(ed)
             vl.addLayout(buttons)
@@ -779,6 +799,8 @@ class MainWindow(QMainWindow):
             elif isinstance(w, OutlineEditor):
                 w.set_outline(getattr(self.params, key), getattr(self.params, f"repeat{key[-1]}"))
             w.blockSignals(False)
+        for k in (1, 2):
+            self._push_outline(k)
         self.name_edit.blockSignals(True)
         self.name_edit.setText(self.params.name)
         self.name_edit.blockSignals(False)
@@ -832,6 +854,9 @@ class MainWindow(QMainWindow):
         s = p.band_spacing
         self.slider_notes["band_spacing"].setText(
             "Even" if abs(s) < 0.05 else ("Thicker towards the top" if s > 0 else "Thicker towards the bottom"))
+        for k, win in self.outline_windows.items():          # a shape no longer drawn has nothing to draw
+            if win.isVisible() and getattr(p, f"shape{k}") != DRAWN:
+                win.close()
         self._apply_mode()
 
     def _wanted(self, key) -> bool:
@@ -950,6 +975,9 @@ class MainWindow(QMainWindow):
             return a
 
         self.a_new = act("New", self.new_design, QStyle.SP_FileIcon, "Ctrl+N", "Start again from the default vase")
+        self.a_plain = act("New plain cylinder", self.use_plain, None, "Ctrl+Shift+N",
+                           "Start from a plain cylinder, 200 mm across and 200 mm tall, with everything else off - "
+                           "ready for your own function or a drawn cross-section")
         self.a_open = act("Open…", self.open_design, QStyle.SP_DialogOpenButton, "Ctrl+O", "Open a saved vase design")
         self.a_save = act("Save", self.save_design, QStyle.SP_DialogSaveButton, "Ctrl+S", "Save the design")
         self.a_save_as = act("Save As…", lambda: self.save_design(as_new=True), None, "Ctrl+Shift+S")
@@ -995,6 +1023,8 @@ class MainWindow(QMainWindow):
         gal_btn.setPopupMode(QToolButton.InstantPopup)
         gal_btn.setToolTip("Ready-made vases to start from")
         self.gallery_menu = QMenu(gal_btn)
+        self.gallery_menu.addAction(self.a_plain)
+        self.gallery_menu.addSeparator()
         for title, about, _ in GALLERY:
             a = self.gallery_menu.addAction(title)
             a.setToolTip(about)
@@ -1009,8 +1039,8 @@ class MainWindow(QMainWindow):
 
         mb = self.menuBar()
         fm = mb.addMenu("&File")
-        for a in (self.a_new, self.a_open, self.a_save, self.a_save_as, None, self.a_exp_stl, self.a_exp_3mf,
-                  self.a_snap, None, self.a_quit):
+        for a in (self.a_new, self.a_plain, self.a_open, self.a_save, self.a_save_as, None, self.a_exp_stl,
+                  self.a_exp_3mf, self.a_snap, None, self.a_quit):
             fm.addAction(a) if a is not None else fm.addSeparator()
         em = mb.addMenu("&Edit")
         for a in (self.a_undo, self.a_redo, None, self.a_surprise, None, self.a_copy_plan):
@@ -1082,6 +1112,12 @@ class MainWindow(QMainWindow):
             elif key == "colour_style" and value != ONE_COLOUR and p.colours_used < 2:
                 p.colours_used = 3
                 self._set_widget("colours_used")
+            elif key in ("repeat1", "repeat2"):
+                # the drawn piece narrows or widens to fit: one lobe stays one lobe, as deep as before
+                k = key[-1]
+                setattr(p, f"drawn{k}", sections.respace(getattr(p, f"drawn{k}"), getattr(p, key), value))
+                setattr(p, key, value)
+                self._set_widget(key)                         # the other Repeat around, panel or window
             elif key in ("shape1", "shape2") and value == DRAWN and getattr(p, key) != DRAWN:
                 # a drawn outline starts as the shape it was: one petal of it, repeated, to edit
                 self._outline_from_shape(int(key[-1]))
@@ -1103,14 +1139,56 @@ class MainWindow(QMainWindow):
         elif isinstance(w, CurveEditor):
             w.set_points(getattr(self.params, key))
         elif isinstance(w, OutlineEditor):
-            w.set_outline(getattr(self.params, key), getattr(self.params, f"repeat{key[-1]}"))
+            w.blockSignals(False)
+            self._push_outline(int(key[-1]))
         elif isinstance(w, QComboBox):
             w.setCurrentIndex(max(0, w.findData(getattr(self.params, key))))
         elif isinstance(w, QSpinBox):
             w.setValue(int(getattr(self.params, key)))
+            if key in ("repeat1", "repeat2"):
+                self._push_outline(int(key[-1]))
         w.blockSignals(False)
 
     # ----------------------------------------------------- drawn outlines
+    def _outline_edited(self, k: int, pts, source, live=False):
+        """An editor changed drawn outline k: the vase follows, and so does the other editor."""
+        self._on_param(f"drawn{k}", pts, live=live)
+        self._push_outline(k, source)
+
+    def _push_outline(self, k: int, source=None):
+        """Show drawn outline k in its editors - the one in the panel and any full window - but the one it came
+        from."""
+        p = self.params
+        pts, repeat = getattr(p, f"drawn{k}"), getattr(p, f"repeat{k}")
+        ed = self.widgets.get(f"drawn{k}")
+        if ed is not None and ed is not source:
+            ed.set_outline(pts, repeat)
+        win = self.outline_windows.get(k)
+        if win is not None and win.editor is not source:
+            win.set_outline(pts, repeat)
+
+    def _show_close_up(self, k: int):
+        ed, b = self.widgets[f"drawn{k}"], self.close_up_buttons[k]
+        b.blockSignals(True)
+        b.setEnabled(ed.repeat > 1)
+        b.setChecked(ed.close_up())
+        b.blockSignals(False)
+
+    def _open_outline_window(self, k: int):
+        """The cross-section editor in a window of its own, as big as the screen."""
+        win = self.outline_windows.get(k)
+        if win is None:
+            title = "Draw the cross-section" if k == 1 else "Draw the cross-section it turns into"
+            win = OutlineWindow(self, f"{title} — {APP_NAME}", self.outline_menus[k])
+            win.editor.changed.connect(lambda pts, kk=k, e=win.editor: self._outline_edited(kk, pts, e, live=True))
+            win.editor.finished.connect(lambda pts, kk=k, e=win.editor: self._outline_edited(kk, pts, e))
+            win.repeat_changed.connect(lambda v, kk=k: self._on_param(f"repeat{kk}", int(v)))
+            self.outline_windows[k] = win
+        win.set_outline(getattr(self.params, f"drawn{k}"), getattr(self.params, f"repeat{k}"))
+        win.showMaximized()
+        win.raise_()
+        win.activateWindow()
+
     def _outline_from_shape(self, k: int):
         """Set drawn outline k from the cross-section it is replacing (the bottom one, for a top shape that was
         the same all the way)."""
@@ -1141,7 +1219,7 @@ class MainWindow(QMainWindow):
 
     def _trace_outline(self, k: int):
         start = self.settings.value("picture_dir", self._last_dir())
-        path, _ = QFileDialog.getOpenFileName(self, "Trace a picture", start,
+        path, _ = QFileDialog.getOpenFileName(QApplication.activeWindow() or self, "Trace a picture", start,
                                               "Pictures (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All files (*)")
         if not path:
             return
@@ -1232,6 +1310,16 @@ class MainWindow(QMainWindow):
         self.regenerate()
         self.statusBar().showMessage(f"Surprise #{seed}: {self.params.name.replace('_', ' ')} — Ctrl+Z to go "
                                      "back", 8000)
+
+    def use_plain(self):
+        """A blank start: the plain cylinder, keeping the printer settings."""
+        self._flush()
+        self.params = plain_design(keep=self.params)
+        self._dirty = True
+        self._refresh_widgets()
+        self.regenerate()
+        self.statusBar().showMessage("Plain cylinder, 200 mm across and 200 mm tall - type your own function, or "
+                                     "choose Drawn as the cross-section; Ctrl+Z to go back", 12000)
 
     def use_gallery(self, title):
         self._flush()
@@ -1670,14 +1758,26 @@ class MainWindow(QMainWindow):
             "<li><b>Drag</b> a point. <b>Double-click</b> the line to add one; double-click a point to make it "
             "a <b>sharp corner</b> (a diamond) or smooth again (a circle). Right-click a point, or hover and "
             "press Delete, to take it away.</li>"
-            "<li><b>Repeat around</b>: draw one lobe and have it copied round the axis - the faint copies.</li>"
+            "<li><b>Repeat around</b>, up to 100: draw one lobe and have it copied round the axis - the faint "
+            "copies. Change the number and the lobe narrows or widens to fit, just as deep. Double-clicking a "
+            "copy adds the point to the lobe you draw.</li>"
+            "<li><b>Close up</b> shows one repeat big, turned to point upwards, with a little of its "
+            "neighbours; above 8 repeats the editor starts that way.</li>"
+            "<li><b>Full window…</b> opens the editor as big as the screen, with Repeat around and Start from. "
+            "The wheel zooms, a right or middle drag moves it, F or Fit shows it all again. The vase follows as "
+            "you draw; un-maximise it to watch.</li>"
             "<li><b>Start from</b>: ready-made outlines - a claw, bulbs, a heart - or "
             "<b>Trace a picture…</b> - a dark closed line, or a dark filled shape, on a light or see-through "
             "ground.</li>"
+            "<li>For a blank start, <b>Gallery ▸ Plain cylinder</b> (or File ▸ New plain cylinder, "
+            "Ctrl+Shift+N) gives a cylinder 200 mm across and 200 mm tall with everything else off; choose "
+            "Drawn there and it starts as a circle.</li>"
             "<li>Switching a built-in shape to Drawn starts from that shape - a five-petalled flower becomes one "
             "petal, repeated five times - so you can pull it about.</li>"
             "<li>Twist, the change into a second shape, the patterns and the colours all work as before. The "
-            "outline turns red if it crosses itself: such a layer can't print as one loop.</li></ul>")
+            "outline turns red if it crosses itself: such a layer can't print as one loop. With many thin "
+            "lobes, deep patterns can close the gaps between them: the panel warns if a layer crosses "
+            "itself.</li></ul>")
 
     def about(self):
         QMessageBox.about(

@@ -629,8 +629,9 @@ class VaseDesign:
         p = self.p
         kind = getattr(p, f"shape{k}")
         if kind == DRAWN:
-            loop = sections.spline(getattr(p, f"drawn{k}"), getattr(p, f"repeat{k}"))
-            hits = sections.crossings(loop)
+            pts = getattr(p, f"drawn{k}")
+            loop = sections.spline(pts, getattr(p, f"repeat{k}"))
+            hits = sections.piece_crossings(loop, 48 * len(pts))
             if hits:
                 x, y = hits[0]
                 where = "bottom" if k == 1 else "top"
@@ -658,8 +659,9 @@ class VaseDesign:
         perimeter = max(float(np.linalg.norm(np.roll(L, -1, axis=0) - L, axis=1).sum()) for L in loops)
         step = max(p.facet_size, 0.15) * (2.6 if self.draft else 1.0)
         per = 10 if self.draft else 22
+        reps = max([getattr(p, f"repeat{k}") for k in (1, 2) if getattr(p, f"shape{k}") == DRAWN] + [1])
         N = max(math.ceil(perimeter * (0.5 * sil[:, 1].max() + tex) / step),
-                per * max(p.rib_count * (2 if p.rib_cross else 1), p.bump_around, 1), 160)
+                per * max(p.rib_count * (2 if p.rib_cross else 1), p.bump_around, reps), 160)
         M = max(math.ceil(H / step), (8 if self.draft else 16) * max(p.ring_count, 1), 24)
         if p.bump_around > 0:
             M = max(M, (8 if self.draft else 16) * p.bump_up)
@@ -672,7 +674,7 @@ class VaseDesign:
         limit = 140_000 if self.draft else 1_200_000
         if N * M > limit:
             f = math.sqrt(limit / (N * M))
-            N, M = max(int(N * f), 64), max(int(M * f), 16)
+            N, M = max(int(N * f), 64, 8 * reps), max(int(M * f), 16)      # each repeat keeps a few points
         self.N, self.M = (N + 3) // 4 * 4, M
         self.z = z = np.linspace(0.0, H, M + 1)
         self.dz = H / M
@@ -691,7 +693,7 @@ class VaseDesign:
         self.P_design = self._free_points(self.R0_d, self.tau_d, self.mix_d, self.env_d)
         # a blend of two outlines, or deep patterns in a tight corner, can make a layer cross itself
         for j in np.linspace(0, M, 7).astype(int):
-            if sections.crossings(self.P_design[j], limit=700):
+            if sections.crossings(self.P_design[j], limit=max(700, 12 * reps)):
                 self.warnings.append(f"The outline crosses itself at about {z[j]:.0f} mm up (where the shapes "
                                      "blend, or patterns meet in a tight corner): the slicer may fill it wrongly "
                                      "there. Ease the change of shape or the patterns.")

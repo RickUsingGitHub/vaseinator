@@ -152,6 +152,25 @@ def motif_from_table(table, repeat: int):
     return [[round(float(x), 4), round(float(y), 4), bool(c)] for (x, y), c in zip(pts, sharp)]
 
 
+def respace(points, old: int, new: int):
+    """A chain drawn to repeat ``old`` times round the axis, narrowed or widened to repeat ``new`` times.
+
+    Each point keeps its distance from the axis and its angle is scaled about
+    the middle of the chain's share of the circle, so one lobe stays one lobe:
+    five wide lobes become a hundred thin ones, as deep as before.
+    """
+    old, new = max(int(old), 1), max(int(new), 1)
+    if old == new or len(points) < 2:
+        return [list(q) for q in points]
+    P = np.asarray([q[:2] for q in points], dtype=float)
+    r = np.hypot(P[:, 0], P[:, 1])
+    a = np.unwrap(np.arctan2(P[:, 1], P[:, 0]))
+    mid = a[0] + math.pi / old                           # the middle of its share, first point to next copy's
+    b = mid + (a - mid) * old / new
+    return [[round(float(rr * math.cos(t)), 6), round(float(rr * math.sin(t)), 6), bool(q[2])]
+            for rr, t, q in zip(r, b, points)]
+
+
 def bulbs(n: int, neck: float = 0.42, bulb: float = 0.3):
     """One petal of a flower whose round petals bulge out past their necks - no radius map can make it."""
     a = math.pi / n
@@ -220,50 +239,141 @@ def crossings(poly, limit: int = 4000) -> list:
     return found
 
 
+def piece_crossings(loop, piece: int) -> list:
+    """Where a repeated outline crosses itself, looking only at the drawn piece: its first ``piece`` sides.
+
+    Every copy is the same piece turned, so any crossing has a twin on the
+    drawn one - and only sides near it can cross it. Quick even for a hundred
+    copies, and exact: nothing is thinned out.
+    """
+    loop = np.asarray(loop, dtype=float)
+    n = len(loop)
+    m = min(max(int(piece), 1), n)
+    a, b = loop, np.roll(loop, -1, axis=0)
+    lo, hi = np.minimum(a, b), np.maximum(a, b)
+    box_lo, box_hi = lo[:m].min(0), hi[:m].max(0)
+    near = np.nonzero((lo[:, 0] <= box_hi[0]) & (hi[:, 0] >= box_lo[0])
+                      & (lo[:, 1] <= box_hi[1]) & (hi[:, 1] >= box_lo[1]))[0]
+    found = []
+    for i in range(m):
+        # not the side itself or its neighbours, and each pair of the piece's own sides once
+        j = near[(near != i) & (near != (i + 1) % n) & (near != (i - 1) % n) & ((near >= m) | (near > i))]
+        j = j[(lo[j, 0] <= hi[i, 0]) & (hi[j, 0] >= lo[i, 0]) & (lo[j, 1] <= hi[i, 1]) & (hi[j, 1] >= lo[i, 1])]
+        if not len(j):
+            continue
+        p, r = a[i], b[i] - a[i]
+        q, s = a[j], b[j] - a[j]
+        den = r[0] * s[:, 1] - r[1] * s[:, 0]
+        qp = q - p
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = (qp[:, 0] * s[:, 1] - qp[:, 1] * s[:, 0]) / den
+            u = (qp[:, 0] * r[1] - qp[:, 1] * r[0]) / den
+        hit = (np.abs(den) > 1e-12) & (t >= 0) & (t < 1) & (u >= 0) & (u < 1)
+        for k in np.nonzero(hit)[0]:
+            found.append(tuple(p + r * t[k]))
+        if len(found) > 20:
+            break
+    return found
+
+
 # =============================================================== making solid
 def triangulate(poly) -> np.ndarray:
     """Triangles filling a simple anticlockwise loop, as indices into it (ear clipping).
 
-    A loop that is not quite simple (a wall moved in past a sharp tip folds over a
-    little) still gets one triangle per point but two, every side used once: where
-    no ear is clear, the one with the fewest points inside it is cut.
+    The loop is a linked list and its inward (reflex) corners sit in a grid, so
+    each ear is checked only against the corners near it: thousands of points
+    take a moment. A loop that is not quite simple (a wall moved in past a sharp
+    tip folds over a little) still gets one triangle per point but two, every
+    side used once: where no ear is clear, the one with the fewest corners
+    inside it is cut.
     """
     P = np.asarray(poly, dtype=float)
-    idx = list(range(len(P)))
-    tris = []
-    guard = 0
-    while len(idx) > 3 and guard < 4 * len(P) * len(P):
-        n = len(idx)
-        I = np.array(idx)
-        A, B, C = P[np.roll(I, 1)], P[I], P[np.roll(I, -1)]
-        cross = (B[:, 0] - A[:, 0]) * (C[:, 1] - B[:, 1]) - (B[:, 1] - A[:, 1]) * (C[:, 0] - B[:, 0])
-        convex = cross > 1e-14
-        reflex = I[~convex]
-        best, fewest = None, None
-        for k in np.nonzero(convex)[0]:
-            guard += 1
-            a, b, c = A[k], B[k], C[k]
-            others = reflex[(reflex != I[k - 1]) & (reflex != I[(k + 1) % n])]
-            inside = 0
-            if len(others):
-                Q = P[others]
-                d1 = (b[0] - a[0]) * (Q[:, 1] - a[1]) - (b[1] - a[1]) * (Q[:, 0] - a[0])
-                d2 = (c[0] - b[0]) * (Q[:, 1] - b[1]) - (c[1] - b[1]) * (Q[:, 0] - b[0])
-                d3 = (a[0] - c[0]) * (Q[:, 1] - c[1]) - (a[1] - c[1]) * (Q[:, 0] - c[0])
-                inside = int(np.count_nonzero((d1 >= 0) & (d2 >= 0) & (d3 >= 0)))
-            if fewest is None or inside < fewest:
-                best, fewest = k, inside
-                if inside == 0:
+    n = len(P)
+    if n < 3:
+        return np.zeros((0, 3), dtype=np.int64)
+    xs, ys = P[:, 0].tolist(), P[:, 1].tolist()
+    prv = [n - 1] + list(range(n - 1))
+    nxt = list(range(1, n)) + [0]
+
+    def turn(i):
+        a, c = prv[i], nxt[i]
+        return (xs[i] - xs[a]) * (ys[c] - ys[i]) - (ys[i] - ys[a]) * (xs[c] - xs[i])
+
+    x0, y0 = min(xs), min(ys)
+    size = max(max(xs) - x0, max(ys) - y0, 1e-12)
+    h = size / max(math.sqrt(n), 1.0)                    # about one corner per cell
+    grid = {}
+
+    def cell(i):
+        return int((xs[i] - x0) / h), int((ys[i] - y0) / h)
+
+    reflex = set()
+    for i in range(n):
+        if turn(i) <= 1e-14:
+            reflex.add(i)
+            grid.setdefault(cell(i), set()).add(i)
+
+    def inside_count(i, stop_at_one):
+        """Reflex corners in the triangle cut off at corner i (on its sides counts as in)."""
+        a, c = prv[i], nxt[i]
+        ax, ay, bx, by, cx, cy = xs[a], ys[a], xs[i], ys[i], xs[c], ys[c]
+        lo_x, hi_x = min(ax, bx, cx), max(ax, bx, cx)
+        lo_y, hi_y = min(ay, by, cy), max(ay, by, cy)
+        i0, i1 = int((lo_x - x0) / h), int((hi_x - x0) / h)
+        j0, j1 = int((lo_y - y0) / h), int((hi_y - y0) / h)
+        if (i1 - i0 + 1) * (j1 - j0 + 1) > len(reflex):
+            near = reflex
+        else:
+            near = [q for gi in range(i0, i1 + 1) for gj in range(j0, j1 + 1) for q in grid.get((gi, gj), ())]
+        count = 0
+        for q in near:
+            if q == a or q == c or q == i:
+                continue
+            qx, qy = xs[q], ys[q]
+            if qx < lo_x or qx > hi_x or qy < lo_y or qy > hi_y:
+                continue
+            if ((bx - ax) * (qy - ay) - (by - ay) * (qx - ax) >= 0 and (cx - bx) * (qy - by) - (cy - by) * (qx - bx) >= 0
+                    and (ax - cx) * (qy - cy) - (ay - cy) * (qx - cx) >= 0):
+                count += 1
+                if stop_at_one:
                     break
-        if best is None:                                   # no corner turns the right way: fan the rest
-            for k in range(1, len(idx) - 1):
-                tris.append((idx[0], idx[k], idx[k + 1]))
-            idx = []
-            break
-        tris.append((idx[best - 1], idx[best], idx[(best + 1) % n]))
-        del idx[best]
-    if len(idx) == 3:
-        tris.append(tuple(idx))
+        return count
+
+    tris = []
+    left = n
+    i, tried = 0, 0
+    while left > 3:
+        if i not in reflex and inside_count(i, True) == 0:
+            cut = i
+        elif tried < left:
+            i, tried = nxt[i], tried + 1
+            continue
+        else:                                              # no ear is clear: the one hiding fewest corners
+            cut, fewest, j = None, None, i
+            for _ in range(left):
+                if turn(j) > 1e-14:
+                    k = inside_count(j, False)
+                    if fewest is None or k < fewest:
+                        cut, fewest = j, k
+                j = nxt[j]
+            if cut is None:                                # no corner turns the right way: fan the rest
+                j = nxt[i]
+                while nxt[j] != i:
+                    tris.append((i, j, nxt[j]))
+                    j = nxt[j]
+                left = 0
+                break
+        a, c = prv[cut], nxt[cut]
+        tris.append((a, cut, c))
+        nxt[a], prv[c] = c, a
+        left -= 1
+        for v in (a, c):                                   # a neighbour may have turned convex
+            if v in reflex and turn(v) > 1e-14:
+                reflex.discard(v)
+                grid[cell(v)].discard(v)
+        i, tried = a, 0
+    if left == 3:
+        tris.append((prv[i], i, nxt[i]))
     return np.array(tris, dtype=np.int64)
 
 
