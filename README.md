@@ -20,6 +20,8 @@ ready to slice.
 | ![Detailed mode with curves](docs/images/detailed.png) | ![Section view](docs/images/section.png) |
 | **Overhangs: green is easy, red needs support** | **Watch it print, in real print time** |
 | ![Overhang check](docs/images/overhangs.png) | ![Print layout and animation](docs/images/print_layout.png) |
+| **Draw any cross-section, sharp corners and all** | **Draw one lobe, repeat it: three bulbs become six** |
+| ![The cross-section editor](docs/images/drawn_lobed_sketch.png) | ![Repeat around](docs/images/drawn_bulb_swirl.png) |
 
 ## Features
 
@@ -28,6 +30,9 @@ ready to slice.
 * **Cross-section**: circle, polygon (with rounded corners), star, flower, gear, ellipse or pebble – and
   a second shape it **turns into** on the way up – evenly, early, late, **back and forth** as many times
   as you like (circle → pentagon → circle → pentagon), or along your own curve.
+* **Draw any cross-section**: a spline editor with smooth points and sharp **cusps**, for shapes no
+  formula makes – lobes that swell past their necks, a crescent, a claw, a heart, nothing symmetrical at
+  all. Draw one lobe and **repeat it around**, start from a built-in shape, or **trace a picture**.
 * **Spin**: twist the shape round as it rises – evenly, easing in and out, speeding up, slowing down,
   **back and forth**, or along your own curve – or **both ways at once** for a lattice of crossing ridges.
 * **Surface patterns**: ribs (that can spiral, or cross for diamond knurling), rings, staggered bumps
@@ -53,7 +58,7 @@ ready to slice.
   print** builds it up in real print time (wide layers take longer).
 * **The sums**: size, base and opening, how much water it holds, filament in grams and metres, print
   time, steepest overhang, and the mesh – closed and watertight.
-* **Gallery** of seventeen ready-made vases, **Surprise me** (a new random vase that still prints), and
+* **Gallery** of twenty ready-made vases, **Surprise me** (a new random vase that still prints), and
   **undo / redo** of everything.
 * Exports a solid **STL**, or a **3MF** in the middle of the bed – one solid for a real spiral vase, each
   colour band its own part, set to its filament, for a fake one – as Lenticular Sign Maker and Maze Tube
@@ -95,7 +100,7 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | Group | What it does |
 | --- | --- |
 | **Size** | Height, the widest diameter (scales the whole outline), and the outline: a preset, or your own curve – diameter at each height, drawn as the vase seen from the side. |
-| **Shape** | The cross-section at the bottom, and what it turns into at the top. Each shape has its own settings: sides, points, petals or teeth; how deep it cuts in; how sharp it is; how far it is turned. **Change happens** says how the first shape becomes the second on the way up – including back and forth, as many **Changes** as you like, and your own curve. |
+| **Shape** | The cross-section at the bottom, and what it turns into at the top. Each shape has its own settings: sides, points, petals or teeth; how deep it cuts in; how sharp it is; how far it is turned. **Drawn – any outline** gives you the cross-section editor instead (below). **Change happens** says how the first shape becomes the second on the way up – including back and forth, as many **Changes** as you like, and your own curve. |
 | **Spin** | How far the shape turns from bottom to top, and how the turning is spread up the vase – including back and forth, and your own curve. **Both ways** twists it both ways at once. |
 | **Surface** | Ribs, rings, bumps and organic lumps; whether they turn with the twist; how strong they are up the vase; and a plain foot and rim. |
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |
@@ -106,6 +111,15 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 **3D view:** left-drag turns it, right-drag or shift-drag moves it, the wheel zooms, double-click or F goes
 back to the chosen view. **S** spins it, **F5** watches it print, **Ctrl+1–4** switch views, **Ctrl+R**
 is Surprise me, **Ctrl+Z / Ctrl+Y** undo and redo.
+
+**Drawing a cross-section:** the middle of the editor is the vase's axis and the dashed circle its widest
+(the outline is scaled so its furthest point touches it). Drag a point; double-click the line to add one,
+and double-click a point to switch it between smooth (a circle) and a sharp corner (a diamond);
+right-click a point to take it away. **Repeat around** copies what you draw round the axis – draw one lobe,
+get five. **Start from** has ready-made outlines, the two sketches the editor began with, and **Trace a
+picture…** (a dark closed line or filled shape on a light ground). Switching a built-in shape to Drawn
+starts from it: a five-petalled flower becomes one petal, repeated five times. Twist, the change into a
+second shape, the patterns and colour bands all work on a drawn outline; it turns red if it crosses itself.
 
 Under the 3D view, **From the side** shows the outline in the colour of each height (the dashed line is
 the narrowest radius, so you can see how deep the shape goes; an orange tick on the left marks heights
@@ -173,7 +187,9 @@ Sign Maker and Maze Tube Designer. In **Flash Studio or OrcaSlicer**, use **File
 | `vaseinator/geometry.py` | The vase itself: the surface, softening, the solid and the shown shell, and the sums. |
 | `vaseinator/shapes.py` | Outlines, cross-sections, curves up the height, textures, palettes. |
 | `vaseinator/expr.py` | Your own function: checked, then evaluated with numpy. |
+| `vaseinator/sections.py` | Drawn cross-sections: the spline through the points, tracing a picture, filling and insetting outlines. |
 | `vaseinator/curves.py` | The curve editor. |
+| `vaseinator/outline_editor.py` | The cross-section editor. |
 | `vaseinator/plots.py` | The side and from-above pictures. |
 | `vaseinator/viewer.py` | The OpenGL 3D view. |
 | `vaseinator/presets.py` | The gallery and Surprise me. |
@@ -190,6 +206,14 @@ every layer is one simple closed loop – what spiral vase mode needs – and th
 each triangle lies in its own wedge of angle between two heights. The wall is joined to a flat bottom
 and a flat top, so the solid is closed, watertight and one piece, with no boolean operations.
 
+A **drawn** cross-section needn't have one radius in each direction – a lobe can swell past its neck – so
+it is built another way: as rows of points up the vase, each row the outline (blended into the second
+one, sized by the outline curve and turned by the twist) cut into the same number of points at even
+distances along it, the patterns pushed out square to it. Neighbouring rows join point to point, the
+bottom and top are filled by ear clipping, and any outline that crosses itself is refused, so every layer
+is still one simple loop. Softening limits how fast the size, the twist and the change of shape may go at
+any height where a face leans too far, and fades the patterns there gently.
+
 Shapes are smoothed to the grid's own spacing, so sharp points and valleys that twist across it don't
 alias into rows of little teeth.
 
@@ -202,12 +226,15 @@ the limit, averaged – with the correction smoothed round the vase so neighbour
 finished triangle is then checked, and the limit tightened just round any that still lean too far.
 
 `.venv\Scripts\python -m tests.test_vase` builds every gallery vase, a dozen surprises and some hard
-cases, and checks that each is closed and watertight with outward faces, flat on the bed, within the
+cases – drawn outlines among them – and checks that each is closed and watertight with outward faces, flat on the bed, within the
 overhang limit, and one closed loop at every height tested; that leans are measured right; that a
 cylinder has the right volume and capacity; that STL and 3MF files read back the same; that designs save
-and open; that your own function can reach nothing it shouldn't; and that colour changes land on layers.
+and open; that your own function can reach nothing it shouldn't; that colour changes land on layers; and
+that a drawn outline goes through its points, matches the built-in shape it came from, holds what a round
+vase holds, is refused if it crosses itself, and can be traced from a picture.
 `.venv\Scripts\python -m tests.test_app` drives the window itself: edits, curves, undo, the gallery,
-Surprise me, every view, the print animation, saving and exporting. Test windows open on the second
+Surprise me, every view, the print animation, saving and exporting, and drawing, repeating and tracing a
+cross-section. Test windows open on the second
 screen, if there is one.
 
 ## License

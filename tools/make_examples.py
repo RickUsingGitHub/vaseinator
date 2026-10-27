@@ -1,4 +1,4 @@
-"""Write the ready-made vases to examples/ as .vase design files, and five of them to examples/stl/.
+"""Write the ready-made vases to examples/ as .vase design files, and six of them to examples/stl/.
 
     .venv\\Scripts\\python tools\\make_examples.py
 """
@@ -14,7 +14,7 @@ from vaseinator.params import save_design  # noqa: E402
 from vaseinator.presets import GALLERY, gallery_design  # noqa: E402
 from vaseinator.stl import write_stl  # noqa: E402
 
-STLS = ("Lagoon Twist", "Star to Moon", "Lattice Lantern", "Gem Facets", "Coral Reef")
+STLS = ("Lagoon Twist", "Star to Moon", "Lattice Lantern", "Gem Facets", "Coral Reef", "Lobed Sketch")
 
 
 def main():

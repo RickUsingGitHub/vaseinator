@@ -10,7 +10,7 @@ import math
 
 import numpy as np
 
-from .params import (CIRCLE, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FLOWER, GEAR, GROWS, MIDDLE,
+from .params import (CIRCLE, DRAWN, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FLOWER, GEAR, GROWS, MIDDLE,
                      OWN, PEBBLE, POLYGON, SLOW_DOWN, SPEED_UP, STAR, SWING)
 
 TAU = 2.0 * math.pi
@@ -33,7 +33,7 @@ PROFILES = [
 ]
 
 SHAPE_NAMES = {CIRCLE: "Circle", POLYGON: "Polygon", STAR: "Star", FLOWER: "Flower", GEAR: "Gear",
-               ELLIPSE: "Ellipse", PEBBLE: "Pebble"}
+               ELLIPSE: "Ellipse", PEBBLE: "Pebble", DRAWN: "Drawn - any outline"}
 # what each shape's count, depth and sharpness are called (None: the shape has no such setting)
 SHAPE_LABELS = {
     CIRCLE: (None, None, None),
@@ -43,6 +43,7 @@ SHAPE_LABELS = {
     GEAR: ("Teeth", "Depth", "Tooth width"),
     ELLIPSE: (None, "Squash", None),
     PEBBLE: ("Pebble no.", "Lumpiness", None),
+    DRAWN: (None, None, None),
 }
 
 

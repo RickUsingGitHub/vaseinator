@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import random
 
+from . import sections
 from .expr import EXAMPLES
-from .params import (BANDS, CIRCLE, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FAKE_VASE, FLOWER, GEAR, GLOSSY,
+from .params import (BANDS, CIRCLE, DRAWN, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FAKE_VASE, FLOWER, GEAR, GLOSSY,
                      GRADIENT, GROWS, MATTE, MIDDLE, ONE_COLOUR, PEBBLE, POLYGON, REAL_VASE, SAME, SILK,
                      SLOW_DOWN, SPEED_UP, STAR, STRIPES, SWING, TRANSLUCENT, VaseParams)
 from .shapes import PALETTES, PROFILES
@@ -34,6 +35,12 @@ def slug(text: str) -> str:
 
 def _profile(i, widest):
     return dict(profile=i, silhouette=outline(i, widest))
+
+
+def _drawn(name: str, k: int = 1) -> dict:
+    """Cross-section k drawn as one of the editor's ready-made outlines."""
+    pts, repeat = next((p, r) for n, p, r in sections.OUTLINES if n == name)
+    return {f"shape{k}": DRAWN, f"drawn{k}": [list(q) for q in pts], f"repeat{k}": repeat}
 
 
 GALLERY = [
@@ -94,6 +101,15 @@ GALLERY = [
     ("Organic Bark", "Your own function: rough bark from layered noise.",
      dict(shape1=PEBBLE, count1=3, depth1=0.2, twist=0, expression=dict(EXAMPLES)["Bark"],
           colour_style=ONE_COLOUR, color1="#6B4F3A", look=MATTE)),
+    ("Lobed Sketch", "A drawn cross-section: five lumpy lobes, each swelling past its neck, slowly turning.",
+     dict(**_profile(0, 104), **_drawn("Your lobed sketch"), twist=120, twist_style=EASE, colour_style=ONE_COLOUR,
+          color1="#E76F51", look=SILK)),
+    ("Claw Shell", "A drawn crescent with no symmetry at all, turning as it rises.",
+     dict(**_profile(4, 100), **_drawn("Your claw sketch"), twist=90, twist_style=EVENLY, colour_style=GRADIENT,
+          colours_used=3, gradient_length=4.0, look=SILK, **palette("Glacier"))),
+    ("Bulb Swirl", "Three drawn bulbs at the foot become six at the lip, swirling half a turn.",
+     dict(**_profile(4, 100), **_drawn("Three bulbs"), **_drawn("Six bulbs", 2), twist=180, twist_style=EVENLY,
+          colour_style=ONE_COLOUR, color1="#2A9D8F", look=GLOSSY)),
 ]
 
 

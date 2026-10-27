@@ -16,12 +16,13 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from vaseinator import sections  # noqa: E402
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
 from vaseinator.geometry import (TOLERANCE, VaseDesign, edge_check, face_normals, lean_angles,  # noqa: E402
                                  mesh_volume)
-from vaseinator.params import (BANDS, CIRCLE, EVENLY, FAKE_VASE, GEAR, GRADIENT, ONE_COLOUR, OWN, POLYGON,
-                               REAL_VASE, SAME, STAR,  # noqa: E402
-                               STRIPES, SWING, VaseParams, load_design, save_design)
+from vaseinator.params import (BANDS, CIRCLE, DRAWN, EVENLY, FAKE_VASE, FLOWER, GEAR, GRADIENT,  # noqa: E402
+                               ONE_COLOUR, OWN, POLYGON, REAL_VASE, SAME, STAR, STRIPES, SWING, VaseParams,
+                               load_design, save_design)
 from vaseinator.presets import GALLERY, gallery_design, surprise  # noqa: E402
 from vaseinator.shapes import PROFILES, pchip, shape_table  # noqa: E402
 from vaseinator.stl import read_stl, write_stl  # noqa: E402
@@ -49,6 +50,10 @@ def designs():
         ("bottle shoulder", plain(silhouette=[[0.0, 100.0], [0.5, 100.0], [0.55, 30.0], [1.0, 30.0]])),
         ("flared lip", plain(silhouette=[[0.0, 60.0], [0.9, 60.0], [1.0, 120.0]])),
         ("tiny", plain(height=12.0, silhouette=[[0.0, 8.0], [1.0, 8.0]])),
+        ("drawn claw, twisted, ribbed", plain(shape1=DRAWN, drawn1=sections.OUTLINES[5][1], repeat1=1, twist=200,
+                                              rib_count=18, rib_depth=1.2)),
+        ("drawn heart to five lobes", plain(shape1=DRAWN, drawn1=sections.OUTLINES[-1][1], repeat1=1, shape2=DRAWN,
+                                            twist=60)),
     ]
     return out
 
@@ -229,6 +234,46 @@ def test_real_and_fake_spiral_vases():
     assert abs(fake.wall - 1.2) < 1e-9 and abs(real.wall - 0.6) < 1e-9
     assert fake.capacity < real.capacity and fake.grams > 1.8 * real.grams
     assert np.allclose(fake.verts, real.verts)                          # the same solid either way
+
+
+def test_drawn_outlines():
+    """Any outline, drawn with spline points and cusps: it goes through its points, and a round one is a cylinder."""
+    pts = [[1.0, 0.0, False], [0.0, 0.7, True], [-0.8, 0.0, False], [0.0, -0.7, False]]
+    loop = sections.spline(pts, per=16)
+    assert np.allclose(loop[::16], np.array(pts)[:, :2])
+    # a motif repeated round the axis: the same area as the built-in flower it came from
+    table = shape_table(FLOWER, 5, 0.3, 0.5)
+    motif = sections.motif_from_table(table, 5)
+    a_motif = sections.area(sections.normalised(sections.spline(motif, 5)))
+    a_table = sections.area(sections.normalised(sections.from_table(table)))
+    assert abs(a_motif / a_table - 1) < 0.03, (a_motif, a_table)
+    # a drawn circle holds what the built-in circle does
+    circle = sections.OUTLINES[0][1]
+    drawn = VaseDesign(plain(shape1=DRAWN, drawn1=circle, repeat1=1))
+    round_ = VaseDesign(plain())
+    assert drawn.free and not round_.free
+    assert abs(drawn.capacity / round_.capacity - 1) < 0.01, (drawn.capacity, round_.capacity)
+    # an outline that crosses itself is refused, with where
+    bow = [[1, 0, False], [-1, 1, False], [-1, -1, False], [1, 1, False], [0.2, -1.2, False]]
+    bad = VaseDesign(plain(shape1=DRAWN, drawn1=bow, repeat1=1))
+    assert bad.errors and "crosses itself" in bad.errors[0]
+    # a picture traced: a filled five-pointed star gives five sharp points
+    yy, xx = np.mgrid[0:300, 0:400]
+    ang = np.arctan2(150 - yy, xx - 200)
+    rad = np.hypot(xx - 200, yy - 150)
+    star = rad < 55 + 65 * np.abs(((ang * 5 / (2 * np.pi)) % 1) * 2 - 1) ** 3
+    traced = sections.trace_mask(star)
+    assert sum(c for _, _, c in traced) >= 5 and not sections.crossings(sections.spline(traced))
+    # drawn outlines print as colour bands too, each band a closed part
+    fake = VaseDesign(plain(shape1=DRAWN, drawn1=sections.OUTLINES[1][1], repeat1=5, vase_mode=FAKE_VASE,
+                            colour_style=BANDS, band_count=3, colours_used=3))
+    parts = fake.band_parts()
+    assert len(parts) == 3 and all(edge_check(f)[0] for _, _, f in parts)
+    # saved and opened, the outline is the same
+    path = os.path.join(tempfile.mkdtemp(), "drawn.vase")
+    save_design(path, fake.p)
+    back = load_design(path)
+    assert back.drawn1 == fake.p.drawn1 and back.repeat1 == 5
 
 
 def test_designs_save_and_open():

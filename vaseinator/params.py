@@ -10,8 +10,8 @@ FILE_VERSION = 1
 FILAMENTS = (1, 2, 3, 4)
 
 # cross-section shapes; SAME (for the top shape) keeps the bottom one all the way up
-SAME, CIRCLE, POLYGON, STAR, FLOWER, GEAR, ELLIPSE, PEBBLE = -1, 0, 1, 2, 3, 4, 5, 6
-SHAPES = (CIRCLE, POLYGON, STAR, FLOWER, GEAR, ELLIPSE, PEBBLE)
+SAME, CIRCLE, POLYGON, STAR, FLOWER, GEAR, ELLIPSE, PEBBLE, DRAWN = -1, 0, 1, 2, 3, 4, 5, 6, 7
+SHAPES = (CIRCLE, POLYGON, STAR, FLOWER, GEAR, ELLIPSE, PEBBLE, DRAWN)   # DRAWN: any outline, from points
 
 # how something changes on the way up (the twist, the change of shape, the texture strength)
 EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN = 0, 1, 2, 3, 4, 5
@@ -27,6 +27,11 @@ MAX_BANDS = 64                                            # colour bands the 3D 
 
 def _pts(*pairs):
     return field(default_factory=lambda: [list(p) for p in pairs])
+
+
+# one lobe, from neck to neck: repeated five times round the axis it makes a five-lobed flower
+FIVE_LOBES = ((0.42, -0.12, True), (0.62, -0.38, False), (0.95, -0.22, False), (0.95, 0.22, False),
+              (0.62, 0.38, False), (0.42, 0.12, True))
 
 
 @dataclass
@@ -45,11 +50,16 @@ class VaseParams:
     depth1: float = 0.16          # how far in the shape cuts, as a share of the radius
     sharp1: float = 0.45          # sharpness / corner rounding / petal shape / tooth width (0..1)
     turn1: float = 0.0            # turned round the axis (degrees)
+    drawn1: list = field(default_factory=lambda: [list(p) for p in FIVE_LOBES])   # a drawn outline's
+    #                               control points [x, y, cusp]; the axis is the origin
+    repeat1: int = 5              # ... repeated this many times round the axis
     shape2: int = SAME            # the shape it turns into at the top
     count2: int = 5
     depth2: float = 0.0
     sharp2: float = 0.5
     turn2: float = 0.0
+    drawn2: list = field(default_factory=lambda: [list(p) for p in FIVE_LOBES])
+    repeat2: int = 5
     morph: int = EVENLY           # how the change of shape happens on the way up
     morph_swings: int = 3         # back and forth: how many changes (3: bottom, top, bottom, top shape)
     morph_curve: list = _pts((0.0, 0.0), (1.0, 1.0))
@@ -151,7 +161,7 @@ class VaseParams:
                 elif isinstance(cur, float):
                     v = float(v)
                 elif isinstance(cur, list):
-                    v = clean_curve(v)
+                    v = clean_outline(v) if f.name in ("drawn1", "drawn2") else clean_curve(v)
                     if v is None:
                         continue
                 else:
@@ -171,6 +181,7 @@ class VaseParams:
         if any(d <= 0 for _, d in p.silhouette):
             p.silhouette = fresh.silhouette
         p.walls = min(max(p.walls, 1), 10)
+        p.repeat1, p.repeat2 = (min(max(r, 1), 24) for r in (p.repeat1, p.repeat2))
         for key, lo, hi in (("depth1", 0.0, 0.9), ("depth2", 0.0, 0.9), ("sharp1", 0.0, 1.0),
                             ("sharp2", 0.0, 1.0), ("rib_sharp", 0.0, 1.0), ("ring_sharp", 0.0, 1.0),
                             ("facet_rough", 0.0, 1.0), ("band_spacing", -1.0, 1.0)):
@@ -188,6 +199,16 @@ def colour_style_of(p: VaseParams) -> int:
     if p.vase_mode == REAL_VASE and p.colour_style in (BANDS, STRIPES):
         return ONE_COLOUR
     return p.colour_style
+
+
+def clean_outline(points):
+    """A drawn outline's control points made safe: [[x, y, cusp], ...], at least three; None if unusable."""
+    try:
+        out = [[float(p[0]), float(p[1]), bool(p[2]) if len(p) > 2 else False] for p in points]
+    except (TypeError, ValueError, IndexError):
+        return None
+    out = [p for p in out if all(map(lambda c: abs(c) < 1e6, p[:2]))]
+    return out if len(out) >= 3 else None
 
 
 def clean_curve(points):

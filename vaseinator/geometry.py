@@ -22,7 +22,8 @@ import math
 import numpy as np
 
 from .expr import ExprError, compile_expression
-from .params import (BANDS, FAKE_VASE, GRADIENT, MAX_BANDS, ONE_COLOUR, OWN, SAME, STRIPES, VaseParams,
+from . import sections
+from .params import (BANDS, DRAWN, FAKE_VASE, GRADIENT, MAX_BANDS, ONE_COLOUR, OWN, SAME, STRIPES, VaseParams,
                      colour_style_of)
 from .shapes import (TABLE, TAU, blur, change, lobes_needed, organic, pchip, progress, sample, shape_table,
                      smooth_max, smoothstep, strength)
@@ -86,6 +87,53 @@ def loft_side(rows):
     first = np.arange(starts[0], starts[0] + len(rows[0][1]))
     last = np.arange(starts[-1], starts[-1] + len(rows[-1][1]))
     return verts, np.array(faces, dtype=np.int64), np.array(band), first, last
+
+
+def grid_side_xy(z, P):
+    """The wall from rows of outline points (K, N, 2), point i of each row joined to point i of the next.
+
+    Returns (verts, faces, band of each face, first ring, last ring).  Each cell
+    is split along its shorter diagonal.
+    """
+    K, N = P.shape[:2]
+    verts = np.concatenate([P, np.broadcast_to(z[:, None, None], (K, N, 1))], axis=2).reshape(-1, 3)
+    idx = np.arange(K * N).reshape(K, N)
+    nxt = np.roll(idx, -1, axis=1)
+    v00, v01, v10, v11 = idx[:-1], nxt[:-1], idx[1:], nxt[1:]
+    d1 = np.linalg.norm(verts[v00] - verts[v11], axis=-1)
+    d2 = np.linalg.norm(verts[v01] - verts[v10], axis=-1)
+    along = (d1 <= d2)[..., None]
+    t1 = np.where(along, np.stack([v00, v01, v11], -1), np.stack([v00, v01, v10], -1))
+    t2 = np.where(along, np.stack([v00, v11, v10], -1), np.stack([v01, v11, v10], -1))
+    faces = np.concatenate([t1.reshape(-1, 3), t2.reshape(-1, 3)])
+    band = np.tile(np.repeat(np.arange(K - 1), N), 2)
+    return verts, faces, band, idx[0].copy(), idx[-1].copy()
+
+
+def limit_slope(v, step):
+    """A 1D curve kept within a most change per step (step[i] between v[i] and v[i+1]).
+
+    The largest curve under it and the smallest over it that keep within the
+    limit, averaged - as the columns of a radial vase are softened.
+    """
+    lo, hi = v.copy(), v.copy()
+    for i in range(1, len(v)):
+        lo[i] = min(lo[i], lo[i - 1] + step[i - 1])
+        hi[i] = max(hi[i], hi[i - 1] - step[i - 1])
+    for i in range(len(v) - 2, -1, -1):
+        lo[i] = min(lo[i], lo[i + 1] + step[i])
+        hi[i] = max(hi[i], hi[i + 1] - step[i])
+    return 0.5 * (lo + hi)
+
+
+def fall_gently(v, step: float):
+    """The largest curve under v that changes by at most step from one value to the next."""
+    lo = v.copy()
+    for i in range(1, len(v)):
+        lo[i] = min(lo[i], lo[i - 1] + step)
+    for i in range(len(v) - 2, -1, -1):
+        lo[i] = min(lo[i], lo[i + 1] + step)
+    return lo
 
 
 def fan(center: int, ring, up: bool):
@@ -250,12 +298,21 @@ class VaseDesign:
         self.notes: list[str] = []
         self.fn = None
         self.closed = None
+        self.free = DRAWN in (self.p.shape1, self.p.shape2)    # a drawn outline: built point by point
+        self.outer_rows = None
         try:
             if self._check():
-                self._grid_size()
-                self._surface()
-                self._printable()
-                self._shell()
+                if self.free:
+                    self._free_surface()
+                    if self.errors:
+                        return
+                    self._free_printable()
+                    self._free_shell()
+                else:
+                    self._grid_size()
+                    self._surface()
+                    self._printable()
+                    self._shell()
                 self._measure()
                 self._colours()
                 self._advice()
@@ -327,6 +384,38 @@ class VaseDesign:
             deg = p.twist * progress(p.twist_style, h, swings=p.swings)
         return np.radians(deg)
 
+    def _texture(self, frame, z, mean_r: float):
+        """The surface patterns in mm, out (+) or in, at angles ``frame`` (rows, columns) and heights z."""
+        p = self.p
+        h = z / self.H
+        tex = np.zeros(np.broadcast(frame, z[:, None]).shape)
+        if p.rib_count > 0 and p.rib_depth != 0:
+            k = 1.0 + 7.0 * p.rib_sharp ** 2
+            lean = math.radians(p.rib_lean) * h[:, None]
+            rib = (0.5 * (1.0 + np.cos(p.rib_count * (frame - lean)))) ** k
+            if p.rib_cross:
+                rib = np.maximum(rib, (0.5 * (1.0 + np.cos(p.rib_count * (frame + lean)))) ** k)
+            tex += p.rib_depth * rib
+        if p.ring_count > 0 and p.ring_depth != 0:
+            k = 1.0 + 7.0 * p.ring_sharp ** 2
+            tex += p.ring_depth * ((0.5 * (1.0 - np.cos(TAU * p.ring_count * h))) ** k)[:, None]
+        if p.bump_around > 0 and p.bump_depth != 0:
+            tex += p.bump_depth * (0.5 * (1.0 + np.cos(p.bump_around * frame)
+                                          * np.cos(TAU * max(p.bump_up, 1) * h)[:, None])) ** 1.5
+        if p.organic_depth > 0:
+            tex += p.organic_depth * organic(frame, z[:, None], p.organic_scale, mean_r, p.organic_seed)
+        return tex
+
+    def _envelope(self, z):
+        """How strong the surface patterns are at each height: the strength curve, faded at foot and rim."""
+        p = self.p
+        env = strength(p.strength, z / self.H, p.strength_curve)
+        if p.fade_foot > 0:
+            env = env * smoothstep(z / p.fade_foot)
+        if p.fade_rim > 0:
+            env = env * smoothstep((self.H - z) / p.fade_rim)
+        return env
+
     def _surface(self):
         p, H, N, M = self.p, self.H, self.N, self.M
         self.z = z = np.linspace(0.0, H, M + 1)
@@ -359,29 +448,7 @@ class VaseDesign:
         r = R0[:, None] * s
 
         frame = TH - TA if p.texture_twist else np.broadcast_to(TH, r.shape)
-        tex = np.zeros_like(r)
-        if p.rib_count > 0 and p.rib_depth != 0:
-            k = 1.0 + 7.0 * p.rib_sharp ** 2
-            lean = math.radians(p.rib_lean) * h[:, None]
-            rib = (0.5 * (1.0 + np.cos(p.rib_count * (frame - lean)))) ** k
-            if p.rib_cross:
-                rib = np.maximum(rib, (0.5 * (1.0 + np.cos(p.rib_count * (frame + lean)))) ** k)
-            tex += p.rib_depth * rib
-        if p.ring_count > 0 and p.ring_depth != 0:
-            k = 1.0 + 7.0 * p.ring_sharp ** 2
-            tex += p.ring_depth * ((0.5 * (1.0 - np.cos(TAU * p.ring_count * h))) ** k)[:, None]
-        if p.bump_around > 0 and p.bump_depth != 0:
-            tex += p.bump_depth * (0.5 * (1.0 + np.cos(p.bump_around * frame)
-                                          * np.cos(TAU * max(p.bump_up, 1) * h)[:, None])) ** 1.5
-        if p.organic_depth > 0:
-            tex += p.organic_depth * organic(frame, z[:, None], p.organic_scale, float(R0.mean()),
-                                             p.organic_seed)
-        env = strength(p.strength, h, p.strength_curve)
-        if p.fade_foot > 0:
-            env = env * smoothstep(z / p.fade_foot)
-        if p.fade_rim > 0:
-            env = env * smoothstep((H - z) / p.fade_rim)
-        r = r + env[:, None] * tex
+        r = r + self._envelope(z)[:, None] * self._texture(frame, z, float(R0.mean()))
 
         if self.fn is not None:
             env_vars = dict(theta=np.broadcast_to(TH, r.shape), phi=frame, z=z[:, None], h=h[:, None], r=r,
@@ -504,6 +571,7 @@ class VaseDesign:
         self.band, self.lean = band, lean
         self.worst = worst
         self.softened = float(np.abs(R - self.R_design).max()) if p.soften else 0.0
+        self.row_moved = np.abs(R - self.R_design).max(axis=1) if rows is None else None
         if not self.draft:
             self.closed = edge_check(faces)[0]
         nb = int(band.max()) + 1
@@ -555,6 +623,194 @@ class VaseDesign:
         self.shell_faces = np.concatenate([walls, caps])
         self.shell_lean = np.concatenate([lean_angles(verts, walls), np.full(len(caps), -1.0)])
 
+    # ======================================================= drawn outlines
+    def _outline(self, k: int):
+        """Cross-section k (1 at the bottom, 2 at the top) as a loop of points, widest at radius 1."""
+        p = self.p
+        kind = getattr(p, f"shape{k}")
+        if kind == DRAWN:
+            loop = sections.spline(getattr(p, f"drawn{k}"), getattr(p, f"repeat{k}"))
+            hits = sections.crossings(loop)
+            if hits:
+                x, y = hits[0]
+                where = "bottom" if k == 1 else "top"
+                self.errors.append(f"The drawn {where} outline crosses itself (near {x:.2f}, {y:.2f} in the "
+                                   "drawing): move its points apart so it makes one simple loop.")
+        else:
+            loop = sections.from_table(shape_table(kind, getattr(p, f"count{k}"), getattr(p, f"depth{k}"),
+                                                   getattr(p, f"sharp{k}")))
+        loop = sections.normalised(loop)
+        a = math.radians(getattr(p, f"turn{k}"))
+        c, s = math.cos(a), math.sin(a)
+        return loop @ np.array([[c, s], [-s, c]])
+
+    def _free_surface(self):
+        """The designed surface of a vase with a drawn outline: rows of points (M + 1, N, 2)."""
+        p = self.p
+        self.H = H = float(p.height)
+        loops = [self._outline(1)] + ([self._outline(2)] if p.shape2 != SAME else [])
+        if self.errors:
+            return
+        sil = np.asarray(p.silhouette, dtype=float)
+        tex = ((abs(p.rib_depth) if p.rib_count > 0 else 0.0) + (abs(p.ring_depth) if p.ring_count > 0 else 0.0)
+               + (abs(p.bump_depth) if p.bump_around > 0 else 0.0) + 1.2 * max(p.organic_depth, 0.0))
+        self.tex_depth = tex
+        perimeter = max(float(np.linalg.norm(np.roll(L, -1, axis=0) - L, axis=1).sum()) for L in loops)
+        step = max(p.facet_size, 0.15) * (2.6 if self.draft else 1.0)
+        per = 10 if self.draft else 22
+        N = max(math.ceil(perimeter * (0.5 * sil[:, 1].max() + tex) / step),
+                per * max(p.rib_count * (2 if p.rib_cross else 1), p.bump_around, 1), 160)
+        M = max(math.ceil(H / step), (8 if self.draft else 16) * max(p.ring_count, 1), 24)
+        if p.bump_around > 0:
+            M = max(M, (8 if self.draft else 16) * p.bump_up)
+        if p.organic_depth > 0:
+            fine = max(p.organic_scale, 2.0) / (5 if self.draft else 10)
+            N = max(N, math.ceil(perimeter * 0.5 * sil[:, 1].max() / fine))
+            M = max(M, math.ceil(H / fine))
+        if self.fn is not None:
+            N = max(N, 180 if self.draft else 480)
+        limit = 140_000 if self.draft else 1_200_000
+        if N * M > limit:
+            f = math.sqrt(limit / (N * M))
+            N, M = max(int(N * f), 64), max(int(M * f), 16)
+        self.N, self.M = (N + 3) // 4 * 4, M
+        self.z = z = np.linspace(0.0, H, M + 1)
+        self.dz = H / M
+        h = z / H
+        self.C1 = sections.resample(loops[0], self.N)
+        self.C2 = sections.resample(loops[1], self.N) if len(loops) > 1 else None
+        self.R0_d = 0.5 * pchip(sil[:, 0], sil[:, 1], h)
+        self.tau = self.tau_d = self.twist_at(h)
+        self.mix_d = (np.clip(change(p.morph, h, p.morph_curve, p.morph_swings), 0.0, 1.0) if self.C2 is not None
+                      else np.zeros_like(h))
+        self.env_d = self._envelope(z)
+        if p.lattice and (p.twist_style == OWN or abs(p.twist) > 1e-9):
+            self.notes.append("Both ways (lattice) works on the built-in shapes only: a drawn outline twists one way.")
+        if p.facets:
+            self.notes.append("Low-poly facets work on the built-in shapes only: a drawn outline stays smooth.")
+        self.P_design = self._free_points(self.R0_d, self.tau_d, self.mix_d, self.env_d)
+        # a blend of two outlines, or deep patterns in a tight corner, can make a layer cross itself
+        for j in np.linspace(0, M, 7).astype(int):
+            if sections.crossings(self.P_design[j], limit=700):
+                self.warnings.append(f"The outline crosses itself at about {z[j]:.0f} mm up (where the shapes "
+                                     "blend, or patterns meet in a tight corner): the slicer may fill it wrongly "
+                                     "there. Ease the change of shape or the patterns.")
+                break
+
+    def _free_points(self, R0, tau, mix, env):
+        """The surface's points: the outline blended, sized, turned, then patterned square to the wall."""
+        p = self.p
+        base = (self.C1[None] if self.C2 is None
+                else (1.0 - mix)[:, None, None] * self.C1 + mix[:, None, None] * self.C2)
+        P = base * R0[:, None, None]
+        c, s = np.cos(tau)[:, None], np.sin(tau)[:, None]
+        x, y = P[..., 0], P[..., 1]
+        P = np.stack([x * c - y * s, x * s + y * c], -1)
+        # patterns run round the outline (turning with it), or round the axis if they shouldn't turn
+        along = np.arange(self.N) * (TAU / self.N)
+        frame = (np.broadcast_to(along, P.shape[:2]) if p.texture_twist
+                 else np.mod(np.arctan2(P[..., 1], P[..., 0]), TAU))
+        out = sections.normals(P)
+        tex = env[:, None] * self._texture(frame, self.z, float(R0.mean()))
+        if self.fn is not None:
+            tex = tex + self.fn(theta=np.mod(np.arctan2(P[..., 1], P[..., 0]), TAU), phi=frame,
+                                z=self.z[:, None], h=(self.z / self.H)[:, None], r=np.hypot(P[..., 0], P[..., 1]),
+                                H=np.float64(self.H))
+        return P + tex[..., None] * out
+
+    def _free_solid(self, P):
+        """The closed solid from rows of outline points: (verts, faces, band of each wall face, wall face count)."""
+        verts, faces, band, first, last = grid_side_xy(self.z, P)
+        side = len(faces)
+        bottom = first[sections.triangulate(P[0])][:, ::-1]           # facing down, onto the bed
+        top = last[sections.triangulate(P[-1])]
+        return verts, np.concatenate([faces, bottom, top]), band, side
+
+    def _free_printable(self):
+        """Soften a drawn vase until no face leans past the limit.
+
+        A drawn outline itself stands upright; only the changes up the vase
+        lean it - the outline widening or narrowing, the twist, the change of
+        shape and the patterns.  Where faces lean too far, those changes are
+        slowed at that height (the same envelopes as for the columns of a
+        radial vase) and the patterns eased, until every face is within it.
+        """
+        p = self.p
+        R0, tau, mix, env = self.R0_d.copy(), self.tau_d.copy(), self.mix_d.copy(), self.env_d.copy()
+        aim = math.tan(math.radians(max(p.max_overhang - 0.4, 1.0)))
+        # patterns fade in and out over a few layers: a sudden change of depth would lean the wall itself
+        fade = 0.1 * aim * self.dz / max(self.tex_depth, 1e-6)
+        P = self.P_design
+        for attempt in range(12 if p.soften else 1):
+            if attempt:
+                P = self._free_points(R0, tau, mix, env)
+            verts, faces, band, side = self._free_solid(P)
+            lean = lean_angles(verts, faces[:side])
+            worst = float(lean.max())
+            if worst <= p.max_overhang + TOLERANCE or not p.soften:
+                break
+            over = np.zeros(self.M)
+            np.maximum.at(over, band, lean)
+            f = np.where(over > p.max_overhang, aim / np.tan(np.radians(np.minimum(over, 89.0))), 1.0)
+            f = np.clip(f, 0.1, 1.0)
+            pad = np.concatenate([[f[0]] * 2, f, [f[-1]] * 2])
+            f = np.minimum.reduce([pad[k:k + self.M] for k in range(5)])       # a little room each side
+            R0 = limit_slope(R0, np.abs(np.diff(R0)) * f)
+            tau = limit_slope(tau, np.abs(np.diff(tau)) * f)
+            mix = limit_slope(mix, np.abs(np.diff(mix)) * f)
+            env = fall_gently(env * np.minimum(np.concatenate([[f[0]], f]), np.concatenate([f, [f[-1]]])), fade)
+        self.P, self.tau, self.rows = P, tau, None
+        # what softening changed, in the design's own terms
+        with np.errstate(divide="ignore", invalid="ignore"):
+            kept = np.where(self.env_d > 1e-6, env / self.env_d, 1.0)
+        self.eased = dict(twist=float(np.degrees(np.abs(tau - self.tau_d)).max()),
+                          width=float(2.0 * np.abs(R0 - self.R0_d).max()),
+                          change=float(np.abs(mix - self.mix_d).max()), patterns=float(np.min(kept)))
+        self.verts, self.faces, self.side = verts, faces, side
+        self.band, self.lean, self.worst = band, lean, worst
+        moved = np.linalg.norm(P - self.P_design, axis=-1)
+        self.row_moved = moved.max(axis=1)
+        self.softened = float(moved.max()) if p.soften else 0.0
+        if not self.draft:
+            self.closed = edge_check(faces)[0]
+        self.band_lean = np.zeros(self.M)
+        np.maximum.at(self.band_lean, band, lean)
+        self.triangles = len(faces)
+        self.size = verts.max(0) - verts.min(0)
+        self.top = self.H
+
+    def _P_at(self, zq):
+        """The outline's points at height zq, between the rows."""
+        fj = min(max(zq / self.dz, 0.0), self.M)
+        j = min(int(fj), self.M - 1)
+        return self.P[j] + (fj - j) * (self.P[j + 1] - self.P[j])
+
+    def _free_shell(self):
+        """What the printer makes of a drawn vase: the wall moved in square to itself, over a solid bottom."""
+        p = self.p
+        w = self.wall
+        zb = min(max(p.bottom, p.layer_height), 0.5 * self.H)
+        self.zb = zb
+        P, z = self.P, self.z
+        keep = z > zb + 0.3 * self.dz
+        zi = np.concatenate([[zb], z[keep]])
+        Pi = np.stack([sections.inset(row, w) for row in np.concatenate([self._P_at(zb)[None], P[keep]])])
+        o_verts, o_faces, _, o_first, o_last = grid_side_xy(z, P)
+        i_verts, i_faces, _, i_first, i_last = grid_side_xy(zi, Pi)
+        no = len(o_verts)
+        verts = np.concatenate([o_verts, i_verts])
+        walls = np.concatenate([o_faces, i_faces[:, ::-1] + no])
+        caps = np.concatenate([o_first[sections.triangulate(P[0])][:, ::-1],
+                               (i_first + no)[sections.triangulate(Pi[0])], annulus(o_last, i_last + no)])
+        self.shell_verts = verts
+        self.shell_faces = np.concatenate([walls, caps])
+        self.shell_lean = np.concatenate([lean_angles(verts, walls), np.full(len(caps), -1.0)])
+
+        def polar(zs, rows):
+            return [(zz, np.arctan2(r[:, 1], r[:, 0]), np.hypot(r[:, 0], r[:, 1])) for zz, r in zip(zs, rows)]
+        self.outer_rows = polar(z, P)
+        self.inner_rows = polar(zi, Pi)
+
     # ---------------------------------------------------------- the sums
     def _ring_stats(self, rows):
         """Perimeter and enclosed area of each ring."""
@@ -570,7 +826,12 @@ class VaseDesign:
         p = self.p
         w, lh = self.wall, p.layer_height
         loops = max(int(p.walls), 1) if p.vase_mode == FAKE_VASE else 1      # lines round each layer
-        outer = self.rows if self.rows is not None else [(zz, self.theta, rr) for zz, rr in zip(self.z, self.R)]
+        if self.outer_rows is not None:
+            outer = self.outer_rows
+        elif self.rows is not None:
+            outer = self.rows
+        else:
+            outer = [(zz, self.theta, rr) for zz, rr in zip(self.z, self.R)]
         oz = np.array([o[0] for o in outer])
         o_per, o_area = self._ring_stats(outer)
         iz = np.array([i[0] for i in self.inner_rows])
@@ -656,6 +917,15 @@ class VaseDesign:
         tops = [zs for zs, _ in self.bands[1:]] + [self.H]
         parts = []
         for (lo, fil), hi in zip(self.bands, tops):
+            if self.free:
+                inside = (self.z > lo + 1e-6) & (self.z < hi - 1e-6)
+                zs = np.concatenate([[lo], self.z[inside], [hi]])
+                Ps = np.concatenate([self._P_at(lo)[None], self.P[inside], self._P_at(hi)[None]])
+                verts, faces, _, first, last = grid_side_xy(zs, Ps)
+                faces = np.concatenate([faces, first[sections.triangulate(Ps[0])][:, ::-1],
+                                        last[sections.triangulate(Ps[-1])]])
+                parts.append((fil, verts, faces))
+                continue
             if self.rows is None:
                 inside = (self.z > lo + 1e-6) & (self.z < hi - 1e-6)
                 zs = np.concatenate([[lo], self.z[inside], [hi]])
@@ -734,6 +1004,15 @@ class VaseDesign:
                     f"The wall leans up to {self.worst:.0f}°, over the {p.max_overhang:g}° limit: it would "
                     "sag or fail there (red in the Overhangs view). Turn on Soften to fit, or make the "
                     "shape gentler.")
+        elif self.softened > 0.05 and self.free:
+            e = self.eased
+            what = [f"the twist by up to {e['twist']:.0f}°" if e["twist"] > 0.5 else "",
+                    f"the outline's width by up to {e['width']:.1f} mm" if e["width"] > 0.05 else "",
+                    f"the change of shape by up to {100 * e['change']:.0f}%" if e["change"] > 0.005 else "",
+                    f"the patterns to {100 * e['patterns']:.0f}% at the steepest place" if e["patterns"] < 0.995 else ""]
+            what = [w for w in what if w]
+            self.notes.append("Overhangs softened, so no part of the wall leans more than "
+                              f"{p.max_overhang:g}°: " + (", ".join(what) if what else "slightly") + ".")
         elif self.softened > 0.05:
             self.notes.append(f"Overhangs softened: the surface was moved by up to {self.softened:.1f} mm so "
                               f"no part of the wall leans more than {p.max_overhang:g}°.")

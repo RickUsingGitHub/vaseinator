@@ -11,14 +11,16 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PySide6.QtCore import QPoint, QSettings, Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, QSettings, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
 from vaseinator import app as appmod  # noqa: E402
+from vaseinator import sections  # noqa: E402
 from vaseinator.geometry import edge_check  # noqa: E402
-from vaseinator.params import (BANDS, CIRCLE, FAKE_VASE, GRADIENT, ONE_COLOUR, OWN, OWN_PROFILE,  # noqa: E402
-                               POLYGON, REAL_VASE, STAR, SWING, load_design)
+from vaseinator.params import (BANDS, CIRCLE, DRAWN, FAKE_VASE, FLOWER, GRADIENT, ONE_COLOUR, OWN,  # noqa: E402
+                               OWN_PROFILE, POLYGON, REAL_VASE, SAME, STAR, SWING, load_design)
 from vaseinator.stl import read_stl  # noqa: E402
 from vaseinator.threemf import read_3mf  # noqa: E402
 
@@ -180,6 +182,77 @@ def main():
     check("... and switching to fake again brings its bands back", len(win.design.bands) == 3)
     win.copy_colour_plan()
     check("the colour plan goes to the clipboard", "Vaseinator" in QApplication.clipboard().text())
+
+    # a drawn cross-section: from the shape it was, edited, repeated, traced from a picture
+    choose("vase_mode", REAL_VASE)
+    choose("shape1", FLOWER)
+    win.widgets["count1"].setValue(5)
+    choose("shape2", SAME)
+    choose("shape1", DRAWN)
+    oed = win.widgets["drawn1"]
+    check("a flower turned into a drawn outline is one petal, repeated five times",
+          win.params.repeat1 == 5 and oed.repeat == 5 and oed.points == [[x, y, bool(c)] for x, y, c in win.params.drawn1]
+          and win._wanted("drawn1") and not win._wanted("count1") and win.design.closed and win.design.free)
+    pts = [list(q) for q in win.params.drawn1]
+    pts[len(pts) // 2][0] *= 1.15
+    oed.finished.emit(pts)
+    settle()
+    check("dragging a point of the outline changes the vase", win.params.drawn1 == pts and win.design.closed)
+    win.widgets["repeat1"].setValue(3)
+    settle()
+    check("Repeat around shows in the editor", oed.repeat == 3 and win.design.closed)
+    # with the mouse: drag a point out, double-click it sharp, double-click the line for a new point
+    oed.ensurePolished()
+    qapp.processEvents()
+    i = max(range(len(oed.points)), key=lambda j: oed.points[j][0])     # the point furthest out to the right
+    x0, y0, sharp0 = oed.points[i]
+    at = oed._to(x0, y0).toPoint()
+    QTest.mousePress(oed, Qt.LeftButton, Qt.NoModifier, at)
+    QTest.mouseMove(oed, at + QPoint(-20, 0))
+    QTest.mouseRelease(oed, Qt.LeftButton, Qt.NoModifier, at + QPoint(-20, 0))
+    settle()
+    check("dragging a point in the editor with the mouse moves it", win.params.drawn1[i][0] < x0 - 0.05)
+    at = oed._to(*win.params.drawn1[i][:2]).toPoint()
+    QTest.mouseDClick(oed, Qt.LeftButton, Qt.NoModifier, at)
+    settle()
+    check("... double-clicking it makes it sharp", win.params.drawn1[i][2] != sharp0)
+    n = len(win.params.drawn1)
+    loop = sections.spline(win.params.drawn1, 3, per=24)
+    mid = oed._to(*loop[12]).toPoint()                                 # on the line, half way to the next point
+    QTest.mouseDClick(oed, Qt.LeftButton, Qt.NoModifier, mid + QPoint(0, 1))
+    settle()
+    check("... and double-clicking the line adds a point", len(win.params.drawn1) == n + 1 and win.design.closed)
+    choose("shape2", DRAWN)
+    check("a top shape that was the same starts as a copy of the bottom one",
+          win.params.drawn2 == win.params.drawn1 and win.params.repeat2 == 3)
+    choose("shape2", SAME)
+    oed.finished.emit([[1, 0, False], [-1, 1, False], [-1, -1, False], [1, 1, False], [0.2, -1.2, False]])
+    settle()
+    check("an outline that crosses itself is reported, not built", "crosses itself" in win.info.toPlainText())
+    lobes = next(q for name, q, n in sections.OUTLINES if name == "Your lobed sketch")
+    win._use_outline(1, lobes, 1)
+    settle()
+    check("Start from: your lobed sketch builds, closed and printable", win.params.repeat1 == 1
+          and win.design.closed and win.design.worst <= win.params.max_overhang + 0.3 and oed.repeat == 1)
+    pic = QImage(400, 300, QImage.Format_RGB32)
+    pic.fill(QColor("white"))
+    painter = QPainter(pic)
+    painter.setPen(QPen(QColor("black"), 6))
+    painter.drawPolygon(QPolygonF([QPointF(200 + r * np.cos(a), 150 - r * np.sin(a)) for a, r in
+                                   zip(np.linspace(0, 2 * np.pi, 10, endpoint=False), [120, 55] * 5)]))
+    painter.end()
+    pic.save(os.path.join(tmp, "star.png"))
+    QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (os.path.join(tmp, "star.png"), ""))
+    win._trace_outline(1)
+    settle()
+    check("a traced star has its five sharp points, and builds",
+          sum(q[2] for q in win.params.drawn1) >= 5 and win.design.closed and "Traced" in win.statusBar().currentMessage())
+    win.save_design(as_new=True)
+    check("a drawn outline saves and opens the same", load_design(out["vase"]).drawn1 == win.params.drawn1)
+    win.export_stl()
+    verts, faces = read_stl(out["stl"])
+    check("... and its STL is watertight", edge_check(faces)[0] and len(faces) == win.design.triangles)
+    choose("shape1", CIRCLE)
 
     # a broken function is reported, not crashed on
     win.widgets["expression"].setPlainText("sin(theta")

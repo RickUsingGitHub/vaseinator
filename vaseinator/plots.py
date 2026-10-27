@@ -126,8 +126,8 @@ class ShapePlots(QWidget):
             x = a.right() - 3
             for zz in zb:
                 p.drawLine(QPointF(x - 6, base - zz * s), QPointF(x, base - zz * s))
-        if d.softened > 0.05 and d.rows is None:
-            moved = np.abs(d.R - d.R_design).max(axis=1) > 0.05
+        if d.softened > 0.05 and d.row_moved is not None:
+            moved = d.row_moved > 0.05
             p.setPen(QPen(QColor(240, 163, 86, 200), 2.0))
             x = a.left() + 3
             for zz in z[moved][::max(1, step)]:

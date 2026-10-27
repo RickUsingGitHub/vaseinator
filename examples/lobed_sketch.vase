@@ -1,0 +1,359 @@
+{
+  "format": "vaseinator",
+  "version": 1,
+  "params": {
+    "name": "lobed_sketch",
+    "height": 180.0,
+    "profile": 0,
+    "silhouette": [
+      [
+        0.0,
+        66.56
+      ],
+      [
+        0.36,
+        104.0
+      ],
+      [
+        0.8,
+        62.4
+      ],
+      [
+        1.0,
+        73.84
+      ]
+    ],
+    "shape1": 7,
+    "count1": 7,
+    "depth1": 0.16,
+    "sharp1": 0.45,
+    "turn1": 0.0,
+    "drawn1": [
+      [
+        -0.234,
+        0.867,
+        false
+      ],
+      [
+        -0.412,
+        0.766,
+        false
+      ],
+      [
+        -0.47,
+        0.652,
+        false
+      ],
+      [
+        -0.449,
+        0.488,
+        false
+      ],
+      [
+        -0.33,
+        0.351,
+        false
+      ],
+      [
+        -0.247,
+        0.319,
+        true
+      ],
+      [
+        -0.338,
+        0.196,
+        true
+      ],
+      [
+        -0.494,
+        0.317,
+        false
+      ],
+      [
+        -0.664,
+        0.308,
+        false
+      ],
+      [
+        -0.778,
+        0.051,
+        false
+      ],
+      [
+        -0.788,
+        -0.202,
+        false
+      ],
+      [
+        -0.678,
+        -0.337,
+        false
+      ],
+      [
+        -0.48,
+        -0.418,
+        true
+      ],
+      [
+        -0.359,
+        -0.318,
+        false
+      ],
+      [
+        -0.3,
+        -0.187,
+        true
+      ],
+      [
+        -0.205,
+        -0.392,
+        true
+      ],
+      [
+        -0.357,
+        -0.55,
+        false
+      ],
+      [
+        -0.316,
+        -0.666,
+        false
+      ],
+      [
+        -0.132,
+        -0.793,
+        false
+      ],
+      [
+        0.087,
+        -0.823,
+        false
+      ],
+      [
+        0.257,
+        -0.801,
+        false
+      ],
+      [
+        0.476,
+        -0.71,
+        false
+      ],
+      [
+        0.555,
+        -0.584,
+        false
+      ],
+      [
+        0.478,
+        -0.338,
+        false
+      ],
+      [
+        0.354,
+        -0.308,
+        true
+      ],
+      [
+        0.387,
+        -0.154,
+        false
+      ],
+      [
+        0.365,
+        0.076,
+        true
+      ],
+      [
+        0.51,
+        -0.06,
+        false
+      ],
+      [
+        0.694,
+        -0.047,
+        false
+      ],
+      [
+        0.814,
+        0.119,
+        false
+      ],
+      [
+        0.803,
+        0.331,
+        false
+      ],
+      [
+        0.694,
+        0.493,
+        false
+      ],
+      [
+        0.483,
+        0.584,
+        false
+      ],
+      [
+        0.321,
+        0.521,
+        false
+      ],
+      [
+        0.258,
+        0.323,
+        true
+      ],
+      [
+        0.148,
+        0.404,
+        false
+      ],
+      [
+        0.05,
+        0.421,
+        true
+      ],
+      [
+        0.093,
+        0.577,
+        false
+      ],
+      [
+        0.066,
+        0.727,
+        false
+      ],
+      [
+        -0.098,
+        0.862,
+        false
+      ]
+    ],
+    "repeat1": 1,
+    "shape2": -1,
+    "count2": 5,
+    "depth2": 0.0,
+    "sharp2": 0.5,
+    "turn2": 0.0,
+    "drawn2": [
+      [
+        0.42,
+        -0.12,
+        true
+      ],
+      [
+        0.62,
+        -0.38,
+        false
+      ],
+      [
+        0.95,
+        -0.22,
+        false
+      ],
+      [
+        0.95,
+        0.22,
+        false
+      ],
+      [
+        0.62,
+        0.38,
+        false
+      ],
+      [
+        0.42,
+        0.12,
+        true
+      ]
+    ],
+    "repeat2": 5,
+    "morph": 0,
+    "morph_swings": 3,
+    "morph_curve": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1.0,
+        1.0
+      ]
+    ],
+    "twist": 120.0,
+    "twist_style": 1,
+    "swings": 3,
+    "twist_curve": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1.0,
+        150.0
+      ]
+    ],
+    "lattice": false,
+    "rib_count": 0,
+    "rib_depth": 1.2,
+    "rib_sharp": 0.3,
+    "rib_lean": 0.0,
+    "rib_cross": false,
+    "ring_count": 0,
+    "ring_depth": 1.0,
+    "ring_sharp": 0.3,
+    "bump_around": 0,
+    "bump_up": 8,
+    "bump_depth": 1.5,
+    "organic_depth": 0.0,
+    "organic_scale": 22.0,
+    "organic_seed": 7,
+    "texture_twist": true,
+    "strength": 0,
+    "strength_curve": [
+      [
+        0.0,
+        1.0
+      ],
+      [
+        1.0,
+        1.0
+      ]
+    ],
+    "fade_foot": 3.0,
+    "fade_rim": 4.0,
+    "facets": false,
+    "facets_around": 14,
+    "facets_up": 10,
+    "facet_rough": 0.0,
+    "facet_seed": 1,
+    "expression": "",
+    "color1": "#E76F51",
+    "color2": "#3FC1C9",
+    "color3": "#F5F5F5",
+    "color4": "#FC5185",
+    "colour_style": 0,
+    "colours_used": 3,
+    "band_count": 3,
+    "band_spacing": 0.0,
+    "stripe_height": 12.0,
+    "gradient_length": 8.0,
+    "look": 1,
+    "vase_mode": 0,
+    "walls": 2,
+    "max_overhang": 45.0,
+    "soften": true,
+    "line_width": 0.6,
+    "layer_height": 0.2,
+    "bottom": 1.2,
+    "printer_height": 250.0,
+    "bed_x": 256.0,
+    "bed_y": 256.0,
+    "speed": 40.0,
+    "max_flow": 12.0,
+    "filament_d": 1.75,
+    "density": 1.24,
+    "facet_size": 0.7
+  }
+}
