@@ -9,9 +9,9 @@ import sys
 import time
 
 import numpy as np
-from PySide6.QtCore import QSettings, QSize, Qt, QTimer
-from PySide6.QtGui import (QAction, QColor, QFontDatabase, QIcon, QKeySequence, QPainter, QPalette, QPen,
-                           QPixmap, QSurfaceFormat)
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import (QAction, QColor, QDesktopServices, QFontDatabase, QIcon, QKeySequence, QPainter,
+                           QPalette, QPen, QPixmap, QSurfaceFormat)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
@@ -37,6 +37,7 @@ from .viewer import Viewer3D, spin_transform
 
 APP_NAME = "Vaseinator"
 FILE_EXT = ".vase"
+KOFI_URL = "https://ko-fi.com/rickapps"
 VASE, SECTION, OVERHANGS, PRINT_LAYOUT = 0, 1, 2, 3
 VIEW_NAMES = ("Vase", "Section", "Overhangs", "Print layout")
 SPIN_SPEED = 30.0          # degrees a second, on the turntable
@@ -166,7 +167,9 @@ SPEC = [
         ("expression", "", "expr", None, None, None, "",
          "A formula added to the radius, in mm. Variables: theta (angle round, radians),\n"
          "phi (the angle turning with the twist), z (height, mm), h (0 at the bottom, 1 at\n"
-         "the top), r (the radius so far) and H (the height). Help lists the functions."),
+         "the top), r (the radius so far) and H (the height). Help lists the functions.\n"
+         "Several lines are read as one formula: start each new line with + - * or /.\n"
+         "Anything after a # is a note."),
     ]),
     ("Colours", [
         ("vase_mode", "Vase mode", "choice", VASE_MODES, None, None, "",
@@ -304,6 +307,13 @@ def glyph_icon(kind: str) -> QIcon:
         p.drawArc(QRectF(14, 18, 36, 32), (0 if sx > 0 else 180) * 16, (180 if sx > 0 else -180) * 16)
         tip = QPointF(cx - sx * 18, 34)
         p.drawPolyline([QPointF(tip.x() - sx * 7, 25), tip, QPointF(tip.x() + sx * 9, 28)])
+    elif kind == "coffee":
+        p.drawRoundedRect(QRectF(14, 26, 30, 26), 5, 5)              # cup
+        p.drawArc(QRectF(36, 30, 16, 16), -90 * 16, 180 * 16)        # handle, ends on the cup
+        pen.setColor(QColor(240, 163, 86))
+        p.setPen(pen)
+        for x in (21, 29, 37):                                       # steam
+            p.drawLine(QPointF(x, 10), QPointF(x, 20))
     p.end()
     return QIcon(pm)
 
@@ -334,6 +344,10 @@ class FunctionHelp(QDialog):
             f"<h4>Variables</h4><table>{rows}<tr><td><code>pi tau e</code></td><td>the constants</td></tr></table>"
             f"<h4>Functions</h4><table>{funcs}</table>"
             "<h4>Tips</h4><ul>"
+            "<li>Spread a long formula over several lines if you like: the lines are read as <b>one formula</b>, "
+            "so start each new line with + - * or / (a line starting with + adds another part). Anything after "
+            "a # is a note:<br><code>1.5 * sin(6*theta + 4*pi*h)&nbsp;&nbsp;# waves<br>"
+            "+ 0.8 * noise(4*cos(theta), 4*sin(theta), z/15)&nbsp;&nbsp;# and lumps</code></li>"
             "<li>Use whole numbers with the angle - <code>sin(5*theta)</code> - so the pattern meets itself "
             "round the back.</li>"
             "<li><code>phi</code> turns with the twist, so <code>sin(8*phi)</code> makes ribs that twist "
@@ -1074,6 +1088,13 @@ class MainWindow(QMainWindow):
         hm.addAction(self.a_drawing)
         hm.addSeparator()
         hm.addAction(self.a_about)
+
+        # A coffee cup after Help, for anyone who would like to chip in.
+        self.a_kofi = QAction(glyph_icon("coffee"), "", self)
+        self.a_kofi.setToolTip("Vaseinator is free — buy me a coffee")
+        self.a_kofi.setStatusTip("Vaseinator is free — buy me a coffee")
+        self.a_kofi.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(KOFI_URL)))
+        mb.addAction(self.a_kofi)
         self._update_undo()
 
     # ============================================================ params
