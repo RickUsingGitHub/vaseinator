@@ -67,22 +67,24 @@ ready to slice.
 
 ## Download and run
 
-* **Windows app (no Python needed):** run `dist\Vaseinator.exe` (or build it, below). It is a single
-  file: nothing to unzip or install. It isn't code-signed, so Windows SmartScreen may say "Windows
-  protected your PC": click **More info → Run anyway**.
-* **From source (any OS with Python 3.10+):**
-
+* **Windows app (no Python needed):** download `Vaseinator.exe` from the
+  [Releases](../../releases) page and run it. It is a single file: nothing to unzip or install.
+  It isn't code-signed, so Windows SmartScreen may ask once; choose **More info → Run anyway**.
+* **From source** (Python 3.10+, any OS with OpenGL):
   ```
-  pip install -r requirements.txt
-  python main.py
+  git clone https://github.com/RickUsingGitHub/vaseinator.git
+  cd vaseinator
+  python -m venv .venv
+  .venv\Scripts\pip install -r requirements.txt      # macOS/Linux: .venv/bin/pip
+  .venv\Scripts\python main.py
   ```
-
-  On Windows, `run.bat` sets up a virtual environment in `.venv` the first time and starts the app.
-* **Build the exe yourself:** run `build_exe.bat`. It writes `dist\Vaseinator.exe`.
+  On Windows you can also just double-click `run.bat`, which sets everything up on first run.
+* **Build the Windows app yourself:** `build_exe.bat` (uses PyInstaller; the result is
+  `dist\Vaseinator.exe`).
 
 `examples\` holds the gallery as `.vase` designs to open. `tools\make_examples.py` writes them again, and
-five of them to `examples\stl\` as finished STLs, checked and ready to slice: Lagoon Twist, Star to Moon,
-Lattice Lantern, Gem Facets and Coral Reef. (STLs are big, so they are not kept in git.)
+six of them to `examples\stl\` as finished STLs, checked and ready to slice: Lagoon Twist, Star to Moon,
+Lattice Lantern, Gem Facets, Coral Reef and Claw Shell. (STLs are big, so they are not kept in git.)
 
 On first run the app borrows your printer's bed size and height from Maze Tube Designer or Lenticular
 Sign Maker, if you have used them. Printer settings are remembered for new designs.
