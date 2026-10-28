@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QMenu, QPushButton,
                                QVBoxLayout, QWidget)
 
 from . import sections
+from .spinbox import SpinBox
 from .params import MAX_REPEAT
 
 HIT = 10.0
@@ -489,7 +490,7 @@ class OutlineWindow(QDialog):
         start.setText("Start from")
         start.setPopupMode(QToolButton.InstantPopup)
         start.setMenu(start_menu)
-        self.repeat = QSpinBox()
+        self.repeat = SpinBox()
         self.repeat.setRange(1, MAX_REPEAT)
         self.repeat.setKeyboardTracking(False)
         self.repeat.setToolTip("Draw one piece - one lobe, one petal - and repeat it this many times round the axis.")

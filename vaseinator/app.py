@@ -29,6 +29,7 @@ from .params import (BANDS, CIRCLE, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, FIL
                      SWING, TRANSLUCENT, VaseParams, colour_style_of, load_design, save_design)
 from .plots import ShapePlots
 from .presets import GALLERY, gallery_design, outline, palette, plain_design, surprise
+from .spinbox import DoubleSpinBox, SpinBox
 from .shapes import (PALETTES, PROFILES, SHAPE_LABELS, SHAPE_NAMES, change, progress, sample_points, shape_table,
                      strength, strength_names, style_names)
 from .stl import write_stl
@@ -591,7 +592,7 @@ class MainWindow(QMainWindow):
             return box
 
         if kind == "widest":
-            s = QDoubleSpinBox()
+            s = DoubleSpinBox()
             s.setDecimals(1)
             s.setRange(lo, hi)
             s.setSingleStep(step)
@@ -663,7 +664,7 @@ class MainWindow(QMainWindow):
         val = getattr(self.params, key)
         if kind == "float":
             suffix, _, special = extra.partition("|")
-            s = QDoubleSpinBox()
+            s = DoubleSpinBox()
             s.setDecimals(2)
             s.setRange(lo, hi)
             s.setSingleStep(step)
@@ -677,7 +678,7 @@ class MainWindow(QMainWindow):
             w = s
         elif kind == "int" or kind == "seed":
             suffix, _, special = extra.partition("|")
-            s = QSpinBox()
+            s = SpinBox()
             s.setRange(int(lo), int(hi))
             s.setSingleStep(int(step))
             s.setSuffix(suffix)
@@ -695,7 +696,7 @@ class MainWindow(QMainWindow):
                 return row(s, roll)
             return s
         elif kind == "pct":
-            s = QDoubleSpinBox()
+            s = DoubleSpinBox()
             s.setDecimals(0)
             s.setRange(lo, hi)
             s.setSingleStep(step)
