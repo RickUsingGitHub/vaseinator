@@ -17,8 +17,8 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, 
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout, QLabel, QPushButton,
                                QScrollArea, QSizePolicy, QSlider, QToolButton, QVBoxLayout, QWidget)
 
-from .params import (BANDS, CIRCLE, DRAWN, ELLIPSE, EVENLY, FAKE_VASE, FLOWER, GEAR, ONE_COLOUR, OWN, PEBBLE,
-                     POLYGON, SAME, STAR, STRIPES)
+from .params import (BANDS, CIRCLE, DRAWN, ELLIPSE, EVENLY, FAKE_VASE, FLOWER, GEAR, NO_HOLES, ONE_COLOUR, OWN,
+                     PEBBLE, POLYGON, ROUND, SAME, STAR, STRIPES, VORONOI)
 from .shapes import PALETTES, PROFILES, pchip, shape_table
 from .spinbox import DoubleSpinBox
 
@@ -40,7 +40,7 @@ SHAPES_FROM_ABOVE = [
 
 # the patterns: (name, the settings it sets); each starts from no pattern at all
 NO_PATTERN = dict(rib_count=0, rib_lean=0.0, rib_cross=False, ring_count=0, bump_around=0, organic_depth=0.0,
-                  facets=False)
+                  facets=False, holes=NO_HOLES)
 PATTERNS = [
     ("Smooth", {}),
     ("Ribs", dict(rib_count=24, rib_depth=1.2, rib_sharp=0.3)),
@@ -50,6 +50,8 @@ PATTERNS = [
     ("Diamonds", dict(rib_count=36, rib_depth=0.9, rib_sharp=0.6, rib_lean=360.0, rib_cross=True)),
     ("Lumpy", dict(organic_depth=2.0, organic_scale=22.0)),
     ("Gem", dict(facets=True, facets_around=14, facets_up=10, facet_rough=0.2)),
+    ("Voronoi holes", dict(holes=VORONOI, hole_size=14.0, hole_strut=3.0, hole_jitter=0.7, vase_mode=FAKE_VASE)),
+    ("Round holes", dict(holes=ROUND, hole_size=12.0, hole_strut=3.0, vase_mode=FAKE_VASE)),
 ]
 
 COLOURS = [("White", "#F5F5F5"), ("Black", "#1A1A1A"), ("Grey", "#8D99AE"), ("Red", "#D62828"),
@@ -147,6 +149,21 @@ def pattern_icon(name: str) -> QIcon:
         p.setBrush(ACCENT.darker(135))
         for x, y, rr in ((18, 12, 5), (31, 18, 6), (21, 30, 7), (34, 37, 5), (17, 44, 4)):
             p.drawEllipse(QPointF(x, y), rr, rr)
+    elif name in ("Voronoi holes", "Round holes"):         # holes right through: cut out of the picture
+        p.setCompositionMode(QPainter.CompositionMode_Clear)
+        p.setPen(Qt.NoPen)
+        p.setBrush(Qt.black)
+        if name == "Round holes":
+            for row, y in enumerate(np.linspace(t + 7, b - 7, 4)):
+                for x in np.linspace(l + 6 + (row % 2) * 4, r - 6, 3):
+                    p.drawEllipse(QPointF(x, y), 3.0, 3.0)
+        else:
+            cells = [[(14, 8), (22, 6), (25, 13), (19, 18), (13, 15)], [(28, 9), (35, 7), (38, 15), (31, 19)],
+                     [(13, 22), (21, 22), (23, 30), (15, 33)], [(27, 24), (36, 22), (38, 31), (29, 33)],
+                     [(15, 38), (24, 37), (25, 45), (14, 46)], [(29, 38), (37, 37), (36, 46), (28, 45)]]
+            for cell in cells:
+                p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in cell]))
+        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
     elif name == "Gem":
         pen.setWidth(1)
         p.setPen(QPen(ACCENT.darker(185), 1.3))
@@ -404,6 +421,12 @@ def pattern_of(p) -> int | None:
     if p.expression.strip():
         return None
     names = [n for n, _ in PATTERNS]
+    if p.holes == VORONOI:
+        return names.index("Voronoi holes")
+    if p.holes == ROUND:
+        return names.index("Round holes")
+    if p.holes != NO_HOLES:
+        return None
     if p.facets and DRAWN not in (p.shape1, p.shape2):
         return names.index("Gem")
     if p.organic_depth > 0:

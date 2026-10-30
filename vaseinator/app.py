@@ -24,7 +24,8 @@ from .curves import CurveEditor
 from .expr import EXAMPLES, FUNCTION_HELP, VARIABLES
 from .geometry import VaseDesign, duration
 from .outline_editor import CLOSE_UP_FROM, OutlineEditor, OutlineWindow
-from .params import (BANDS, CIRCLE, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, FILAMENTS, GLOSSY, GRADIENT, MATTE, ONE_COLOUR,
+from .params import (BANDS, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, FILAMENTS, GLOSSY, GRADIENT,
+                     MATTE, NO_HOLES, ONE_COLOUR, ROUND, SLOTS, VORONOI,
                      OWN, OWN_PROFILE, PEBBLE, POLYGON, REAL_VASE, SAME, SHAPES, SILK, SLOW_DOWN, SPEED_UP, STRIPES,
                      SWING, TRANSLUCENT, VaseParams, colour_style_of, load_design, save_design)
 from .plots import ShapePlots
@@ -57,6 +58,8 @@ VASE_MODES = [(FAKE_VASE, "Normal print - walls, any colours"),
               (REAL_VASE, "Seamless - spiral vase mode, one colour")]
 REAL_COLOUR_STYLES = [(ONE_COLOUR, "One colour"), (GRADIENT, "Gradient spool")]
 USED = [(2, "Two"), (3, "Three"), (4, "Four")]
+HOLE_CHOICES = [(NO_HOLES, "None"), (VORONOI, "Voronoi"), (ROUND, "Round holes"), (DIAMOND, "Diamonds"),
+                (SLOTS, "Slots")]
 
 
 def _shape(k: int) -> tuple:
@@ -165,6 +168,22 @@ SPEC = [
         ("facets_up", "Facets up", "int", 1, 400, 1, "", "How many rows of facets up the vase."),
         ("facet_rough", "Rough cut", "pct", 0.0, 100.0, 5.0, " %", "Move the corners about for a rougher, hand-cut look."),
         ("facet_seed", "Cut pattern", "seed", 0, 99999, 1, "", "Another number, another rough cut."),
+    ]),
+    ("Holes and an open bottom", [
+        ("holes", "Holes", "choice", HOLE_CHOICES, None, None, "",
+         "Holes right through the wall: a Voronoi pattern (a honeycomb when regular), round holes, diamonds\n"
+         "or slots. Every hole's top comes to a point, so it prints without support. A vase with holes is\n"
+         "printed normally, with walls - spiral vase mode prints one closed line a layer."),
+        ("hole_size", "Hole size", "float", 4.0, 120.0, 1.0, " mm", "From one hole to the next."),
+        ("hole_strut", "Wall between", "float", 0.8, 30.0, 0.2, " mm",
+         "The wall left between the holes. Two lines wide or more prints well."),
+        ("hole_jitter", "Irregular", "pct", 0.0, 100.0, 5.0, " %",
+         "Voronoi: 0 % is a regular honeycomb; more makes the cells more varied."),
+        ("hole_seed", "Hole pattern", "seed", 0, 99999, 1, "", "Another number, another pattern of cells."),
+        ("hole_foot", "Plain foot", "float", 0.0, 1000.0, 1.0, " mm", "Solid wall kept at the foot, above the floor."),
+        ("hole_rim", "Plain rim", "float", 0.0, 1000.0, 1.0, " mm", "Solid wall kept at the rim."),
+        ("open_bottom", "Open at the bottom", "bool", None, None, None, "",
+         "No floor: open at both ends - a lampshade, a sleeve, a holder. Printed normally."),
     ]),
     ("Your own function", [
         ("expression", "", "expr", None, None, None, "",
@@ -381,8 +400,8 @@ class PrintSteps(QDialog):
             settings = (f"turn on <b>Spiral vase</b> (Spiralize), with <b>{d.bottom_layers} bottom layers</b> "
                         f"and the outer wall <b>{p.line_width:g} mm</b> wide")
         else:
-            settings = (f"<b>{p.walls} walls</b>, <b>0% infill</b>, <b>0 top layers</b> and "
-                        f"<b>{d.bottom_layers} bottom layers</b> (leave Spiral vase off)")
+            settings = ("leave <b>Spiral vase off</b> and use your <b>usual settings</b>: the wall is in the model, "
+                        f"{d.wall:.1f} mm thick, so there is nothing to change")
         colours = ("Load the filament you want and print." if parts == 1 else
                    f"It comes as <b>{parts} parts</b>, one for each band of colour, already set to filaments "
                    f"{', '.join(str(k) for k in sorted({f for _, f in d.bands}))}: load those colours in those "
@@ -1006,6 +1025,10 @@ class MainWindow(QMainWindow):
             show = int(key[-1]) <= (1 if colour_style_of(p) == ONE_COLOUR else p.colours_used)
         elif key == "walls":
             show = p.vase_mode == FAKE_VASE
+        elif key in ("hole_size", "hole_strut", "hole_seed", "hole_foot", "hole_rim"):
+            show = p.holes != NO_HOLES
+        elif key == "hole_jitter":
+            show = p.holes == VORONOI
         return show
 
     def _apply_mode(self):
@@ -1225,6 +1248,12 @@ class MainWindow(QMainWindow):
             elif key == "colour_style" and value != ONE_COLOUR and p.colours_used < 2:
                 p.colours_used = 3
                 self._set_widget("colours_used")
+            elif (key == "holes" and value != NO_HOLES or key == "open_bottom" and value) \
+                    and p.vase_mode == REAL_VASE:
+                p.vase_mode = FAKE_VASE                       # spiral vase mode can't print holes or an open end
+                self._set_widget("vase_mode")
+                self.statusBar().showMessage("Holes and an open bottom need a normal print: Print as is now "
+                                             "Normal print", 8000)
             elif key in ("repeat1", "repeat2"):
                 # the drawn piece narrows or widens to fit: one lobe stays one lobe, as deep as before
                 k = key[-1]
@@ -1588,12 +1617,12 @@ class MainWindow(QMainWindow):
             else:
                 html.append(
                     "<h3>Slicing it: a normal print</h3>"
-                    "<p class='k'>Leave spiral vase <b>off</b> - the slicer won't spiral an object of several "
-                    f"filaments. <b>{p.walls} walls</b> (wall loops), <b>0% sparse infill</b>, <b>0 top "
-                    f"layers</b>, <b>{d.bottom_layers} bottom layers</b> at <b>{p.layer_height:g} mm</b>, line "
-                    f"width <b>{p.line_width:g} mm</b>. Supports off - none are needed: nothing leans more than "
-                    f"{d.worst:.0f}°. It prints a layer at a time, with a seam, and the walls make it sturdy "
-                    "and watertight. A brim helps a narrow foot stay put.</p>")
+                    "<p class='k'>Leave spiral vase <b>off</b> and slice with your <b>usual settings</b>: the "
+                    f"vase is exported as the hollow pot it is - a wall {d.wall:.1f} mm thick"
+                    + ("" if p.open_bottom else f" on a {d.zb:g} mm floor") + ", the holes cut through - so the "
+                    f"slicer just fills it in. Supports off - none are needed: nothing leans more than "
+                    f"{d.worst:.0f}°" + (f", and the points of the holes bridge at most {d.bridge:.1f} mm"
+                                         if d.bridge > 0 else "") + ". A brim helps a narrow foot stay put.</p>")
         self.info.setHtml("".join(html))
 
     @staticmethod
@@ -1803,7 +1832,7 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".stl"):
             path += ".stl"
         try:
-            write_stl(path, d.verts, d.faces, base)
+            write_stl(path, *d.print_mesh(), base)
         except OSError as exc:
             QMessageBox.critical(self, "Export failed", str(exc))
             return
@@ -1811,8 +1840,8 @@ class MainWindow(QMainWindow):
         if d.p.vase_mode == REAL_VASE:
             how = "slice it with spiral vase mode on"
         else:
-            how = (f"slice it with {d.p.walls} walls, 0% infill and 0 top layers (an STL has no colours: "
-                   "Export 3MF has the bands as parts)")
+            how = ("the hollow pot: slice it with your usual settings (an STL has no colours: Export 3MF has the "
+                   "bands as parts)")
         self.statusBar().showMessage(
             f"Exported {os.path.basename(path)} ({d.triangles:,} triangles, watertight) to "
             f"{os.path.dirname(path)} — {how}", 12000)
@@ -1820,7 +1849,7 @@ class MainWindow(QMainWindow):
     def band_parts(self, d):
         """The vase for write_3mf: a part per colour band, set to its filament."""
         colors = d.p.colors()
-        parts = d.band_parts()
+        parts = d.print_parts()
         many = len(parts) > 1
         return [(f"{self._safe_name()} band {k + 1}" if many else self._safe_name(), verts, faces, fil, colors[fil])
                 for k, (fil, verts, faces) in enumerate(parts)]
@@ -1848,7 +1877,7 @@ class MainWindow(QMainWindow):
         if p.vase_mode == REAL_VASE:
             how = "turn on spiral vase"
         else:
-            how = f"leave spiral vase off: {p.walls} walls, 0% infill, 0 top layers"
+            how = "leave spiral vase off and print with your usual settings"
         if len(parts) > 1:
             fils = ", ".join(str(f) for f in sorted({f for _, _, _, f, _ in parts}))
             what = f"{len(parts)} bands set to filaments {fils}"
@@ -1946,9 +1975,10 @@ class MainWindow(QMainWindow):
             self, "Printing it watertight",
             "<p><b>Save for printing</b> saves the vase as a 3MF and says how to print it. Advanced ▸ "
             "Printing ▸ <b>Print as</b> chooses how:</p>"
-            "<ul><li><b>Normal print</b> (the usual): printed with walls, like any other print - a few walls, "
-            "no infill, no top. Sturdy, watertight and in <b>colour</b>: each band is its own part in the 3MF, "
-            "set to its filament. Load it with File ▸ Import and change the colours there as you like.</li>"
+            "<ul><li><b>Normal print</b> (the usual): printed like any other print, the wall in the model. "
+            "Sturdy, watertight, in <b>colour</b> - each band is its own part in the 3MF, set to its filament "
+            "(load it with File ▸ Import and change the colours there as you like) - and it can have "
+            "<b>holes</b> or an <b>open bottom</b>.</li>"
             "<li><b>Seamless</b>: the slicer's spiral vase mode - one continuous line, with no seam and a single "
             "wall that glows when lit, in <b>one filament</b> (Flash Studio won't change filament in spiral "
             "vase mode; a gradient spool still works). Hardly quicker than a normal print.</li></ul>"
@@ -1969,10 +1999,11 @@ class MainWindow(QMainWindow):
             "<li>Test it in a sink first. A coat of clear epoxy or varnish inside seals any weep.</li>"
             "</ul>"
             "<h3>Normal print</h3>"
-            "<ul><li><b>Spiral vase off</b>: the slicer won't spiral an object of several filaments.</li>"
-            "<li>The <b>walls</b> the app is set to (wall loops); <b>0% sparse infill</b>; <b>0 top layers</b>; "
-            "the bottom layers in the panel.</li>"
-            "<li>No supports, just as for a seamless one.</li></ul>")
+            "<ul><li><b>Spiral vase off</b>; otherwise your <b>usual settings</b>. The vase comes as the hollow "
+            "pot it is - the wall as thick as Walls × Line width, the floor, the rim, any holes cut through - so "
+            "there is nothing to set.</li>"
+            "<li>No supports, just as for a seamless one: every hole's top comes to a point, with at most a short "
+            "bridge at its very tip.</li></ul>")
 
     def drawing_help(self):
         QMessageBox.information(

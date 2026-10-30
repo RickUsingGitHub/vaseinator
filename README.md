@@ -49,10 +49,16 @@ ready to slice.
   lines – they are read as one, so start each new line with + - * or / – with notes after a `#`. It is
   checked and run safely: numbers, the listed variables and functions only; a mistake is pointed out by
   line and character.
-* **A normal print, or seamless**: a vase prints like any other print – a few walls, no infill, no top –
-  sturdy, watertight and in colour. Or, in one colour (or a gradient spool), **seamless** in the slicer's
-  spiral vase mode: one line climbing round and round, with no seam and a single wall that glows when
-  lit. Spiral vase mode is hardly any quicker, so a normal print is the usual.
+* **A normal print, or seamless**: a vase prints like any other print, and is exported as the **hollow pot**
+  it is – the wall as thick as it prints, the floor and the rim – so the slicer needs **no special
+  settings**: sturdy, watertight and in colour. Or, in one colour (or a gradient spool), **seamless** in the
+  slicer's spiral vase mode: one line climbing round and round, with no seam and a single wall that glows
+  when lit. Spiral vase mode is hardly any quicker, so a normal print is the usual.
+* **Holes** right through the wall: **Voronoi** cells (a honeycomb when regular), **round holes**,
+  **diamonds** or **slots**, as big and as far apart as you like, kept clear of a plain foot and rim, and
+  turning with the twist. Every hole's top comes to a **point** that closes no faster than the overhang
+  limit, so it prints **without support** – with at most a short bridge, a few millimetres, at its very tip.
+  And **open at the bottom** too, for lampshades, sleeves and holders.
 * **Colours**: one colour or a **gradient spool** – shown where its colours will really land, worked out
   from the filament each height uses – and, printed normally, up to four filaments in **bands**
   (even, or thicker at the top or the bottom) or **stripes**, with palettes.
@@ -65,7 +71,7 @@ ready to slice.
   print** builds it up in real print time (wide layers take longer).
 * **The sums**: size, base and opening, how much water it holds, filament in grams and metres, print
   time, steepest overhang, and the mesh – closed and watertight.
-* **Gallery** of nineteen ready-made vases, a **plain cylinder** to start from blank, **Surprise me** (a
+* **Gallery** of twenty-three ready-made vases (lampshades and baskets with holes among them), a **plain cylinder** to start from blank, **Surprise me** (a
   new random vase that still prints), and **undo / redo** of everything.
 * **Save for printing**: a **3MF** in the middle of the bed – each colour band its own part, set to its
   filament (one solid for a seamless vase) – as Lenticular Sign Maker and Maze Tube Designer do, with plain
@@ -127,6 +133,7 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Spin** | How far the shape turns from bottom to top, and how the turning is spread up the vase – including back and forth, and your own curve. **Both ways** twists it both ways at once. |
 | **Surface** | Ribs, rings, bumps and organic lumps; whether they turn with the twist; how strong they are up the vase; and a plain foot and rim. |
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |
+| **Holes and an open bottom** | The **holes** – none, Voronoi, round, diamonds or slots – their size, the wall between them, how irregular the Voronoi cells are and their pattern, and how much plain wall to keep at the foot and the rim; and **open at the bottom**. Holes and an open bottom are printed normally. |
 | **Your own function** | A formula added to the radius. **Examples** has eight to try; **Help…** lists the variables and functions. |
 | **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go up the vase: one colour, bands, stripes or a gradient spool. How it looks: matte, silk, glossy, translucent. |
 | **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail. |
@@ -160,8 +167,9 @@ print (the usual) or seamless.
 
 **A normal print**
 
-* Leave spiral vase mode **off**. Set the **walls** (wall loops) the app is set to – two make a sturdy,
-  watertight vase – **0% sparse infill**, **0 top layers**, and the bottom layers the panel gives.
+* Leave spiral vase mode **off**, and otherwise print with your **usual settings**. The vase comes as the
+  hollow pot it is – a wall as thick as *Walls* × *Line width* (1.2 mm as it comes), the floor, the rim and
+  any holes – so the slicer simply fills it in: there is nothing to set.
 * The colour bands and stripes are parts of their own filaments in the 3MF, so the slicer prints them in
   colour by itself; on a printer with several toolheads, like the Creator 5 Pro, each band uses its own
   head. It prints a layer at a time, with a seam.
@@ -202,9 +210,9 @@ one closed loop.
 same kind of file as Lenticular Sign Maker and Maze Tube Designer. **Open in slicer** opens it for you; in
 **Flash Studio or OrcaSlicer** you can also use **File ▸ Import** (Ctrl+I).
 
-* **A normal print:** each colour band is its own part, set to filaments 1, 2, 3… in the vase's colours;
-  reassign them in the slicer as you like. Leave spiral vase mode off, set the walls, 0% infill and 0 top
-  layers, and print.
+* **A normal print:** the hollow pot, each colour band its own part, set to filaments 1, 2, 3… in the
+  vase's colours; reassign them in the slicer as you like. Leave spiral vase mode off and print with your
+  usual settings.
 * **Seamless:** the vase is one solid part. Turn on spiral vase mode and print.
 
 ## Project layout
@@ -218,6 +226,7 @@ same kind of file as Lenticular Sign Maker and Maze Tube Designer. **Open in sli
 | `vaseinator/geometry.py` | The vase itself: the surface, softening, the solid and the shown shell, and the sums. |
 | `vaseinator/shapes.py` | Outlines, cross-sections, curves up the height, textures, palettes. |
 | `vaseinator/expr.py` | Your own function: checked, then evaluated with numpy. |
+| `vaseinator/hollow.py` | The hollow pot a normal print makes, the hole patterns, and their pointed tops. |
 | `vaseinator/sections.py` | Drawn cross-sections: the spline through the points, tracing a picture, filling and insetting outlines. |
 | `vaseinator/curves.py` | The curve editor. |
 | `vaseinator/outline_editor.py` | The cross-section editor. |
@@ -237,6 +246,18 @@ built on a grid of heights and angles. Because each height has exactly one radiu
 every layer is one simple closed loop – what spiral vase mode needs – and the mesh can't cross itself:
 each triangle lies in its own wedge of angle between two heights. The wall is joined to a flat bottom
 and a flat top, so the solid is closed, watertight and one piece, with no boolean operations.
+
+A normal print is exported as the **hollow pot**: the outer face, an inner face moved in square to it by
+the wall's thickness, a flat floor (or an open bottom) and the rim, built row by row on the same grid as
+the surface. A **hole pattern** is a number at each grid point – how far inside a hole it is, in mm,
+below nought in the wall – from the nearest hole centres (two of them, for Voronoi's cell edges). The
+wall is cut where that number is nought (marching squares), the same on both faces, with a side face
+joining them round each hole; each cut is one vertex shared by every face beside it, so the pot stays
+closed. Going up row by row, the wall over a hole may only reach in so far past the wall below it –
+measured from the point really below, so on a twisting vase the holes' sides lean no more than their
+tops – so every hole's top closes to a point at no more than the overhang limit. Where it finally closes
+between two grid points there is a short bridge, which the app measures and tells you about. Colour
+bands of the pot are cut on rows put in at the band heights, each a closed part.
 
 A **drawn** cross-section needn't have one radius in each direction – a lobe can swell past its neck – so
 it is built another way: as rows of points up the vase, each row the outline (blended into the second
@@ -264,7 +285,10 @@ cylinder has the right volume and capacity; that STL and 3MF files read back the
 and open; that your own function can reach nothing it shouldn't; that colour changes land on layers; and
 that a drawn outline goes through its points, matches the built-in shape it came from, holds what a round
 vase holds, is refused if it crosses itself, can be traced from a picture, and repeated a hundred times –
-narrowed to fit, checked, filled and built closed in a few seconds.
+narrowed to fit, checked, filled and built closed in a few seconds; that a normal print is the hollow pot,
+with the right volume, its colour bands parts that make it up exactly; and that every pattern of holes,
+on round and drawn shapes, twisting or not, makes a closed pot whose holes' sides lean no more than the
+limit but for short bridges at their points, that holds nothing, with an open bottom too.
 `.venv\Scripts\python -m tests.test_app` drives the window itself: edits, curves, undo, the gallery,
 Surprise me, every view, the print animation, saving and exporting, and drawing (with the mouse, close
 up and in a full window, zoomed with the wheel), repeating up to a hundred times and tracing a

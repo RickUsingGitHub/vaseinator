@@ -20,9 +20,10 @@ from vaseinator import sections  # noqa: E402
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
 from vaseinator.geometry import (TOLERANCE, VaseDesign, edge_check, face_normals, lean_angles,  # noqa: E402
                                  mesh_volume)
-from vaseinator.params import (BANDS, CIRCLE, DRAWN, EVENLY, FAKE_VASE, FLOWER, GEAR, GRADIENT,  # noqa: E402
-                               ONE_COLOUR, OWN, POLYGON, REAL_VASE, SAME, STAR, STRIPES, SWING, VaseParams,
-                               load_design, save_design)
+from vaseinator import hollow  # noqa: E402
+from vaseinator.params import (BANDS, CIRCLE, DIAMOND, DRAWN, EVENLY, FAKE_VASE, FLOWER, GEAR, GRADIENT,  # noqa: E402
+                               NO_HOLES, ONE_COLOUR, OWN, POLYGON, REAL_VASE, ROUND, SAME, SLOTS, STAR, STRIPES,
+                               SWING, VORONOI, VaseParams, load_design, save_design)
 from vaseinator.presets import GALLERY, PRINTER_KEYS, gallery_design, plain_design, surprise  # noqa: E402
 from vaseinator.shapes import PROFILES, pchip, shape_table  # noqa: E402
 from vaseinator.stl import read_stl, write_stl  # noqa: E402
@@ -102,7 +103,13 @@ def test_every_design_is_closed_and_printable():
         down = d.faces[d.side:d.side + (len(d.faces) - d.side) // 2]
         assert np.allclose(d.verts[down][:, :, 2], 0.0), f"{name}: the base is not flat"
         for z in np.linspace(0.3, d.H - 0.3, 9) + 0.0123:
-            assert layer_loops(d, z) == 1, f"{name}: the layer at {z:.1f} mm is not one closed loop"
+            loops = layer_loops(d, z)
+            if d.holes_open:                          # holes cut a layer into pieces: each one still closed
+                assert loops >= 1, f"{name}: the layer at {z:.1f} mm is not closed"
+            else:
+                assert loops == 1, f"{name}: the layer at {z:.1f} mm is not one closed loop"
+        if d.normal:                                  # what a normal print exports: the hollow pot, closed
+            assert edge_check(d.print_mesh()[1])[0] and len(d.print_mesh()[1]) == d.triangles, name
 
 
 def test_the_shape_can_change_back_and_forth():
@@ -184,6 +191,65 @@ def test_the_plain_start_is_a_plain_cylinder():
     side = d.verts[d.faces[:d.side].ravel()]
     r = np.hypot(side[:, 0], side[:, 1])
     assert d.closed and abs(r.max() - 102.0) < 0.05 and abs(r.min() - 98.0) < 0.05
+
+
+def test_a_normal_print_is_the_hollow_pot():
+    """A normal print exports the pot as it prints - wall, floor and rim - so the slicer needs no special
+    settings; seamless exports the solid for spiral vase mode."""
+    r, H = 40.0, 100.0
+    d = VaseDesign(plain(height=H, silhouette=[[0.0, 2 * r], [1.0, 2 * r]], facet_size=0.5, walls=2, line_width=0.6))
+    verts, faces = d.print_mesh()
+    assert d.normal and edge_check(faces)[0] and mesh_volume(verts, faces) > 0
+    want = math.pi * r * r * H - math.pi * (r - 1.2) ** 2 * (H - 1.2)           # the plastic: wall and floor
+    assert abs(mesh_volume(verts, faces) - want) / want < 0.01, (mesh_volume(verts, faces), want)
+    assert abs(d.grams - want / 1000.0 * d.p.density) < 0.02 * d.grams
+    seamless = VaseDesign(plain(height=H, silhouette=[[0.0, 2 * r], [1.0, 2 * r]], vase_mode=REAL_VASE))
+    v2, f2 = seamless.print_mesh()
+    assert not seamless.normal and np.array_equal(f2, seamless.faces)
+    assert abs(mesh_volume(v2, f2) - math.pi * r * r * H) / (math.pi * r * r * H) < 0.002
+    # colour bands of the pot: closed parts that together are the pot
+    d = VaseDesign(plain(colour_style=BANDS, band_count=4, colours_used=2))
+    parts = d.print_parts()
+    assert len(parts) == 4 and all(edge_check(f)[0] for _, _, f in parts)
+    whole = mesh_volume(*d.print_mesh())
+    assert abs(sum(mesh_volume(v, f) for _, v, f in parts) - whole) < 1e-6 * whole
+
+
+def test_holes_print_without_supports():
+    """Every pattern of holes, on round and drawn shapes, twisting or not: a closed pot whose holes' tops
+    lean no more than the limit, but for a short bridge at their very points."""
+    cases = [plain(holes=VORONOI), plain(holes=VORONOI, hole_jitter=0.0, twist=360.0),
+             plain(holes=ROUND, twist=720.0), plain(holes=DIAMOND, open_bottom=True),
+             plain(holes=SLOTS, hole_size=10.0, hole_strut=2.0),
+             plain(holes=VORONOI, hole_size=8.0, hole_strut=2.0, shape1=STAR, count1=6, depth1=0.3, twist=90.0),
+             plain(holes=ROUND, shape1=DRAWN, drawn1=sections.CLAW, repeat1=1, twist=90.0)]
+    for p in cases:
+        d = VaseDesign(p)
+        verts, faces = d.print_mesh()
+        assert not d.errors and d.holes_open and edge_check(faces)[0], p.holes
+        assert d.worst <= p.max_overhang + TOLERANCE, (p.holes, d.worst)
+        assert 0.0 <= d.bridge < 8.0 and 0.15 < d.hole_share < 0.7, (d.bridge, d.hole_share)
+        assert d.capacity == 0.0 and d.info()["Holds"].startswith("nothing")
+        assert max(layer_loops(d, z) for z in np.linspace(0.3 * d.H, 0.7 * d.H, 5)) > 1
+        parts = d.print_parts()
+        assert all(edge_check(f)[0] for _, _, f in parts)
+        whole = mesh_volume(verts, faces)
+        assert abs(sum(mesh_volume(v, f) for _, v, f in parts) - whole) < 1e-6 * whole
+    # every hole side the overhang check sees leans out over its hole no more than the limit
+    d = VaseDesign(plain(holes=ROUND))
+    over = np.degrees(np.arcsin(np.clip(-face_normals(d.shell_verts, d.shell_faces)[:, 2], 0, 1)))
+    assert over[d.shell_kind == hollow.SIDE].max() <= d.p.max_overhang + TOLERANCE
+    # no room for holes is said; seamless can't have holes, so it is printed normally, and said
+    d = VaseDesign(plain(holes=VORONOI, height=40.0, hole_foot=20.0, hole_rim=20.0))
+    assert not d.holes_open and any("no room for the holes" in n for n in d.notes)
+    d = VaseDesign(plain(holes=VORONOI, vase_mode=REAL_VASE))
+    assert d.normal and d.holes_open and any("normal print" in n for n in d.notes)
+    # open at the bottom: no floor, nothing held, the pot still closed
+    d = VaseDesign(plain(open_bottom=True))
+    verts, faces = d.print_mesh()
+    bottom = verts[faces][np.all(np.abs(verts[faces][:, :, 2]) < 1e-9, axis=1)]
+    assert edge_check(faces)[0] and len(bottom) and np.hypot(bottom[..., 0], bottom[..., 1]).min() > 20.0
+    assert d.info()["Holds"] == "nothing: it is open at the bottom" and d.bottom_layers == 0
 
 
 def test_low_poly_facets_are_flat():

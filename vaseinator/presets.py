@@ -6,9 +6,9 @@ import random
 
 from . import sections
 from .expr import EXAMPLES
-from .params import (BANDS, CIRCLE, DRAWN, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FAKE_VASE, FLOWER, GEAR, GLOSSY,
-                     GRADIENT, GROWS, MATTE, MIDDLE, ONE_COLOUR, PEBBLE, POLYGON, REAL_VASE, SAME, SILK,
-                     SLOW_DOWN, SPEED_UP, STAR, STRIPES, SWING, TRANSLUCENT, VaseParams)
+from .params import (BANDS, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FAKE_VASE, FLOWER,
+                     GEAR, GLOSSY, GRADIENT, GROWS, MATTE, MIDDLE, ONE_COLOUR, PEBBLE, POLYGON, REAL_VASE, ROUND,
+                     SAME, SILK, SLOW_DOWN, SPEED_UP, STAR, STRIPES, SWING, TRANSLUCENT, VORONOI, VaseParams)
 from .shapes import PALETTES, PROFILES
 
 # the settings that belong to the printer, not the design: kept when a design is swapped
@@ -104,6 +104,22 @@ GALLERY = [
     ("Claw Shell", "A drawn crescent with no symmetry at all, turning as it rises.",
      dict(**_profile(4, 100), **_drawn("Claw"), twist=90, twist_style=EVENLY, colour_style=GRADIENT,
           colours_used=3, gradient_length=4.0, look=SILK, **palette("Glacier"))),
+    ("Voronoi Lamp", "A lampshade of Voronoi cells, open at both ends: put it over a light.",
+     dict(**_profile(4, 150), height=190, shape1=CIRCLE, twist=0, holes=VORONOI, hole_size=18.0, hole_strut=3.2,
+          hole_jitter=0.8, hole_seed=11, hole_foot=12.0, hole_rim=10.0, open_bottom=True, colour_style=ONE_COLOUR,
+          color1="#F8F9FA", look=TRANSLUCENT)),
+    ("Honeycomb Basket", "A six-sided basket with a honeycomb of holes and a solid floor.",
+     dict(**_profile(2, 150), height=110, shape1=POLYGON, count1=6, sharp1=0.4, twist=0, holes=VORONOI,
+          hole_size=14.0, hole_strut=3.0, hole_jitter=0.0, hole_foot=14.0, hole_rim=10.0, colour_style=ONE_COLOUR,
+          color1="#E9C46A", look=MATTE)),
+    ("Lace Tulip", "Round holes like lace over a twisting tulip, solid at the foot - for dried flowers.",
+     dict(**_profile(0, 112), height=170, shape1=FLOWER, count1=6, depth1=0.12, sharp1=0.5, twist=60,
+          twist_style=EASE, holes=ROUND, hole_size=11.0, hole_strut=3.0, hole_foot=45.0, hole_rim=14.0,
+          colour_style=ONE_COLOUR, color1="#FC5185", look=SILK)),
+    ("Diamond Lantern", "An eight-sided lantern of diamond holes, in two colours, open at the bottom.",
+     dict(**_profile(1, 130), height=170, shape1=POLYGON, count1=8, sharp1=0.2, twist=45, holes=DIAMOND,
+          hole_size=16.0, hole_strut=3.5, hole_foot=14.0, hole_rim=14.0, open_bottom=True, colour_style=BANDS,
+          band_count=2, colours_used=2, look=GLOSSY, color1="#1D3557", color2="#E9C46A")),
     ("Bulb Swirl", "Three drawn bulbs at the foot become six at the lip, swirling half a turn.",
      dict(**_profile(4, 100), **_drawn("Three bulbs"), **_drawn("Six bulbs", 2), twist=180, twist_style=EVENLY,
           colour_style=ONE_COLOUR, color1="#2A9D8F", look=GLOSSY)),

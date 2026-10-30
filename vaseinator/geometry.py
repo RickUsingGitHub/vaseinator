@@ -22,13 +22,14 @@ import math
 import numpy as np
 
 from .expr import ExprError, compile_expression
-from . import sections
-from .params import (BANDS, DRAWN, FAKE_VASE, GRADIENT, MAX_BANDS, ONE_COLOUR, OWN, SAME, STRIPES, VaseParams,
-                     colour_style_of)
+from . import hollow, sections
+from .params import (BANDS, DIAMOND, DRAWN, FAKE_VASE, GRADIENT, MAX_BANDS, NO_HOLES, ONE_COLOUR, OWN, REAL_VASE,
+                     ROUND, SAME, SLOTS, STRIPES, VORONOI, VaseParams, colour_style_of)
 from .shapes import (TABLE, TAU, blur, change, lobes_needed, organic, pchip, progress, sample, shape_table,
                      smooth_max, smoothstep, strength)
 
 TOLERANCE = 0.3          # degrees over the overhang limit still counted as within it
+HOLE_WORDS = {VORONOI: "Voronoi", ROUND: "round holes", DIAMOND: "diamonds", SLOTS: "slots"}
 
 
 # ===================================================================== meshes
@@ -291,11 +292,20 @@ class VaseDesign:
     """A vase built from its parameters: the solid to export, the shell to show, and its sums."""
 
     def __init__(self, p: VaseParams, draft: bool = False):
-        self.p = p
-        self.draft = draft
         self.errors: list[str] = []
         self.warnings: list[str] = []
         self.notes: list[str] = []
+        if p.vase_mode == REAL_VASE and (p.holes != NO_HOLES or p.open_bottom):
+            p = p.copy()
+            p.vase_mode = FAKE_VASE
+            self.notes.append("Holes and an open bottom need a normal print, with walls (spiral vase mode prints one "
+                              "closed line a layer): it is printed normally.")
+        self.p = p
+        self.draft = draft
+        self.pot_rows = None
+        self.bridge = 0.0
+        self.holes_open = False
+        self.hole_share = 0.0
         self.fn = None
         self.closed = None
         self.free = DRAWN in (self.p.shape1, self.p.shape2)    # a drawn outline: built point by point
@@ -307,12 +317,20 @@ class VaseDesign:
                     if self.errors:
                         return
                     self._free_printable()
-                    self._free_shell()
+                    inner = np.stack([sections.inset(row, self.wall) for row in self.P])
+                    self._pot(self.P, inner)
+                    self.outer_rows = [(zz, np.arctan2(r[:, 1], r[:, 0]), np.hypot(r[:, 0], r[:, 1]))
+                                       for zz, r in zip(self.z, self.P)]
                 else:
                     self._grid_size()
                     self._surface()
                     self._printable()
-                    self._shell()
+                    if self.rows is None:
+                        c, s = np.cos(self.theta), np.sin(self.theta)
+                        Ri = inset(self.theta, self.R, self.wall)
+                        self._pot(np.stack([self.R * c, self.R * s], -1), np.stack([Ri * c, Ri * s], -1))
+                    else:
+                        self._shell()                 # low-poly: the facets' own shell
                 self._measure()
                 self._colours()
                 self._advice()
@@ -589,9 +607,140 @@ class VaseDesign:
         p = self.p
         return p.line_width * (max(int(p.walls), 1) if p.vase_mode == FAKE_VASE else 1)
 
+    @property
+    def normal(self) -> bool:
+        """Printed normally, with walls - rather than seamless, in spiral vase mode."""
+        return self.p.vase_mode == FAKE_VASE
+
+    def _pot(self, O, I):
+        """What the printer makes: the hollow pot - the outer face O and inner face I (K, N, 2) at the grid's
+        heights, the floor or an open bottom, the rim - with any holes cut right through. For a normal print it
+        is what is exported; seamless, it is what the single line makes, for the 3D view."""
+        p = self.p
+        zb = 0.0 if p.open_bottom else min(max(p.bottom, p.layer_height), 0.5 * self.H)
+        self.zb = zb
+        f = self._holes(O, zb)
+        if p.open_bottom:
+            zs, (Os, Is, fs), kb = self.z, (O, I, f), None
+        else:
+            zs, (Os, Is, fs), at = hollow.insert_rows(self.z, [O, I, f], [zb])
+            kb = at[zb]
+        verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb)
+        kinds, self.bridge, side_worst = hollow.bridges(verts, faces, kinds, p.max_overhang)
+        self.pot_rows = (zs, Os, Is, fs, kb)
+        self.holes_open = bool((fs > 0).any())
+        self.hole_share = float((fs > 0).mean()) if self.holes_open else 0.0
+        self._set_shell(verts, faces, kinds)
+        self.worst = max(self.worst, side_worst)
+        if self.normal:                               # what is exported, and what the panel counts
+            self.triangles = len(faces)
+            if not self.draft:
+                self.closed = bool(self.closed) and edge_check(faces)[0]
+        lo = 0 if kb is None else kb
+        self.inner_rows = [(zz, np.arctan2(r[:, 1], r[:, 0]), np.hypot(r[:, 0], r[:, 1]))
+                           for zz, r in zip(zs[lo:], Is[lo:])]
+
+    def _set_shell(self, verts, faces, kinds=None):
+        """The shell to show, and how far each face leans: a hole's side only counts where it leans out over
+        the hole (its sill faces up, and prints as it is); the bridge at a hole's very top is as steep as allowed."""
+        lean = lean_angles(verts, faces)
+        if kinds is not None:
+            over = np.degrees(np.arcsin(np.clip(-face_normals(verts, faces)[:, 2], 0.0, 1.0)))
+            lean = np.where(kinds == hollow.SIDE, over, lean)
+            lean = np.where(kinds == hollow.TIP, np.minimum(over, self.p.max_overhang), lean)
+            lean = np.where(kinds == hollow.CAP, -1.0, lean)
+        self.shell_verts, self.shell_faces, self.shell_kind, self.shell_lean = verts, faces, kinds, lean
+
+    def _holes(self, O, zb):
+        """The hole pattern on the grid: how far inside a hole each point is (mm, below nought in the wall),
+        with pointed tops that print without support."""
+        p = self.p
+        K, N = O.shape[:2]
+        if p.holes == NO_HOLES or not self.normal:
+            return np.full((K, N), -1.0)
+        seg, along, L = hollow.row_lengths(O)
+        # the holes turn with the twist - but no faster than a wall may lean, so their sides stay printable
+        turn = np.zeros(K)
+        if p.texture_twist:
+            r = np.maximum(L / TAU, 1.0)
+            turn = limit_slope(self.tau.astype(float), 0.6 * math.tan(math.radians(p.max_overhang))
+                               * np.diff(self.z) / np.minimum(r[1:], r[:-1]))
+        # measured round each row from the point at that angle
+        ang = np.arctan2(O[..., 1], O[..., 0])
+        c0 = np.argmin(np.abs(np.mod(ang - turn[:, None] + math.pi, TAU) - math.pi), axis=1)
+        start = along[np.arange(K), c0]
+        t = np.mod((along - start[:, None]) / L[:, None], 1.0)
+        z_lo = zb + max(p.hole_foot, 0.0)
+        z_hi = self.H - max(p.hole_rim, 0.0)
+        f = hollow.hole_field(p.holes, t, self.z, L, p.hole_size, p.hole_strut, p.hole_jitter, p.hole_seed,
+                              z_lo, z_hi)
+        if not (f > 0).any():
+            self.notes.append("There is no room for the holes between the plain foot and rim: make the vase "
+                              "taller, the holes smaller, or the plain foot and rim less.")
+            return f
+        return hollow.pointed_tops(f, self.z, O, 0.85 * math.tan(math.radians(p.max_overhang)))
+
+    def print_mesh(self):
+        """The vase as one closed mesh for the slicer: the hollow pot for a normal print, the solid for
+        spiral vase mode."""
+        if self.normal:
+            return self.shell_verts, self.shell_faces
+        return self.verts, self.faces
+
+    def print_parts(self):
+        """The vase for the slicer as [(filament, verts, faces)]: printed normally, the hollow pot, a part for
+        each band of colour; seamless, the solid."""
+        if not self.normal:
+            return self.band_parts()
+        if self.pot_rows is None:
+            return self._loft_parts()
+        zs, Os, Is, fs, kb = self.pot_rows
+        floor = kb is not None
+        # bands start on top of the floor
+        lowest = (zs[kb] if floor else 0.0) + 0.5 * self.p.layer_height
+        tops = sorted({max(z, lowest) for z, _ in self.bands[1:] if z < self.H - 1e-6})
+        z2, (O2, I2, f2), at = hollow.insert_rows(zs, [Os, Is, fs], tops)
+        kb2 = int(np.argmin(np.abs(z2 - zs[kb]))) if floor else None
+        bounds = [0] + [at[t] for t in tops] + [len(z2) - 1]
+        fils = [fil for _, fil in self.bands][:len(bounds) - 1]
+        parts = []
+        for fil, a, b in zip(fils, bounds[:-1], bounds[1:]):
+            rows = slice(a, b + 1)
+            verts, faces, _ = hollow.pot(z2[rows], O2[rows], I2[rows], f2[rows],
+                                         floor_row=kb2 if (floor and a == 0) else None)
+            parts.append((fil, verts, faces))
+        return parts
+
+    def _loft_parts(self):
+        """Low-poly, printed normally: the facets' hollow shell, a part for each band of colour."""
+        w, zb = self.wall, self.zb
+        tops = [zs for zs, _ in self.bands[1:]] + [self.H]
+        parts = []
+        for (lo, fil), hi in zip(self.bands, tops):
+            lo = max(lo, zb + 0.5 * self.p.layer_height) if lo > 0 else 0.0
+            rings = [self._ring_at(lo)] + [r for r in self.rows if lo + 1e-6 < r[0] < hi - 1e-6] + [self._ring_at(hi)]
+            if lo == 0.0:
+                inner = [self._ring_at(zb)] + [r for r in rings if r[0] > zb + 1e-6]
+            else:
+                inner = rings
+            inner = [(zz, a, inset(a, r, w)) for zz, a, r in inner]
+            o_v, o_f, _, o_first, o_last = loft_side(rings)
+            i_v, i_f, _, i_first, i_last = loft_side(inner)
+            no, ni = len(o_v), len(i_v)
+            verts = np.concatenate([o_v, i_v, [[0.0, 0.0, 0.0], [0.0, 0.0, zb]]])
+            faces = [o_f, i_f[:, ::-1] + no, annulus(o_last, i_last + no)]
+            if lo == 0.0:
+                faces += [fan(no + ni, o_first, up=False), fan(no + ni + 1, i_first + no, up=True)]
+            else:
+                faces.append(annulus(o_first, i_first + no)[:, ::-1])
+            parts.append((fil, verts, np.concatenate(faces)))
+        return parts
+
     def _shell(self):
         """What the printer really makes: the wall over a solid bottom, for the 3D view."""
         p = self.p
+        if p.holes != NO_HOLES or p.open_bottom:
+            self.notes.append("Holes and an open bottom work on smooth shapes, not low-poly facets.")
         w = self.wall
         zb = min(max(p.bottom, p.layer_height), 0.5 * self.H)
         self.zb = zb
@@ -621,7 +770,10 @@ class VaseDesign:
                                annulus(o_last, i_last + no)])
         self.shell_verts = verts
         self.shell_faces = np.concatenate([walls, caps])
+        self.shell_kind = None
         self.shell_lean = np.concatenate([lean_angles(verts, walls), np.full(len(caps), -1.0)])
+        if self.normal:                               # what is exported, and what the panel counts
+            self.triangles = len(self.shell_faces)
 
     # ======================================================= drawn outlines
     def _outline(self, k: int):
@@ -787,32 +939,6 @@ class VaseDesign:
         j = min(int(fj), self.M - 1)
         return self.P[j] + (fj - j) * (self.P[j + 1] - self.P[j])
 
-    def _free_shell(self):
-        """What the printer makes of a drawn vase: the wall moved in square to itself, over a solid bottom."""
-        p = self.p
-        w = self.wall
-        zb = min(max(p.bottom, p.layer_height), 0.5 * self.H)
-        self.zb = zb
-        P, z = self.P, self.z
-        keep = z > zb + 0.3 * self.dz
-        zi = np.concatenate([[zb], z[keep]])
-        Pi = np.stack([sections.inset(row, w) for row in np.concatenate([self._P_at(zb)[None], P[keep]])])
-        o_verts, o_faces, _, o_first, o_last = grid_side_xy(z, P)
-        i_verts, i_faces, _, i_first, i_last = grid_side_xy(zi, Pi)
-        no = len(o_verts)
-        verts = np.concatenate([o_verts, i_verts])
-        walls = np.concatenate([o_faces, i_faces[:, ::-1] + no])
-        caps = np.concatenate([o_first[sections.triangulate(P[0])][:, ::-1],
-                               (i_first + no)[sections.triangulate(Pi[0])], annulus(o_last, i_last + no)])
-        self.shell_verts = verts
-        self.shell_faces = np.concatenate([walls, caps])
-        self.shell_lean = np.concatenate([lean_angles(verts, walls), np.full(len(caps), -1.0)])
-
-        def polar(zs, rows):
-            return [(zz, np.arctan2(r[:, 1], r[:, 0]), np.hypot(r[:, 0], r[:, 1])) for zz, r in zip(zs, rows)]
-        self.outer_rows = polar(z, P)
-        self.inner_rows = polar(zi, Pi)
-
     # ---------------------------------------------------------- the sums
     def _ring_stats(self, rows):
         """Perimeter and enclosed area of each ring."""
@@ -845,12 +971,15 @@ class VaseDesign:
         wall_area = float(np.sum(0.5 * (ps[1:] + ps[:-1]) * np.diff(zs)))     # mm² of wall, unrolled
         bottom_vol = float(np.interp(0.0, oz, o_area)) * zb
         self.capacity = float(np.sum(0.5 * (i_area[1:] + i_area[:-1]) * np.diff(iz))) / 1000.0  # ml
+        if self.holes_open or p.open_bottom:
+            self.capacity = 0.0
         fil_area = math.pi * (p.filament_d / 2.0) ** 2
-        vol = wall_area * w + bottom_vol
+        vol = mesh_volume(self.shell_verts, self.shell_faces)               # the plastic, holes and all
+        wall_area *= 1.0 - self.hole_share
         self.grams = vol / 1000.0 * p.density
         self.metres = vol / fil_area / 1000.0
         v = min(p.speed, p.max_flow / max(p.line_width * lh, 1e-6))
-        layers_bottom = max(1, math.ceil(zb / lh - 1e-6))
+        layers_bottom = 0 if p.open_bottom else max(1, math.ceil(zb / lh - 1e-6))
         path = wall_area * loops / lh + layers_bottom * float(np.interp(0.0, oz, o_area)) / p.line_width
         self.seconds = path / max(v, 0.1) + 120.0
         self.layers = int(round(self.H / lh))
@@ -984,7 +1113,8 @@ class VaseDesign:
 
     def colour_plan(self, first_layer: float | None = None) -> str:
         p = self.p
-        lines = [f"Vaseinator: {p.name} - spiral vase, {p.layer_height:g} mm layers"]
+        lines = [f"Vaseinator: {p.name} - {'a normal print' if self.normal else 'spiral vase mode'}, "
+                 f"{p.layer_height:g} mm layers"]
         if self.gradient:
             lines.append(f"Print with one gradient spool (one colour cycle every {p.gradient_length:g} m).")
             return "\n".join(lines)
@@ -1034,6 +1164,9 @@ class VaseDesign:
         if changes > 20:
             self.warnings.append(f"{changes} colour changes: each one takes time and leaves a small seam. "
                                  "Fewer, taller bands print cleaner.")
+        if self.holes_open and p.hole_strut < 2.0 * p.line_width:
+            self.warnings.append(f"The wall between the holes ({p.hole_strut:g} mm) is thinner than two lines "
+                                 f"({2 * p.line_width:g} mm): it may print thin or break.")
         if p.line_width < 0.45:
             self.notes.append("A wider line (0.6 to 0.8 mm on a 0.4 mm nozzle) makes a stronger, more surely "
                               "watertight wall.")
@@ -1054,10 +1187,15 @@ class VaseDesign:
             "Footprint": f"{self.size[0]:.1f} × {self.size[1]:.1f} mm",
             "Base": f"Ø {self.base_d[0]:.0f}–{self.base_d[1]:.0f} mm",
             "Opening at the top": f"Ø {self.top_d[0]:.0f}–{self.top_d[1]:.0f} mm",
-            "Holds": f"about {self.capacity:.0f} ml of water",
+            "Holds": ("nothing: it has holes" if self.holes_open else
+                      "nothing: it is open at the bottom" if p.open_bottom else f"about {self.capacity:.0f} ml of water"),
             "Wall": (f"one {p.line_width:g} mm spiral line" if p.vase_mode != FAKE_VASE else
                      f"{max(int(p.walls), 1)} walls of {p.line_width:g} mm (about {self.wall:.1f} mm)")
-                    + f", on a {self.zb:g} mm solid bottom ({self.bottom_layers} layers)",
+                    + (", open at the bottom" if p.open_bottom else
+                       f", on a {self.zb:g} mm solid bottom ({self.bottom_layers} layers)"),
+            **({"Holes": f"{HOLE_WORDS[p.holes]}, {p.hole_size:g} mm apart with {p.hole_strut:g} mm between; "
+                         f"pointed tops" + (f" ({self.bridge:.1f} mm bridges at their points)" if self.bridge > 0 else "")}
+               if self.holes_open else {}),
             "Steepest overhang": lean,
             "Filament": f"{self.grams:.0f} g, {self.metres:.1f} m",
             "Print time": f"about {duration(self.seconds)}",
@@ -1068,7 +1206,11 @@ class VaseDesign:
     def contour(self, zc: float):
         """Where the wall crosses height zc: line segments (K, 2, 3), for the print animation."""
         if not hasattr(self, "_tri"):
-            tri = self.verts[self.faces[:self.side]]
+            if self.holes_open:                       # the pot's wall: each piece between the holes a loop
+                keep = np.isin(self.shell_kind, (hollow.OUTER, hollow.INNER, hollow.SIDE, hollow.TIP))
+                tri = self.shell_verts[self.shell_faces[keep]]
+            else:
+                tri = self.verts[self.faces[:self.side]]
             self._tri = tri
             self._tz = (tri[:, :, 2].min(1), tri[:, :, 2].max(1))
         zc = float(zc) + 1e-7

@@ -21,7 +21,8 @@ from vaseinator import sections  # noqa: E402
 from vaseinator.presets import GALLERY, slug  # noqa: E402
 from vaseinator.simple_panel import PATTERNS, SHAPES_FROM_ABOVE, asset  # noqa: E402
 from vaseinator.geometry import edge_check  # noqa: E402
-from vaseinator.params import (BANDS, CIRCLE, DRAWN, FAKE_VASE, FLOWER, GRADIENT, ONE_COLOUR, OWN,  # noqa: E402
+from vaseinator.params import (BANDS, CIRCLE, DRAWN, FAKE_VASE, FLOWER, GRADIENT, NO_HOLES, ONE_COLOUR, OWN,  # noqa: E402
+                               VORONOI,
                                OWN_PROFILE, POLYGON, REAL_VASE, SAME, STAR, SWING, VaseParams, load_design)
 from vaseinator.stl import read_stl  # noqa: E402
 from vaseinator.threemf import read_3mf  # noqa: E402
@@ -176,7 +177,8 @@ def main():
     check("save writes a design that opens the same", load_design(out["vase"]).to_dict() == win.params.to_dict())
     win.export_stl()
     verts, faces = read_stl(out["stl"])
-    check("the exported STL is watertight", edge_check(faces)[0] and len(faces) == win.design.triangles)
+    check("the exported STL is watertight", edge_check(faces)[0] and len(faces) == win.design.triangles
+          and len(faces) == len(win.design.print_mesh()[1]))
     win.export_3mf()
     [(name, v3, f3, fil, pos)] = read_3mf(out["3mf"])
     check("a one-colour 3MF is the whole vase, in the middle of the bed, asking nothing",
@@ -386,11 +388,38 @@ def main():
     qapp.processEvents()
     words = " ".join(lab.text() for lab in win.steps.findChildren(QLabel))
     check("Save for printing writes the 3MF and says how to print it", os.path.exists(out["3mf"])
-          and win.steps.isVisible() and "No supports" in words and "walls" in words and "0% infill" in words)
+          and win.steps.isVisible() and "No supports" in words and "usual settings" in words
+          and "Spiral vase off" in words)
     go = next(b for b in win.steps.findChildren(QPushButton) if b.text().startswith("Open in"))
     go.click()
     qapp.processEvents()
     check("... and Open in opens it in the slicer", opened and opened[-1][1] == out["3mf"])
+    # holes: a picture in Simple mode; their settings in Advanced; never seamless
+    holes = [n for n, _ in PATTERNS].index("Voronoi holes")
+    win.params.vase_mode = REAL_VASE
+    sp.pattern.buttons[holes].click()
+    settle()
+    check("the Voronoi holes picture cuts holes through a normal print, and says so",
+          win.params.holes == VORONOI and win.params.vase_mode == FAKE_VASE and win.design.holes_open
+          and win.design.closed and sp.pattern.buttons[holes].isChecked()
+          and "it has holes" in win.info.toPlainText())
+    win.set_simple_mode(False, remember=False)
+    check("... Advanced shows the holes' settings", win._wanted("hole_size") and win._wanted("hole_jitter"))
+    choose("vase_mode", REAL_VASE)
+    choose("holes", NO_HOLES)
+    win.widgets["open_bottom"].setChecked(True)
+    settle()
+    check("an open bottom makes it a normal print, holding nothing", win.params.vase_mode == FAKE_VASE
+          and "open at the bottom" in win.info.toPlainText())
+    win.widgets["open_bottom"].setChecked(False)
+    choose("holes", VORONOI)
+    choose("colour_style", BANDS)
+    win.export_3mf()
+    parts = read_3mf(out["3mf"])
+    check("... and a vase with holes and bands exports as closed hollow parts", len(parts) == len(win.design.bands)
+          and all(edge_check(part[2])[0] for part in parts))
+    choose("holes", NO_HOLES)
+    win.set_simple_mode(True, remember=False)
     pt = QApplication.font().pointSizeF()
     win.a_big.trigger()
     qapp.processEvents()

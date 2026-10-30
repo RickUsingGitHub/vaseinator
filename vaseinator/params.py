@@ -20,6 +20,7 @@ OWN_PROFILE = -1                                          # the outline has been
 
 ONE_COLOUR, BANDS, STRIPES, GRADIENT = 0, 1, 2, 3         # how the colours go up the vase
 REAL_VASE, FAKE_VASE = 0, 1                               # spiral vase mode, or an ordinary print with walls
+NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS = 0, 1, 2, 3, 4  # holes right through the wall
 MATTE, SILK, GLOSSY, TRANSLUCENT = 0, 1, 2, 3             # how the filament looks in the 3D view
 
 MAX_REPEAT = 100                                          # most copies of a drawn piece round the axis
@@ -116,6 +117,16 @@ class VaseParams:
     gradient_length: float = 8.0  # metres of filament for one colour cycle of a gradient spool
     look: int = SILK
 
+    # --- holes and an open bottom (a normal print) ---------------------------
+    holes: int = NO_HOLES         # holes right through the wall: Voronoi, round, diamonds, slots
+    hole_size: float = 14.0       # from one hole to the next (mm)
+    hole_strut: float = 3.0       # the wall left between holes (mm)
+    hole_jitter: float = 0.7      # Voronoi: 0 a regular honeycomb ... 1 quite irregular
+    hole_seed: int = 5
+    hole_foot: float = 18.0       # solid wall kept at the foot, above the floor (mm)
+    hole_rim: float = 12.0        # ... and at the rim
+    open_bottom: bool = False     # no floor: open at both ends (a lampshade, a sleeve)
+
     # --- printing -----------------------------------------------------------
     vase_mode: int = FAKE_VASE    # real: spiral vase mode, one solid, one colour (slicers won't change
     #                               filament in it); fake: an ordinary print with walls, the colour
@@ -175,7 +186,8 @@ class VaseParams:
                    "twist_style": (EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN),
                    "strength": (EVERYWHERE, GROWS, FADES, MIDDLE, OWN),
                    "colour_style": (ONE_COLOUR, BANDS, STRIPES, GRADIENT), "colours_used": (1, 2, 3, 4),
-                   "look": (MATTE, SILK, GLOSSY, TRANSLUCENT), "vase_mode": (REAL_VASE, FAKE_VASE)}
+                   "look": (MATTE, SILK, GLOSSY, TRANSLUCENT), "vase_mode": (REAL_VASE, FAKE_VASE),
+                   "holes": (NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS)}
         for key, values in allowed.items():
             if getattr(p, key) not in values:
                 setattr(p, key, getattr(fresh, key))
@@ -185,7 +197,9 @@ class VaseParams:
         p.repeat1, p.repeat2 = (min(max(r, 1), MAX_REPEAT) for r in (p.repeat1, p.repeat2))
         for key, lo, hi in (("depth1", 0.0, 0.9), ("depth2", 0.0, 0.9), ("sharp1", 0.0, 1.0),
                             ("sharp2", 0.0, 1.0), ("rib_sharp", 0.0, 1.0), ("ring_sharp", 0.0, 1.0),
-                            ("facet_rough", 0.0, 1.0), ("band_spacing", -1.0, 1.0)):
+                            ("facet_rough", 0.0, 1.0), ("band_spacing", -1.0, 1.0), ("hole_jitter", 0.0, 1.0),
+                            ("hole_size", 3.0, 200.0), ("hole_strut", 0.8, 50.0), ("hole_foot", 0.0, 2000.0),
+                            ("hole_rim", 0.0, 2000.0)):
             setattr(p, key, min(max(getattr(p, key), lo), hi))
         for k in FILAMENTS:
             try:
