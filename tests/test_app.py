@@ -22,7 +22,7 @@ from vaseinator.presets import GALLERY, slug  # noqa: E402
 from vaseinator.simple_panel import PATTERNS, SHAPES_FROM_ABOVE, asset  # noqa: E402
 from vaseinator.geometry import edge_check  # noqa: E402
 from vaseinator.params import (BANDS, CIRCLE, DRAWN, FAKE_VASE, FLOWER, GRADIENT, NO_HOLES, ONE_COLOUR, OWN,  # noqa: E402
-                               VORONOI,
+                               VORONOI, ALMOND_EYES, CHIN_MOUTH,
                                OWN_PROFILE, POLYGON, REAL_VASE, SAME, STAR, SWING, VaseParams, load_design)
 from vaseinator.stl import read_stl  # noqa: E402
 from vaseinator.threemf import read_3mf  # noqa: E402
@@ -419,7 +419,42 @@ def main():
     check("... and a vase with holes and bands exports as closed hollow parts", len(parts) == len(win.design.bands)
           and all(edge_check(part[2])[0] for part in parts))
     choose("holes", NO_HOLES)
+    # masks and helmets: sized by the head they fit, in Simple mode; the face's settings in Advanced
+    win.use_gallery("Theatre Mask")
     win.set_simple_mode(True, remember=False)
+    settle()
+    check("a mask shows the head it fits in Simple mode, instead of Tall and Wide",
+          sp.head_row.isVisibleTo(sp) and not sp.size_row.isVisibleTo(sp) and not sp.side.isVisibleTo(sp)
+          and abs(sp.head.value() - 57.0) < 0.15 and "Fits a head" in win.info.toPlainText())
+    sp.head.setValue(52.0)
+    settle()
+    check("... and a head size fits it to that head, face and all", abs(win.design.head_fit - 520.0) < 2.0
+          and abs(sp.head.value() - 52.0) < 0.15 and win.params.eye_up < 115.0 and win.design.closed)
+    win.undo()
+    check("... which Undo takes back", abs(sp.head.value() - 57.0) < 0.15 and win.params.eye_up > 120.0)
+    win.set_simple_mode(False, remember=False)
+    check("Advanced shows the face's settings in use", win._wanted("head") and win._wanted("eye_tilt")
+          and win._wanted("nose_depth") and win._wanted("mouth_smile"))
+    choose("mouth", CHIN_MOUTH)
+    check("... and only those", not win._wanted("mouth_slots") and not win._wanted("mouth_height")
+          and win.design.closed and "open down to the chin" in win.info.toPlainText())
+    win.use_plain()
+    choose("vase_mode", REAL_VASE)
+    choose("eyes", ALMOND_EYES)
+    check("eyes on a seamless vase make it a normal print", win.params.vase_mode == FAKE_VASE
+          and win.design.holes_open and not win._wanted("head"))
+    win.widgets["closed_top"].setChecked(True)
+    settle()
+    check("a closed top comes to a point", "closed in a point" in win.info.toPlainText() and win.design.closed)
+    win.widgets["closed_top"].setChecked(False)
+    win.widgets["around"].setValue(200.0)
+    settle()
+    check("... and a wall part way round leaves the back open", "200° of the way round" in win.info.toPlainText()
+          and win.design.closed)
+    win.use_plain()
+    win.set_simple_mode(True, remember=False)
+    settle()
+    check("a vase shows Tall and Wide again", sp.size_row.isVisibleTo(sp) and not sp.head_row.isVisibleTo(sp))
     pt = QApplication.font().pointSizeF()
     win.a_big.trigger()
     qapp.processEvents()

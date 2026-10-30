@@ -3,7 +3,8 @@
 How big, the shape from above, the shape from the side, the twist, a pattern
 and a colour - then one big button to save the vase for printing. Everything
 else lives in Advanced. Each picture sets a few settings at once; whichever
-picture matches the vase as it is now is lit.
+picture matches the vase as it is now is lit. A mask or helmet is sized by the
+head it fits instead.
 """
 
 from __future__ import annotations
@@ -279,9 +280,11 @@ class SimplePanel(QWidget):
         row.addWidget(dice, 2)
         v.addLayout(row)
 
-        # how big
+        # how big: tall and wide - or, for a mask or helmet, the head it fits
         v.addWidget(_title("How big"))
-        size = QGridLayout()
+        self.size_row = QWidget()
+        size = QGridLayout(self.size_row)
+        size.setContentsMargins(0, 0, 0, 0)
         self.tall, self.wide = DoubleSpinBox(), DoubleSpinBox()
         for box, key, lo in ((self.tall, "height", 2.0), (self.wide, "widest", 1.0)):
             box.setDecimals(1)
@@ -299,7 +302,24 @@ class SimplePanel(QWidget):
         size.addWidget(self.wide, 0, 3)
         size.setColumnStretch(1, 1)
         size.setColumnStretch(3, 1)
-        v.addLayout(size)
+        v.addWidget(self.size_row)
+        self.head_row = QWidget()
+        head = QHBoxLayout(self.head_row)
+        head.setContentsMargins(0, 0, 0, 0)
+        self.head = DoubleSpinBox()
+        self.head.setDecimals(1)
+        self.head.setRange(30.0, 90.0)
+        self.head.setSingleStep(0.5)
+        self.head.setSuffix(" cm round")
+        self.head.setKeyboardTracking(False)
+        self.head.setMinimumHeight(30)
+        self.head.setToolTip("Measure round the head, above the eyebrows and ears, as for a hat (an adult: about "
+                             "54 to 60 cm).\nThe whole mask or helmet grows or shrinks to fit, with a centimetre "
+                             "to spare.")
+        self.head.valueChanged.connect(lambda val: self.param.emit("head", float(val)))
+        head.addWidget(QLabel("Head size"))
+        head.addWidget(self.head, 1)
+        v.addWidget(self.head_row)
 
         # the shape from above, and your own
         v.addWidget(_title("Shape from above"))
@@ -313,7 +333,8 @@ class SimplePanel(QWidget):
         v.addWidget(own)
 
         # the shape from the side
-        v.addWidget(_title("Shape from the side"))
+        self.side_title = _title("Shape from the side")
+        v.addWidget(self.side_title)
         names = [n.split(" (")[0] for n, _ in PROFILES]
         self.side = PictureChoice([(n, profile_icon(pts), full) for n, (full, pts) in zip(names, PROFILES)], 4)
         self.side.picked.connect(lambda k: self.param.emit("profile", k))
@@ -381,6 +402,12 @@ class SimplePanel(QWidget):
             change["twist_style"] = EVENLY
         self.changes.emit(change)
 
+    def show_head(self, cm: float):
+        """The head the design fits, as built."""
+        self.head.blockSignals(True)
+        self.head.setValue(cm)
+        self.head.blockSignals(False)
+
     def _colour(self, k):
         if k < len(COLOURS):
             self.changes.emit(dict(colour_style=ONE_COLOUR, color1=COLOURS[k][1]))
@@ -394,6 +421,10 @@ class SimplePanel(QWidget):
         """Show the settings of ``p``: its title, the numbers, and light the pictures that match it."""
         name = p.name.replace("_", " ").strip()
         self.name.setText(title or (name[:1].upper() + name[1:]) or "Your vase")
+        # a mask or helmet: sized by the head, its shape from the side its own
+        self.head_row.setVisible(p.worn)
+        for w in (self.size_row, self.side_title, self.side):
+            w.setVisible(not p.worn)
         for box, mm in ((self.tall, p.height), (self.wide, widest)):
             box.blockSignals(True)
             box.setValue(round(mm / 10.0, 1))

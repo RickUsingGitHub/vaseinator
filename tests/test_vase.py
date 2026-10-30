@@ -18,12 +18,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vaseinator import sections  # noqa: E402
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
-from vaseinator.geometry import (TOLERANCE, VaseDesign, edge_check, face_normals, lean_angles,  # noqa: E402
+from vaseinator.geometry import (TOLERANCE, VaseDesign, edge_check, face_normals, fit_head, lean_angles,  # noqa: E402
                                  mesh_volume)
 from vaseinator import hollow  # noqa: E402
-from vaseinator.params import (BANDS, CIRCLE, DIAMOND, DRAWN, EVENLY, FAKE_VASE, FLOWER, GEAR, GRADIENT,  # noqa: E402
-                               NO_HOLES, ONE_COLOUR, OWN, POLYGON, REAL_VASE, ROUND, SAME, SLOTS, STAR, STRIPES,
-                               SWING, VORONOI, VaseParams, load_design, save_design)
+from vaseinator.params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, ELLIPSE, EVENLY,  # noqa: E402
+                               FAKE_VASE, FLOWER, GEAR, GRADIENT, GRILLE_MOUTH, NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN,
+                               POLYGON, RAISED_NOSE, REAL_VASE, ROUND, ROUND_EYES, SAME, SLOTS, STAR, STRIPES, SWING,
+                               VORONOI, VaseParams, load_design, save_design)
 from vaseinator.presets import GALLERY, PRINTER_KEYS, gallery_design, plain_design, surprise  # noqa: E402
 from vaseinator.shapes import PROFILES, pchip, shape_table  # noqa: E402
 from vaseinator.stl import read_stl, write_stl  # noqa: E402
@@ -250,6 +251,67 @@ def test_holes_print_without_supports():
     bottom = verts[faces][np.all(np.abs(verts[faces][:, :, 2]) < 1e-9, axis=1)]
     assert edge_check(faces)[0] and len(bottom) and np.hypot(bottom[..., 0], bottom[..., 1]).min() > 20.0
     assert d.info()["Holds"] == "nothing: it is open at the bottom" and d.bottom_layers == 0
+
+
+def test_masks_and_helmets():
+    """A closed top comes to a point over a small ceiling; a wall part way round leaves a gap at the back; a
+    face's eyes, mouth and strap slots are holes with pointed tops, its nose stands out; and a design sized
+    for a head fits it. All of it closed, and printable without supports."""
+    limit = 45.0 + TOLERANCE
+    # a closed top: a point, a small ceiling under it, holding nothing; seamless, the solid comes to a point
+    for p in (plain(closed_top=True, open_bottom=True), plain(closed_top=True),
+              plain(closed_top=True, shape1=DRAWN, drawn1=sections.CLAW, repeat1=1),
+              plain(closed_top=True, open_bottom=True, rib_count=6, rib_depth=2.0, colour_style=BANDS, band_count=3,
+                    colours_used=3)):
+        d = VaseDesign(p)
+        verts, faces = d.print_mesh()
+        top = verts[verts[:, 2] > d.H - 1e-6]
+        assert not d.errors and edge_check(faces)[0] and d.worst <= limit, (d.errors, d.worst)
+        assert np.hypot(top[:, 0], top[:, 1]).max() < 3.0 and 0.0 < d.ceiling < 10.0, d.ceiling
+        assert d.capacity == 0.0 and d.info()["Top"].startswith("closed in a point")
+        parts = d.print_parts()
+        whole = mesh_volume(verts, faces)
+        assert all(edge_check(f)[0] for _, _, f in parts)
+        assert abs(sum(mesh_volume(v, f) for _, v, f in parts) - whole) < 1e-6 * whole
+    d = VaseDesign(plain(closed_top=True, vase_mode=REAL_VASE))
+    assert not d.normal and d.closed and d.worst <= limit and d.info()["Top"].startswith("comes in to a point")
+    # part way round: nothing behind the axis past the ends, nothing held; a closed top needs it all round
+    d = VaseDesign(plain(around=200.0, open_bottom=True))
+    verts, faces = d.print_mesh()
+    back = np.degrees(np.abs(np.arctan2(verts[:, 0], -verts[:, 1])))       # degrees round from the front (-y)
+    assert edge_check(faces)[0] and 99.0 < back.max() < 101.5, back.max()
+    assert d.info()["Holds"] == "nothing: it goes only part way round" and d.size[1] < 0.6 * d.size[0]
+    d = VaseDesign(plain(around=200.0, closed_top=True))
+    assert not d.p.closed_top and any("all the way round" in n for n in d.notes)
+    # a face: holes with pointed tops, a nose that stands out, a seamless vase printed normally to have them
+    face = dict(eyes=ALMOND_EYES, nose=RAISED_NOSE, mouth=GRILLE_MOUTH, mouth_smile=8.0, straps=True,
+                open_bottom=True, around=200.0)
+    for extra in ({}, dict(eyes=ROUND_EYES, mouth=OPEN_MOUTH), dict(mouth=CHIN_MOUTH, around=360.0),
+                  dict(shape1=ELLIPSE, depth1=0.2, turn1=90.0, holes=VORONOI, hole_size=10.0, hole_strut=2.2)):
+        p = plain(**{**face, **extra})
+        d = VaseDesign(p)
+        verts, faces = d.print_mesh()
+        assert edge_check(faces)[0] and d.worst <= limit and d.holes_open and d.bridge < 8.0, (extra, d.worst)
+        over = np.degrees(np.arcsin(np.clip(-face_normals(d.shell_verts, d.shell_faces)[:, 2], 0, 1)))
+        assert over[d.shell_kind == hollow.SIDE].max() <= limit
+        assert layer_loops(d, p.eye_up) > 1 and "Face" in d.info()
+    plain_front = VaseDesign(plain()).R[:, 3 * VaseDesign(plain()).N // 4]
+    d = VaseDesign(plain(nose=RAISED_NOSE))
+    front = d.R[:, 3 * d.N // 4]
+    j = int(np.argmin(np.abs(d.z - d.p.nose_up)))
+    assert front[j] - plain_front[j] > 0.7 * d.p.nose_depth and np.allclose(front[:j // 2], plain_front[:j // 2])
+    d = VaseDesign(plain(eyes=ALMOND_EYES, vase_mode=REAL_VASE))
+    assert d.normal and d.holes_open and any("normal print" in n for n in d.notes)
+    # sized for a head: the inside fits, the face grows with it; the masks and helmet fit 57 cm as they come
+    p = plain(**face, worn=True)
+    q = fit_head(p, 520.0)
+    d = VaseDesign(q)
+    k = q.height / p.height
+    assert abs(d.head_fit - 520.0) < 1.0 and abs(q.eye_up - k * p.eye_up) < 0.05 and abs(q.silhouette[0][1] - k * p.silhouette[0][1]) < 0.05
+    assert d.info()["Fits a head"].startswith("up to 52.0 cm")
+    for title in ("Theatre Mask", "Lace Masquerade", "Robot Mask", "Norman Helmet"):
+        d = VaseDesign(gallery_design(title))
+        assert abs(d.head_fit - 570.0) < 3.0 and d.p.worn and d.H < 220.0, (title, d.head_fit, d.H)
 
 
 def test_low_poly_facets_are_flat():

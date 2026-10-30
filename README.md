@@ -10,7 +10,8 @@ allow.
 
 Shape the outline, pick a cross-section and what it turns into on the way up, **spin** it, cover it in
 ribs, rings, bumps, organic lumps or **your own formula**, and colour it in bands, stripes or a
-gradient spool. The app shows the vase in 3D as it will print, cuts it in half to show the wall, colours
+gradient spool. Cut **holes** through it, open it at the bottom, close it over at the top – or give it a
+**face** and make a **mask or a helmet**, sized for the head it fits. The app shows the vase in 3D as it will print, cuts it in half to show the wall, colours
 every face by how far it leans, plays the print back in real print time, and exports an STL or 3MF
 ready to slice.
 
@@ -59,6 +60,16 @@ ready to slice.
   turning with the twist. Every hole's top comes to a **point** that closes no faster than the overhang
   limit, so it prints **without support** – with at most a short bridge, a few millimetres, at its very tip.
   And **open at the bottom** too, for lampshades, sleeves and holders.
+* **Closed at the top**: the top comes in to a point, leaning no more than the overhang limit, over a
+  ceiling a few millimetres across that the printer bridges – a helmet, a dome, a bell, a sealed egg. The
+  outline is rounded in to meet the point.
+* **Part way round**: the wall goes only so far round – about 200° makes a mask – with the gap at the back.
+* **Masks and helmets**: a **face** at the front – **eyes** (almond or round, apart, tilted), a raised
+  **nose**, a **mouth** (open, a grille of slots that can smile, or open down to the chin like an old
+  Greek helmet's) and **slots for an elastic strap** – every hole with a pointed top, so it prints without
+  support. **Head size** fits one to a head: measure round it above the eyebrows and ears, as for a hat,
+  and the whole design – height, outline and face – is scaled so the inside fits with a centimetre to
+  spare. Stylised, not anatomical.
 * **Colours**: one colour or a **gradient spool** – shown where its colours will really land, worked out
   from the filament each height uses – and, printed normally, up to four filaments in **bands**
   (even, or thicker at the top or the bottom) or **stripes**, with palettes.
@@ -71,14 +82,16 @@ ready to slice.
   print** builds it up in real print time (wide layers take longer).
 * **The sums**: size, base and opening, how much water it holds, filament in grams and metres, print
   time, steepest overhang, and the mesh – closed and watertight.
-* **Gallery** of twenty-three ready-made vases (lampshades and baskets with holes among them), a **plain cylinder** to start from blank, **Surprise me** (a
-  new random vase that still prints), and **undo / redo** of everything.
+* **Gallery** of twenty-seven ready-made designs – lampshades and baskets with holes among them, three masks
+  and a helmet – a **plain cylinder** to start from blank, **Surprise me** (a new random vase that still
+  prints), and **undo / redo** of everything.
 * **Save for printing**: a **3MF** in the middle of the bed – each colour band its own part, set to its
   filament (one solid for a seamless vase) – as Lenticular Sign Maker and Maze Tube Designer do, with plain
   steps to print it and **Open in slicer** (Flash Studio, OrcaSlicer, Bambu Studio, PrusaSlicer, Cura… –
   whichever is installed). Also a solid **STL**. Designs save as `.vase` files (JSON).
-* **Simple**: a design chosen from pictures, how big (in centimetres), the shape from above and from the
-  side, the twist, a pattern and a colour – each a picture to click. **Advanced** has every setting and
+* **Simple**: a design chosen from pictures, how big (in centimetres – or, for a mask or helmet, the head
+  size), the shape from above and from the side, the twist, a pattern and a colour – each a picture to
+  click. **Advanced** has every setting and
   the curves, your own function among them. **Bigger text** and a **light theme** are in the View menu.
 
 ## Download and run
@@ -111,7 +124,7 @@ Sign Maker, if you have used them. Printer settings are remembered for new desig
 
 In **Simple** mode, click **Choose a design…** (every ready-made vase as a picture) or **Surprise me**,
 then click the pictures to change it: the shape from above, the shape from the side, a pattern, a colour;
-**Tall** and **Wide** size it and the slider twists it. **Draw my own shape…** opens a big window to draw
+**Tall** and **Wide** size it – for a mask or helmet, **Head size** – and the slider twists it. **Draw my own shape…** opens a big window to draw
 the shape from above yourself. When it looks right, **Save for printing…** saves it for the slicer and
 says, in plain steps, how to print it – with a button to open it in your slicer (File ▸ Choose slicer
 program picks a different one).
@@ -133,7 +146,8 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Spin** | How far the shape turns from bottom to top, and how the turning is spread up the vase – including back and forth, and your own curve. **Both ways** twists it both ways at once. |
 | **Surface** | Ribs, rings, bumps and organic lumps; whether they turn with the twist; how strong they are up the vase; and a plain foot and rim. |
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |
-| **Holes and an open bottom** | The **holes** – none, Voronoi, round, diamonds or slots – their size, the wall between them, how irregular the Voronoi cells are and their pattern, and how much plain wall to keep at the foot and the rim; and **open at the bottom**. Holes and an open bottom are printed normally. |
+| **Holes and openings** | The **holes** – none, Voronoi, round, diamonds or slots – their size, the wall between them, how irregular the Voronoi cells are and their pattern, and how much plain wall to keep at the foot and the rim; **open at the bottom**; **closed at the top**; and how far the wall **goes round**. Holes, an open bottom and a wall part way round are printed normally. |
+| **Masks and helmets** | **For a head** and its **head size**; the **eyes** – almond or round, their size, how far apart, how high and tilted; a raised **nose** – its width, length, how far it sticks out and how high its tip is; the **mouth** – open, a grille of slots (how many, and how much they smile) or open down to the chin; and **strap slots**. Sizes and heights are in millimetres along the face, from the bottom. |
 | **Your own function** | A formula added to the radius. **Examples** has eight to try; **Help…** lists the variables and functions. |
 | **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go up the vase: one colour, bands, stripes or a gradient spool. How it looks: matte, silk, glossy, translucent. |
 | **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail. |
@@ -194,7 +208,8 @@ print (the usual) or seamless.
   layer bonds, and a moderate speed (30–50 mm/s for the wall). PETG is more watertight than PLA; silk PLA
   looks lovely but bonds a little less well. Test it in a sink. A coat of clear epoxy or varnish inside
   seals any weep.
-* A **brim** helps a vase with a narrow foot stay put.
+* A **brim** helps a vase with a narrow foot stay put – and a mask, which stands on the thin edge of its
+  chin, or a helmet on its rim.
 
 `tools\verify_stl.py` checks any STL for spiral vase printing, straight from the file: closed and
 watertight, faces outwards, one piece, flat on the bed, no wall leaning past the limit, and every layer
@@ -226,7 +241,7 @@ same kind of file as Lenticular Sign Maker and Maze Tube Designer. **Open in sli
 | `vaseinator/geometry.py` | The vase itself: the surface, softening, the solid and the shown shell, and the sums. |
 | `vaseinator/shapes.py` | Outlines, cross-sections, curves up the height, textures, palettes. |
 | `vaseinator/expr.py` | Your own function: checked, then evaluated with numpy. |
-| `vaseinator/hollow.py` | The hollow pot a normal print makes, the hole patterns, and their pointed tops. |
+| `vaseinator/hollow.py` | The hollow pot a normal print makes, the hole patterns, a face's eyes, nose, mouth and strap slots, and their pointed tops. |
 | `vaseinator/sections.py` | Drawn cross-sections: the spline through the points, tracing a picture, filling and insetting outlines. |
 | `vaseinator/curves.py` | The curve editor. |
 | `vaseinator/outline_editor.py` | The cross-section editor. |
@@ -259,6 +274,17 @@ tops – so every hole's top closes to a point at no more than the overhang limi
 between two grid points there is a short bridge, which the app measures and tells you about. Colour
 bands of the pot are cut on rows put in at the band heights, each a closed part.
 
+A **face** is more of the same: the eyes, mouth and strap slots are hole fields too, placed in
+millimetres along the surface from the front, and the gap at the back of a wall that goes only part way
+round is one more – so they all get pointed tops, and a pattern of holes keeps a strut's width of wall
+round them. The nose is added to the radius, and softening keeps its underside within the limit. A
+**closed top** caps the outline's radius with a cone leaning a little under the limit up to a point –
+the two blended where they meet, so the outline curves in – and the pot's inner face ends a floor's
+thickness under the point in a small flat ceiling (the app measures the widest circle that fits in it:
+the span the printer bridges). **Head size** measures round the inner face where the head goes in – the
+narrowest place below the widest, or for a mask the widest – less a centimetre to spare, and scales the
+whole design until that is the head asked for.
+
 A **drawn** cross-section needn't have one radius in each direction – a lobe can swell past its neck – so
 it is built another way: as rows of points up the vase, each row the outline (blended into the second
 one, sized by the outline curve and turned by the twist) cut into the same number of points at even
@@ -288,13 +314,16 @@ vase holds, is refused if it crosses itself, can be traced from a picture, and r
 narrowed to fit, checked, filled and built closed in a few seconds; that a normal print is the hollow pot,
 with the right volume, its colour bands parts that make it up exactly; and that every pattern of holes,
 on round and drawn shapes, twisting or not, makes a closed pot whose holes' sides lean no more than the
-limit but for short bridges at their points, that holds nothing, with an open bottom too.
+limit but for short bridges at their points, that holds nothing, with an open bottom too; and that a
+closed top comes to a point over a small ceiling (drawn and banded too), a wall part way round stops where
+it should, a face's holes and nose are where they should be and print without support, and a design sized
+for a head fits it – the masks and helmet a head 57 cm round.
 `.venv\Scripts\python -m tests.test_app` drives the window itself: edits, curves, undo, the gallery,
 Surprise me, every view, the print animation, saving and exporting, and drawing (with the mouse, close
 up and in a full window, zoomed with the wheel), repeating up to a hundred times and tracing a
 cross-section, and Simple mode: each kind of picture, the gallery of pictures, Save for printing with its
-steps and Open in slicer, bigger text and the light theme. Test windows open on the second
-screen, if there is one.
+steps and Open in slicer, bigger text and the light theme, and a mask sized by the head it fits, its face's
+settings and Undo. Test windows open on the second screen, if there is one.
 
 ## License
 

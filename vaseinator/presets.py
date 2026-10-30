@@ -6,9 +6,11 @@ import random
 
 from . import sections
 from .expr import EXAMPLES
-from .params import (BANDS, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FAKE_VASE, FLOWER,
-                     GEAR, GLOSSY, GRADIENT, GROWS, MATTE, MIDDLE, ONE_COLOUR, PEBBLE, POLYGON, REAL_VASE, ROUND,
-                     SAME, SILK, SLOW_DOWN, SPEED_UP, STAR, STRIPES, SWING, TRANSLUCENT, VORONOI, VaseParams)
+from .geometry import fit_head
+from .params import (ALMOND_EYES, BANDS, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES,
+                     FAKE_VASE, FLOWER, GEAR, GLOSSY, GRADIENT, GRILLE_MOUTH, GROWS, MATTE, MIDDLE, ONE_COLOUR,
+                     OWN_PROFILE, PEBBLE, POLYGON, RAISED_NOSE, REAL_VASE, ROUND, ROUND_EYES, SAME, SILK, SLOW_DOWN,
+                     SPEED_UP, STAR, STRIPES, SWING, TRANSLUCENT, VORONOI, VaseParams)
 from .shapes import PALETTES, PROFILES
 
 # the settings that belong to the printer, not the design: kept when a design is swapped
@@ -35,6 +37,13 @@ def slug(text: str) -> str:
 
 def _profile(i, widest):
     return dict(profile=i, silhouette=outline(i, widest))
+
+
+# masks and helmets: a head's shape from above (an oval, longer front to back), open at the bottom, sized for a
+# head 57 cm round - with any printer's walls
+STANDARD_HEAD = 570.0
+HEAD = dict(profile=OWN_PROFILE, shape1=ELLIPSE, depth1=0.2, turn1=90.0, twist=0.0, open_bottom=True, worn=True,
+            vase_mode=FAKE_VASE, colour_style=ONE_COLOUR, look=SILK)
 
 
 def _drawn(name: str, k: int = 1) -> dict:
@@ -123,6 +132,27 @@ GALLERY = [
     ("Bulb Swirl", "Three drawn bulbs at the foot become six at the lip, swirling half a turn.",
      dict(**_profile(4, 100), **_drawn("Three bulbs"), **_drawn("Six bulbs", 2), twist=180, twist_style=EVENLY,
           colour_style=ONE_COLOUR, color1="#2A9D8F", look=GLOSSY)),
+    ("Theatre Mask", "A mask: eyes, a raised nose and a smile of slots, with slots for an elastic strap. Printed "
+     "standing on its chin, it needs no supports.",
+     dict(HEAD, height=197.0, silhouette=[[0.0, 155.0], [0.25, 178.0], [0.55, 203.0], [0.8, 207.0], [1.0, 203.0]],
+          around=200.0, eyes=ALMOND_EYES, eye_width=35.0, eye_height=18.5, eye_apart=66.0, eye_up=122.0,
+          eye_tilt=0.0, nose=RAISED_NOSE, nose_width=31.0, nose_length=48.0, nose_depth=16.5, nose_up=79.0,
+          mouth=GRILLE_MOUTH, mouth_slots=7, mouth_width=60.0, mouth_height=12.5, mouth_up=39.0, mouth_smile=9.5,
+          straps=True, strap_up=122.0, color1="#F5F5F5")),
+    ("Lace Masquerade", "A masquerade mask of golden Voronoi lace, with cat's eyes and the bridge of a nose.",
+     dict(HEAD, height=99.0, silhouette=[[0.0, 203.0], [0.5, 207.0], [1.0, 205.0]], around=190.0,
+          eyes=ALMOND_EYES, eye_width=42.0, eye_height=19.0, eye_apart=67.0, eye_up=44.0, eye_tilt=18.0,
+          nose=RAISED_NOSE, nose_width=31.0, nose_length=65.0, nose_depth=14.5, nose_up=-17.0, holes=VORONOI,
+          hole_size=10.0, hole_strut=2.2, hole_jitter=0.6, hole_seed=11, hole_foot=5.0, hole_rim=5.0, straps=True,
+          strap_up=44.0, color1="#C9A227")),
+    ("Robot Mask", "A square robot face with round eyes and a grille for a mouth.",
+     dict(HEAD, height=185.0, shape1=POLYGON, count1=4, sharp1=0.4, turn1=45.0,
+          silhouette=[[0.0, 195.0], [1.0, 201.5]], around=220.0, eyes=ROUND_EYES, eye_width=31.0, eye_height=31.0,
+          eye_apart=74.0, eye_up=113.0, mouth=GRILLE_MOUTH, mouth_slots=6, mouth_width=66.0, mouth_height=25.0,
+          mouth_up=45.0, straps=True, strap_up=113.0, color1="#457B9D")),
+    ("Norman Helmet", "A pointed helmet with four ridges meeting at the top: it closes over without supports.",
+     dict(HEAD, height=196.0, silhouette=[[0.0, 207.0], [0.4, 209.0], [1.0, 60.0]], closed_top=True, rib_count=4,
+          rib_depth=3.5, rib_sharp=0.9, straps=True, strap_up=15.0, color1="#8D99AE")),
 ]
 
 
@@ -145,13 +175,16 @@ def plain_design(keep: VaseParams | None = None) -> VaseParams:
 
 
 def gallery_design(name: str, keep: VaseParams | None = None) -> VaseParams:
-    """A ready-made vase, with the printer settings of ``keep``."""
+    """A ready-made vase, with the printer settings of ``keep``; a mask or helmet still fits a head 57 cm
+    round with that printer's walls."""
     for title, _, changes in GALLERY:
         if title == name:
             p = VaseParams(**{"name": slug(title), **changes})
             if keep is not None:
                 for k in PRINTER_KEYS:
                     setattr(p, k, getattr(keep, k))
+                if p.worn:
+                    p = fit_head(p, STANDARD_HEAD)
             return p.copy()
     raise KeyError(name)
 

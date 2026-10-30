@@ -9,7 +9,9 @@ each hole. Every cut is one vertex shared by the faces on either side of it,
 so the pot stays closed and watertight.
 
 Holes print without supports: going up the wall a hole may only close in as
-fast as the overhang limit allows, so each one ends in a pointed top.
+fast as the overhang limit allows, so each one ends in a pointed top. The
+same goes for a face's eyes, mouth and strap slots, and for the gap at the
+back of a wall that goes only part way round - a mask.
 """
 
 from __future__ import annotations
@@ -19,7 +21,8 @@ import math
 import numpy as np
 
 from . import sections
-from .params import DIAMOND, NO_HOLES, ROUND, SLOTS, VORONOI
+from .params import (ALMOND_EYES, CHIN_MOUTH, DIAMOND, GRILLE_MOUTH, NO_EYES, NO_HOLES, OPEN_MOUTH,
+                     ROUND, SLOTS, VORONOI)
 
 OUTER, INNER, SIDE, CAP, TIP = 0, 1, 2, 3, 4   # what each face of the pot is: TIP is the short bridge at the
                                                # very top of a hole, where it closes between two grid points
@@ -141,6 +144,92 @@ def hole_field(kind, t, z, L, size, strut, jitter, seed, z_lo, z_hi):
     return f
 
 
+# ================================================================ the face
+def from_front(O, seg, along, L):
+    """How far along each row each point is from the front of the vase (-y), in mm: + one way round, - the
+    other. The front is where the row crosses straight in front of the axis (the outermost such place)."""
+    K, N = O.shape[:2]
+    ang = np.arctan2(O[..., 1], O[..., 0])
+    d = np.mod(ang + 0.5 * math.pi + math.pi, 2 * math.pi) - math.pi         # how far round past the front
+    nxt = np.roll(d, -1, axis=1)
+    cross = (d <= 0) & (nxt > 0) & (nxt - d < math.pi)
+    radius = np.where(cross, np.hypot(O[..., 0], O[..., 1]), -1.0)
+    i = np.argmax(radius, axis=1)
+    k = np.arange(K)
+    u = np.where(cross[k, i], -d[k, i] / np.maximum(nxt[k, i] - d[k, i], 1e-12), 0.0)
+    start = along[k, i] + u * seg[k, i]
+    return np.mod(along - start[:, None] + 0.5 * L[:, None], L[:, None]) - 0.5 * L[:, None]
+
+
+def _ellipse(x, y, a, b):
+    return (1.0 - np.hypot(x / a, y / b)) * min(a, b)
+
+
+def _almond(x, y, a, b):
+    """A pointed oval, a wide and b high (half sizes): where two circles overlap."""
+    rho = (a * a + b * b) / (2.0 * b)
+    c = rho - b
+    return rho - np.maximum(np.hypot(x, y - c), np.hypot(x, y + c))
+
+
+def _slot(x, y, w, h):
+    """An upright slot with round ends, w wide and h tall."""
+    return 0.5 * w - np.hypot(x, np.maximum(np.abs(y) - max(0.5 * (h - w), 0.0), 0.0))
+
+
+def openings(s, z, L, p):
+    """The face's holes and the gap at the back, as a hole field (mm, below nought in the wall).
+
+    s (K, N): how far along the row from the front each point is (mm); z (K,) the rows' heights; L (K,)
+    their lengths round. The eyes, mouth and straps are placed in mm along the surface, mirrored either side
+    of the front.
+    """
+    f = np.full(s.shape, -1.0)
+    zz = np.broadcast_to(z[:, None], s.shape)
+    if p.around < 360.0:                                   # part way round: a gap at the back
+        f = np.maximum(f, np.abs(s) - 0.5 * L[:, None] * p.around / 360.0)
+    if p.eyes != NO_EYES:
+        a, b = 0.5 * p.eye_width, 0.5 * p.eye_height
+        for side in (1.0, -1.0):
+            x, y = s - side * 0.5 * p.eye_apart, zz - p.eye_up
+            t = math.radians(p.eye_tilt) * side           # the outer corners raised
+            xr, yr = x * math.cos(t) + y * math.sin(t), -x * math.sin(t) + y * math.cos(t)
+            shape = _almond if p.eyes == ALMOND_EYES else _ellipse
+            f = np.maximum(f, shape(xr, yr, a, b))
+    if p.mouth == OPEN_MOUTH:
+        f = np.maximum(f, _ellipse(s, zz - p.mouth_up, 0.5 * p.mouth_width, 0.5 * p.mouth_height))
+    elif p.mouth == GRILLE_MOUTH:
+        n = max(int(p.mouth_slots), 1)
+        pitch = p.mouth_width / n
+        w = max(0.5 * pitch, 1.5)
+        for k in range(n):
+            x = (k - 0.5 * (n - 1)) * pitch
+            lift = p.mouth_smile * (x / max(0.5 * (p.mouth_width - pitch), 1e-6)) ** 2   # the corners turn up
+            f = np.maximum(f, _slot(s - x, zz - p.mouth_up - lift, w, p.mouth_height))
+    elif p.mouth == CHIN_MOUTH:                            # open from the bottom edge up to mouth_up
+        w = p.mouth_width
+        f = np.maximum(f, 0.5 * w - np.hypot(s, np.maximum(zz - (p.mouth_up - 0.5 * w), 0.0)))
+    if p.straps:
+        at = float(np.interp(p.strap_up, z, L))
+        edge = 0.5 * at * min(p.around, 360.0) / 360.0
+        x0 = edge - 12.0 if p.around < 360.0 else 0.25 * at       # near the edges, or at the sides
+        for side in (1.0, -1.0):
+            f = np.maximum(f, _slot(s - side * x0, zz - p.strap_up, 5.0, 18.0))
+    return f
+
+
+def nose(s, z, p, slope: float):
+    """A raised nose, in mm out from the face: a ridge from between the eyes that grows to its tip, and under
+    the tip a slope back to the face no steeper than ``slope`` (mm in for each mm down)."""
+    zz = np.broadcast_to(np.asarray(z, dtype=float)[:, None], s.shape)
+    u = (zz - p.nose_up) / max(p.nose_length, 1e-6)                 # 0 at the tip, 1 between the eyes
+    depth = np.where(u >= 0.0, p.nose_depth * np.clip(1.0 - u, 0.0, 1.0) ** 1.1,
+                     np.maximum(p.nose_depth + (zz - p.nose_up) * slope, 0.0))
+    half = 0.5 * p.nose_width * np.where(u >= 0.0, 0.45 + 0.55 * np.clip(1.0 - u, 0.0, 1.0), 1.0)
+    across = np.clip(1.0 - (s / half) ** 2, 0.0, 1.0) ** 1.5
+    return depth * across
+
+
 def pointed_tops(f, z, O, slope):
     """Every hole closes at its top no faster than ``slope`` (mm in, each side, for each mm up).
 
@@ -211,12 +300,13 @@ def insert_rows(z, arrays, zs):
     return z, arrays, index
 
 
-def pot(z, O, I, f, floor_row=None):
+def pot(z, O, I, f, floor_row=None, roof_row=None):
     """The hollow pot from rows at heights z (K,): the outer face O and inner face I (K, N, 2), and the hole
     field f (K, N), below nought in the wall.
 
     floor_row: the row at the top of a solid floor - the outer face alone below it, over a flat bottom - or
-    None for a wall open at the bottom. The top is always the wall's open rim.
+    None for a wall open at the bottom. roof_row: the row under a closed top's solid point - the inner face
+    ends there in a small ceiling, and the outer face alone goes on up - or None for an open rim.
     Returns (verts (V, 3), faces (F, 3), kind of each face).
     """
     K, N = f.shape
@@ -224,15 +314,19 @@ def pot(z, O, I, f, floor_row=None):
     f = np.asarray(f, dtype=float)
     f = np.where(f < 0.02, np.minimum(f, -0.02), f)
     kb = 0 if floor_row is None else int(floor_row)
+    kr = K - 1 if roof_row is None else int(roof_row)
     if floor_row is not None:
         f[:kb + 1] = np.minimum(f[:kb + 1], -1e-9)          # solid below the floor's top
+    if roof_row is not None:
+        f[kr:] = np.minimum(f[kr:], -1e-9)                  # ... and above the ceiling
     hole = f > 0
     zz = np.broadcast_to(z[:, None, None], (K, N, 1))
-    pts = [np.concatenate([O, zz], axis=2).reshape(-1, 3), np.concatenate([I, zz], axis=2)[kb:].reshape(-1, 3)]
+    pts = [np.concatenate([O, zz], axis=2).reshape(-1, 3),
+           np.concatenate([I, zz], axis=2)[kb:kr + 1].reshape(-1, 3)]
     vo = np.arange(K * N).reshape(K, N)
     vi = np.full((K, N), -1, dtype=np.int64)
-    vi[kb:] = K * N + np.arange((K - kb) * N).reshape(K - kb, N)
-    count = K * N + (K - kb) * N
+    vi[kb:kr + 1] = K * N + np.arange((kr + 1 - kb) * N).reshape(kr + 1 - kb, N)
+    count = K * N + (kr + 1 - kb) * N
     # where the hole edges cross the grid's sides: one vertex each, outside and in
     hx = hole != np.roll(hole, -1, axis=1)
     vx = hole[:-1] != hole[1:]
@@ -261,9 +355,10 @@ def pot(z, O, I, f, floor_row=None):
 
     # whole cells of wall: two triangles each, split along the shorter diagonal
     full = ~(hole[:-1] | hole[1:] | np.roll(hole, -1, axis=1)[:-1] | np.roll(hole, -1, axis=1)[1:])
-    for face_v, kind, lo in ((vo, OUTER, 0), (vi, INNER, kb)):
+    for face_v, kind, lo, hi in ((vo, OUTER, 0, K), (vi, INNER, kb, kr)):
         cells = full.copy()
         cells[:lo] = False
+        cells[hi:] = False
         cj, ci = np.nonzero(cells)
         ci1 = (ci + 1) % N
         a, b, c, d = face_v[cj, ci], face_v[cj, ci1], face_v[cj + 1, ci1], face_v[cj + 1, ci]
@@ -330,7 +425,10 @@ def pot(z, O, I, f, floor_row=None):
         tris = np.array(tris, dtype=np.int64).reshape(-1, 3)
         return tris if up else tris[:, ::-1]
 
-    caps = [ends(K - 1, True)]
+    if roof_row is None:
+        caps = [ends(K - 1, True)]
+    else:                                                   # the closed top's point, and the ceiling under it
+        caps = [vo[K - 1][sections.triangulate(O[K - 1])], vi[kr][sections.triangulate(I[kr])][:, ::-1]]
     if floor_row is None:
         caps.append(ends(0, False))
     else:
@@ -346,6 +444,28 @@ def pot(z, O, I, f, floor_row=None):
     used[faces.ravel()] = True
     remap = np.cumsum(used) - 1
     return verts[used], remap[faces], kinds
+
+
+def bridge_span(ring, samples: int = 48) -> float:
+    """How far a flat ceiling over a loop (n, 2) has to bridge: across the widest circle that fits inside it."""
+    P = np.asarray(ring, dtype=float)
+    lo, hi = P.min(axis=0), P.max(axis=0)
+    gx, gy = np.meshgrid(np.linspace(lo[0], hi[0], samples), np.linspace(lo[1], hi[1], samples))
+    g = np.stack([gx.ravel(), gy.ravel()], 1)
+    A, B = P, np.roll(P, -1, axis=0)
+    # inside: an odd number of sides crossed on the way out to the right
+    ya, yb = A[None, :, 1], B[None, :, 1]
+    up = (ya <= g[:, None, 1]) != (yb <= g[:, None, 1])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        x = A[None, :, 0] + (g[:, None, 1] - ya) * (B[None, :, 0] - A[None, :, 0]) / (yb - ya)
+    inside = (up & (x > g[:, None, 0])).sum(axis=1) % 2 == 1
+    if not inside.any():
+        return 0.0
+    g = g[inside]
+    ab = B - A
+    t = np.clip(np.einsum("gnk,nk->gn", g[:, None, :] - A[None], ab) / np.maximum((ab * ab).sum(1), 1e-12), 0, 1)
+    d = np.linalg.norm(g[:, None, :] - (A[None] + t[..., None] * ab[None]), axis=2).min(axis=1)
+    return 2.0 * float(d.max())
 
 
 def bridges(verts, faces, kinds, limit: float, longest: float = 8.0):

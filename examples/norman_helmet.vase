@@ -1,0 +1,215 @@
+{
+  "format": "vaseinator",
+  "version": 1,
+  "params": {
+    "name": "norman_helmet",
+    "height": 196.0,
+    "profile": -1,
+    "silhouette": [
+      [
+        0.0,
+        207.0
+      ],
+      [
+        0.4,
+        209.0
+      ],
+      [
+        1.0,
+        60.0
+      ]
+    ],
+    "shape1": 5,
+    "count1": 7,
+    "depth1": 0.2,
+    "sharp1": 0.45,
+    "turn1": 90.0,
+    "drawn1": [
+      [
+        0.42,
+        -0.12,
+        true
+      ],
+      [
+        0.62,
+        -0.38,
+        false
+      ],
+      [
+        0.95,
+        -0.22,
+        false
+      ],
+      [
+        0.95,
+        0.22,
+        false
+      ],
+      [
+        0.62,
+        0.38,
+        false
+      ],
+      [
+        0.42,
+        0.12,
+        true
+      ]
+    ],
+    "repeat1": 5,
+    "shape2": -1,
+    "count2": 5,
+    "depth2": 0.0,
+    "sharp2": 0.5,
+    "turn2": 0.0,
+    "drawn2": [
+      [
+        0.42,
+        -0.12,
+        true
+      ],
+      [
+        0.62,
+        -0.38,
+        false
+      ],
+      [
+        0.95,
+        -0.22,
+        false
+      ],
+      [
+        0.95,
+        0.22,
+        false
+      ],
+      [
+        0.62,
+        0.38,
+        false
+      ],
+      [
+        0.42,
+        0.12,
+        true
+      ]
+    ],
+    "repeat2": 5,
+    "morph": 0,
+    "morph_swings": 3,
+    "morph_curve": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1.0,
+        1.0
+      ]
+    ],
+    "twist": 0.0,
+    "twist_style": 1,
+    "swings": 3,
+    "twist_curve": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1.0,
+        150.0
+      ]
+    ],
+    "lattice": false,
+    "rib_count": 4,
+    "rib_depth": 3.5,
+    "rib_sharp": 0.9,
+    "rib_lean": 0.0,
+    "rib_cross": false,
+    "ring_count": 0,
+    "ring_depth": 1.0,
+    "ring_sharp": 0.3,
+    "bump_around": 0,
+    "bump_up": 8,
+    "bump_depth": 1.5,
+    "organic_depth": 0.0,
+    "organic_scale": 22.0,
+    "organic_seed": 7,
+    "texture_twist": true,
+    "strength": 0,
+    "strength_curve": [
+      [
+        0.0,
+        1.0
+      ],
+      [
+        1.0,
+        1.0
+      ]
+    ],
+    "fade_foot": 3.0,
+    "fade_rim": 4.0,
+    "facets": false,
+    "facets_around": 14,
+    "facets_up": 10,
+    "facet_rough": 0.0,
+    "facet_seed": 1,
+    "expression": "",
+    "color1": "#8D99AE",
+    "color2": "#3FC1C9",
+    "color3": "#F5F5F5",
+    "color4": "#FC5185",
+    "colour_style": 0,
+    "colours_used": 3,
+    "band_count": 3,
+    "band_spacing": 0.0,
+    "stripe_height": 12.0,
+    "gradient_length": 8.0,
+    "look": 1,
+    "holes": 0,
+    "hole_size": 14.0,
+    "hole_strut": 3.0,
+    "hole_jitter": 0.7,
+    "hole_seed": 5,
+    "hole_foot": 18.0,
+    "hole_rim": 12.0,
+    "open_bottom": true,
+    "closed_top": true,
+    "around": 360.0,
+    "worn": true,
+    "eyes": 0,
+    "eye_width": 34.0,
+    "eye_height": 18.0,
+    "eye_apart": 64.0,
+    "eye_up": 112.0,
+    "eye_tilt": 10.0,
+    "nose": 0,
+    "nose_width": 30.0,
+    "nose_length": 46.0,
+    "nose_depth": 14.0,
+    "nose_up": 70.0,
+    "mouth": 0,
+    "mouth_width": 44.0,
+    "mouth_height": 14.0,
+    "mouth_up": 40.0,
+    "mouth_slots": 5,
+    "mouth_smile": 0.0,
+    "straps": true,
+    "strap_up": 15.0,
+    "vase_mode": 1,
+    "walls": 2,
+    "max_overhang": 45.0,
+    "soften": true,
+    "line_width": 0.6,
+    "layer_height": 0.2,
+    "bottom": 1.2,
+    "printer_height": 250.0,
+    "bed_x": 256.0,
+    "bed_y": 256.0,
+    "speed": 40.0,
+    "max_flow": 12.0,
+    "filament_d": 1.75,
+    "density": 1.24,
+    "facet_size": 0.7
+  }
+}

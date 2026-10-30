@@ -23,13 +23,18 @@ import numpy as np
 
 from .expr import ExprError, compile_expression
 from . import hollow, sections
-from .params import (BANDS, DIAMOND, DRAWN, FAKE_VASE, GRADIENT, MAX_BANDS, NO_HOLES, ONE_COLOUR, OWN, REAL_VASE,
-                     ROUND, SAME, SLOTS, STRIPES, VORONOI, VaseParams, colour_style_of)
+from .params import (ALMOND_EYES, BANDS, CHIN_MOUTH, DIAMOND, DRAWN, FAKE_VASE, GRADIENT, GRILLE_MOUTH, MAX_BANDS,
+                     NO_EYES, NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN, RAISED_NOSE, REAL_VASE, ROUND, SAME,
+                     SLOTS, STRIPES, VORONOI, VaseParams, colour_style_of, face_holes, needs_normal)
 from .shapes import (TABLE, TAU, blur, change, lobes_needed, organic, pchip, progress, sample, shape_table,
                      smooth_max, smoothstep, strength)
 
 TOLERANCE = 0.3          # degrees over the overhang limit still counted as within it
 HOLE_WORDS = {VORONOI: "Voronoi", ROUND: "round holes", DIAMOND: "diamonds", SLOTS: "slots"}
+HEAD_ROOM = 10.0         # mm more round the inside of a mask or helmet than round the head it fits
+# what grows with a design sized for a head: its height and the face, in mm
+HEAD_SCALED = ("height", "eye_width", "eye_height", "eye_apart", "eye_up", "nose_width", "nose_length",
+               "nose_depth", "nose_up", "mouth_width", "mouth_height", "mouth_up", "mouth_smile", "strap_up")
 
 
 # ===================================================================== meshes
@@ -295,17 +300,24 @@ class VaseDesign:
         self.errors: list[str] = []
         self.warnings: list[str] = []
         self.notes: list[str] = []
-        if p.vase_mode == REAL_VASE and (p.holes != NO_HOLES or p.open_bottom):
+        if p.vase_mode == REAL_VASE and needs_normal(p):
             p = p.copy()
             p.vase_mode = FAKE_VASE
-            self.notes.append("Holes and an open bottom need a normal print, with walls (spiral vase mode prints one "
-                              "closed line a layer): it is printed normally.")
+            self.notes.append("Holes, a face, an open bottom and a wall part way round need a normal print, with "
+                              "walls (spiral vase mode prints one closed line a layer): it is printed normally.")
+        if p.closed_top and p.around < 360.0:
+            p = p.copy()
+            p.closed_top = False
+            self.notes.append("A closed top needs the wall all the way round: the top is left open.")
         self.p = p
         self.draft = draft
         self.pot_rows = None
         self.bridge = 0.0
         self.holes_open = False
+        self.pattern_open = False
         self.hole_share = 0.0
+        self.head_fit = 0.0
+        self.ceiling = 0.0
         self.fn = None
         self.closed = None
         self.free = DRAWN in (self.p.shape1, self.p.shape2)    # a drawn outline: built point by point
@@ -441,7 +453,7 @@ class VaseDesign:
         self.dz, self.dth = H / M, TAU / N
         h = z / H
         sil = np.asarray(p.silhouette, dtype=float)
-        R0 = 0.5 * pchip(sil[:, 0], sil[:, 1], h)
+        R0, q = self._dome(z, 0.5 * pchip(sil[:, 0], sil[:, 1], h))
         self.tau = tau = self.twist_at(h)
         TH, TA = theta[None, :], tau[:, None]
 
@@ -466,7 +478,12 @@ class VaseDesign:
         r = R0[:, None] * s
 
         frame = TH - TA if p.texture_twist else np.broadcast_to(TH, r.shape)
-        r = r + self._envelope(z)[:, None] * self._texture(frame, z, float(R0.mean()))
+        r = r + (q * self._envelope(z))[:, None] * self._texture(frame, z, float(R0.mean()))
+        if p.nose == RAISED_NOSE:
+            # along the surface from the front (-y: the column a quarter turn before the start)
+            front = r[:, 3 * N // 4]
+            s = (np.mod(TH - 1.5 * math.pi + math.pi, TAU) - math.pi) * front[:, None]
+            r = r + hollow.nose(s, z, p, 0.9 * math.tan(math.radians(p.max_overhang)))
 
         if self.fn is not None:
             env_vars = dict(theta=np.broadcast_to(TH, r.shape), phi=frame, z=z[:, None], h=h[:, None], r=r,
@@ -480,11 +497,36 @@ class VaseDesign:
                     "Your own function doesn't meet itself round the vase, so there is a step "
                     "up the back. Use whole numbers with the angle, e.g. sin(5*theta), not sin(2.5*theta).")
             r = r + add
+        if p.closed_top:                          # nothing sticks out past the point, patterns and all
+            r = np.minimum(r, self._cone(z)[:, None])
 
         floor_r = max(1.5, 2.0 * self.wall)
-        if (r < floor_r).any():
+        near = r < floor_r
+        if p.closed_top:                          # a closed top's point comes in to it, as it should
+            near &= (self._cone(z) > 2.0 * floor_r)[:, None]
+        if near.any():
             self.notes.append(f"Where the shape came near the middle it is kept {floor_r:.1f} mm out from it.")
         self.R_design = np.maximum(r, floor_r)
+
+    def _cone(self, z):
+        """A closed top's point: the widest the vase may be at each height, leaning in at a little under the
+        overhang limit up to a point the width of the narrowest the wall may come to the axis."""
+        tip = max(1.5, 2.0 * self.wall)
+        return tip + (self.H - z) * 0.92 * math.tan(math.radians(self.p.max_overhang))
+
+    def _dome(self, z, R0):
+        """The outline's radius at each height, closed over in a point if the top is closed; and how far each
+        height was narrowed (1: not at all), for the patterns to shrink with it."""
+        if not self.p.closed_top:
+            return R0, np.ones_like(R0)
+        # the lesser of the outline and the point, rounded where they meet (never leaning more than either)
+        cone = self._cone(z)
+        k = 0.12 * float(R0.max())
+        capped = np.minimum(R0, cone) - k * np.log1p(np.exp(-np.abs(R0 - cone) / k))
+        q = capped / np.maximum(R0, 1e-9)
+        narrowed = np.nonzero(q < 0.999)[0]
+        self.dome_from = float(z[narrowed[0]]) if len(narrowed) else self.H
+        return capped, q
 
     # ----------------------------------------------------- printable solid
     def _rows(self, R):
@@ -625,20 +667,43 @@ class VaseDesign:
         else:
             zs, (Os, Is, fs), at = hollow.insert_rows(self.z, [O, I, f], [zb])
             kb = at[zb]
-        verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb)
+        kr = self._roof(zs, Os, kb) if p.closed_top else None
+        verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb, roof_row=kr)
         kinds, self.bridge, side_worst = hollow.bridges(verts, faces, kinds, p.max_overhang)
-        self.pot_rows = (zs, Os, Is, fs, kb)
+        self.pot_rows = (zs, Os, Is, fs, kb, kr)
+        lo, hi = (0 if kb is None else kb), (len(zs) - 1 if kr is None else kr)
+        if kr is not None:
+            self.ceiling = hollow.bridge_span(Is[kr])
+            fs = np.where(np.arange(len(zs))[:, None] >= kr, np.minimum(fs, -1e-9), fs)
+        # the head it fits: round the inside, where the head goes in - the narrowest place below the
+        # widest; a mask, the widest place of the head it is shaped round
+        per = hollow.row_lengths(Is[lo:hi + 1])[2]
+        widest = int(np.argmax(per))
+        fit = float(per.max() if p.around < 360.0 else per[:widest + 1].min())
+        self.head_fit = max(fit - HEAD_ROOM, 0.0)
         self.holes_open = bool((fs > 0).any())
         self.hole_share = float((fs > 0).mean()) if self.holes_open else 0.0
         self._set_shell(verts, faces, kinds)
         self.worst = max(self.worst, side_worst)
         if self.normal:                               # what is exported, and what the panel counts
             self.triangles = len(faces)
+            self.size = verts.max(0) - verts.min(0)
             if not self.draft:
                 self.closed = bool(self.closed) and edge_check(faces)[0]
-        lo = 0 if kb is None else kb
         self.inner_rows = [(zz, np.arctan2(r[:, 1], r[:, 0]), np.hypot(r[:, 0], r[:, 1]))
-                           for zz, r in zip(zs[lo:], Is[lo:])]
+                           for zz, r in zip(zs[lo:hi + 1], Is[lo:hi + 1])]
+
+    def _roof(self, zs, Os, kb):
+        """The row a closed top's ceiling is on: as high as leaves the point above it as thick as the floor,
+        where the wall still has room inside it."""
+        p = self.p
+        rmin = np.hypot(Os[..., 0], Os[..., 1]).min(axis=1)
+        top = self.H - max(p.bottom, 2.0 * p.layer_height)
+        ok = np.nonzero((rmin >= self.wall + 0.6) & (zs <= top + 1e-9) & (np.arange(len(zs)) > (kb or 0) + 1))[0]
+        if not len(ok):
+            self.notes.append("The vase is too small to close over at the top: it is left open.")
+            return None
+        return int(ok[-1])
 
     def _set_shell(self, verts, faces, kinds=None):
         """The shell to show, and how far each face leans: a hole's side only counts where it leans out over
@@ -656,9 +721,31 @@ class VaseDesign:
         with pointed tops that print without support."""
         p = self.p
         K, N = O.shape[:2]
-        if p.holes == NO_HOLES or not self.normal:
-            return np.full((K, N), -1.0)
+        f = np.full((K, N), -1.0)
+        if not self.normal:
+            return f
         seg, along, L = hollow.row_lengths(O)
+        slope = 0.85 * math.tan(math.radians(p.max_overhang))
+        face = None
+        if face_holes(p) or p.around < 360.0:
+            face = hollow.openings(hollow.from_front(O, seg, along, L), self.z, L, p)
+            if (face > 0).any():
+                face = hollow.pointed_tops(face, self.z, O, slope)
+            f = face
+        if p.holes != NO_HOLES:
+            pattern = self._pattern_holes(O, zb, seg, along, L)
+            if face is not None:                  # a strut's width of wall round the face and along the edges
+                pattern = np.minimum(pattern, -face - max(p.hole_strut, 2.0))
+            self.pattern_open = bool((pattern > 0).any())
+            f = pattern if face is None else np.maximum(face, pattern)
+        if not (f > 0).any():
+            return f
+        return hollow.pointed_tops(f, self.z, O, slope)
+
+    def _pattern_holes(self, O, zb, seg, along, L):
+        """The pattern of holes, Voronoi, round, diamonds or slots, as a hole field."""
+        p = self.p
+        K, N = O.shape[:2]
         # the holes turn with the twist - but no faster than a wall may lean, so their sides stay printable
         turn = np.zeros(K)
         if p.texture_twist:
@@ -671,14 +758,13 @@ class VaseDesign:
         start = along[np.arange(K), c0]
         t = np.mod((along - start[:, None]) / L[:, None], 1.0)
         z_lo = zb + max(p.hole_foot, 0.0)
-        z_hi = self.H - max(p.hole_rim, 0.0)
+        z_hi = (self.dome_from if p.closed_top else self.H) - max(p.hole_rim, 0.0)    # not up a closed top
         f = hollow.hole_field(p.holes, t, self.z, L, p.hole_size, p.hole_strut, p.hole_jitter, p.hole_seed,
                               z_lo, z_hi)
         if not (f > 0).any():
             self.notes.append("There is no room for the holes between the plain foot and rim: make the vase "
                               "taller, the holes smaller, or the plain foot and rim less.")
-            return f
-        return hollow.pointed_tops(f, self.z, O, 0.85 * math.tan(math.radians(p.max_overhang)))
+        return f
 
     def print_mesh(self):
         """The vase as one closed mesh for the slicer: the hollow pot for a normal print, the solid for
@@ -694,20 +780,23 @@ class VaseDesign:
             return self.band_parts()
         if self.pot_rows is None:
             return self._loft_parts()
-        zs, Os, Is, fs, kb = self.pot_rows
+        zs, Os, Is, fs, kb, kr = self.pot_rows
         floor = kb is not None
-        # bands start on top of the floor
+        # bands start on top of the floor, and the solid point of a closed top is one with the band below it
         lowest = (zs[kb] if floor else 0.0) + 0.5 * self.p.layer_height
-        tops = sorted({max(z, lowest) for z, _ in self.bands[1:] if z < self.H - 1e-6})
+        highest = self.H if kr is None else zs[kr] - 0.5 * self.p.layer_height
+        tops = sorted({max(z, lowest) for z, _ in self.bands[1:] if z < min(self.H - 1e-6, highest)})
         z2, (O2, I2, f2), at = hollow.insert_rows(zs, [Os, Is, fs], tops)
         kb2 = int(np.argmin(np.abs(z2 - zs[kb]))) if floor else None
+        kr2 = None if kr is None else int(np.argmin(np.abs(z2 - zs[kr])))
         bounds = [0] + [at[t] for t in tops] + [len(z2) - 1]
         fils = [fil for _, fil in self.bands][:len(bounds) - 1]
         parts = []
         for fil, a, b in zip(fils, bounds[:-1], bounds[1:]):
             rows = slice(a, b + 1)
             verts, faces, _ = hollow.pot(z2[rows], O2[rows], I2[rows], f2[rows],
-                                         floor_row=kb2 if (floor and a == 0) else None)
+                                         floor_row=kb2 if (floor and a == 0) else None,
+                                         roof_row=kr2 - a if (kr2 is not None and b == len(z2) - 1) else None)
             parts.append((fil, verts, faces))
         return parts
 
@@ -739,8 +828,9 @@ class VaseDesign:
     def _shell(self):
         """What the printer really makes: the wall over a solid bottom, for the 3D view."""
         p = self.p
-        if p.holes != NO_HOLES or p.open_bottom:
-            self.notes.append("Holes and an open bottom work on smooth shapes, not low-poly facets.")
+        if needs_normal(p) or p.closed_top:
+            self.notes.append("Holes, a face, open ends and a closed top work on smooth shapes, not low-poly "
+                              "facets.")
         w = self.wall
         zb = min(max(p.bottom, p.layer_height), 0.5 * self.H)
         self.zb = zb
@@ -833,11 +923,11 @@ class VaseDesign:
         h = z / H
         self.C1 = sections.resample(loops[0], self.N)
         self.C2 = sections.resample(loops[1], self.N) if len(loops) > 1 else None
-        self.R0_d = 0.5 * pchip(sil[:, 0], sil[:, 1], h)
+        self.R0_d, q = self._dome(z, 0.5 * pchip(sil[:, 0], sil[:, 1], h))
         self.tau = self.tau_d = self.twist_at(h)
         self.mix_d = (np.clip(change(p.morph, h, p.morph_curve, p.morph_swings), 0.0, 1.0) if self.C2 is not None
                       else np.zeros_like(h))
-        self.env_d = self._envelope(z)
+        self.env_d = self._envelope(z) * q                  # the patterns shrink with a closed top's point
         if p.lattice and (p.twist_style == OWN or abs(p.twist) > 1e-9):
             self.notes.append("Both ways (lattice) works on the built-in shapes only: a drawn outline twists one way.")
         if p.facets:
@@ -870,6 +960,9 @@ class VaseDesign:
             tex = tex + self.fn(theta=np.mod(np.arctan2(P[..., 1], P[..., 0]), TAU), phi=frame,
                                 z=self.z[:, None], h=(self.z / self.H)[:, None], r=np.hypot(P[..., 0], P[..., 1]),
                                 H=np.float64(self.H))
+        if p.nose == RAISED_NOSE:
+            s = (np.mod(np.arctan2(P[..., 1], P[..., 0]) + 0.5 * math.pi + math.pi, TAU) - math.pi) * R0[:, None]
+            tex = tex + hollow.nose(s, self.z, p, 0.9 * math.tan(math.radians(p.max_overhang)))
         return P + tex[..., None] * out
 
     def _free_solid(self, P):
@@ -971,7 +1064,7 @@ class VaseDesign:
         wall_area = float(np.sum(0.5 * (ps[1:] + ps[:-1]) * np.diff(zs)))     # mm² of wall, unrolled
         bottom_vol = float(np.interp(0.0, oz, o_area)) * zb
         self.capacity = float(np.sum(0.5 * (i_area[1:] + i_area[:-1]) * np.diff(iz))) / 1000.0  # ml
-        if self.holes_open or p.open_bottom:
+        if self.holes_open or p.open_bottom or p.closed_top:
             self.capacity = 0.0
         fil_area = math.pi * (p.filament_d / 2.0) ** 2
         vol = mesh_volume(self.shell_verts, self.shell_faces)               # the plastic, holes and all
@@ -1158,13 +1251,13 @@ class VaseDesign:
             self.warnings.append(f"The base is narrow for the height (Ø {self.base_d[1]:.0f} mm under a "
                                  f"{self.H:.0f} mm vase): it may topple, on the bed or with flowers in. "
                                  "A brim helps it print.")
-        if self.top_d[0] < 8.0:
+        if self.top_d[0] < 8.0 and not p.closed_top:
             self.notes.append(f"The opening at the top is only {self.top_d[0]:.0f} mm across: a bud vase.")
         changes = len(self.bands) - 1
         if changes > 20:
             self.warnings.append(f"{changes} colour changes: each one takes time and leaves a small seam. "
                                  "Fewer, taller bands print cleaner.")
-        if self.holes_open and p.hole_strut < 2.0 * p.line_width:
+        if self.pattern_open and p.hole_strut < 2.0 * p.line_width:
             self.warnings.append(f"The wall between the holes ({p.hole_strut:g} mm) is thinner than two lines "
                                  f"({2 * p.line_width:g} mm): it may print thin or break.")
         if p.line_width < 0.45:
@@ -1186,22 +1279,50 @@ class VaseDesign:
             "Widest": f"Ø {self.widest:.1f} mm",
             "Footprint": f"{self.size[0]:.1f} × {self.size[1]:.1f} mm",
             "Base": f"Ø {self.base_d[0]:.0f}–{self.base_d[1]:.0f} mm",
-            "Opening at the top": f"Ø {self.top_d[0]:.0f}–{self.top_d[1]:.0f} mm",
-            "Holds": ("nothing: it has holes" if self.holes_open else
-                      "nothing: it is open at the bottom" if p.open_bottom else f"about {self.capacity:.0f} ml of water"),
+            **({"Top": ("closed in a point" + (f", over a ceiling {self.ceiling:.0f} mm across" if self.ceiling else ""))
+                       if self.normal else "comes in to a point (spiral vase mode prints no top: a hole a few mm "
+                                           "across stays at the very top)"}
+               if p.closed_top else {"Opening at the top": f"Ø {self.top_d[0]:.0f}–{self.top_d[1]:.0f} mm"}),
+            **({"Goes round": f"{p.around:g}° of the way round"} if p.around < 360.0 else {}),
+            **({"Fits a head": f"up to {self.head_fit / 10.0:.1f} cm round (round the forehead, above the ears)"}
+               if p.worn and self.head_fit > 0 else {}),
+            "Holds": ("nothing: it goes only part way round" if p.around < 360.0 else
+                      "nothing: it is open at the bottom" if p.open_bottom else
+                      "nothing: it has holes" if self.holes_open else
+                      "nothing: it is closed at the top" if p.closed_top else
+                      f"about {self.capacity:.0f} ml of water"),
             "Wall": (f"one {p.line_width:g} mm spiral line" if p.vase_mode != FAKE_VASE else
                      f"{max(int(p.walls), 1)} walls of {p.line_width:g} mm (about {self.wall:.1f} mm)")
                     + (", open at the bottom" if p.open_bottom else
                        f", on a {self.zb:g} mm solid bottom ({self.bottom_layers} layers)"),
             **({"Holes": f"{HOLE_WORDS[p.holes]}, {p.hole_size:g} mm apart with {p.hole_strut:g} mm between; "
                          f"pointed tops" + (f" ({self.bridge:.1f} mm bridges at their points)" if self.bridge > 0 else "")}
-               if self.holes_open else {}),
+               if self.pattern_open else {}),
+            **({"Face": self._face_words()} if self._face_words() else {}),
             "Steepest overhang": lean,
             "Filament": f"{self.grams:.0f} g, {self.metres:.1f} m",
             "Print time": f"about {duration(self.seconds)}",
             "Mesh": mesh,
         }
+        if p.around < 360.0:                  # widths round the whole oval it is cut from would mislead
+            for key in ("Widest", "Base", "Opening at the top"):
+                d.pop(key, None)
         return d
+
+    def _face_words(self) -> str:
+        p = self.p
+        words = [{ALMOND_EYES: "almond eyes"}.get(p.eyes, "round eyes") if p.eyes != NO_EYES else "",
+                 "a raised nose" if p.nose == RAISED_NOSE else "",
+                 {OPEN_MOUTH: "an open mouth", GRILLE_MOUTH: f"a grille of {p.mouth_slots} slots for a mouth",
+                  CHIN_MOUTH: "open down to the chin"}.get(p.mouth, ""),
+                 "slots for a strap" if p.straps else ""]
+        words = [w for w in words if w]
+        if not words:
+            return ""
+        text = ", ".join(words)
+        if face_holes(p) and not self.pattern_open:
+            text += "; pointed tops" + (f" ({self.bridge:.1f} mm bridges at their points)" if self.bridge > 0 else "")
+        return text[:1].upper() + text[1:]
 
     def contour(self, zc: float):
         """Where the wall crosses height zc: line segments (K, 2, 3), for the print animation."""
@@ -1228,3 +1349,28 @@ class VaseDesign:
         first_two = np.argsort(~C, axis=1, kind="stable")[:, :2]     # the two edges each face crosses
         seg = np.take_along_axis(P, first_two[:, :, None], axis=1)
         return seg[C.sum(1) >= 2]
+
+
+# ================================================================ sizing for a head
+def scaled(p: VaseParams, k: float) -> VaseParams:
+    """The design k times the size: its height, outline and face (patterns and holes stay as they are)."""
+    q = p.copy()
+    q.silhouette = [[h, round(d * k, 2)] for h, d in p.silhouette]
+    for key in HEAD_SCALED:
+        setattr(q, key, round(getattr(p, key) * k, 2))
+    return q
+
+
+def fit_head(p: VaseParams, head: float) -> VaseParams:
+    """The design sized to fit a head ``head`` mm round (round the forehead, above the ears), with a little
+    room: the inside measured where the head goes in, the whole design scaled to fit."""
+    q = p.copy()
+    for _ in range(4):
+        d = VaseDesign(q, draft=True)
+        if d.errors or d.head_fit <= 0:
+            return q
+        if abs(d.head_fit - head) < 0.5:
+            break
+        extra = HEAD_ROOM + TAU * d.wall                    # the inside is this much less round than the outside
+        q = scaled(q, (head + extra) / (d.head_fit + extra))
+    return q

@@ -22,12 +22,13 @@ from . import __version__
 from . import sections, slicers
 from .curves import CurveEditor
 from .expr import EXAMPLES, FUNCTION_HELP, VARIABLES
-from .geometry import VaseDesign, duration
+from .geometry import HEAD_SCALED, VaseDesign, duration, fit_head
 from .outline_editor import CLOSE_UP_FROM, OutlineEditor, OutlineWindow
-from .params import (BANDS, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, FILAMENTS, GLOSSY, GRADIENT,
-                     MATTE, NO_HOLES, ONE_COLOUR, ROUND, SLOTS, VORONOI,
+from .params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE,
+                     FILAMENTS, GLOSSY, GRADIENT, GRILLE_MOUTH, MATTE, NO_EYES, NO_HOLES, NO_MOUTH, NO_NOSE,
+                     ONE_COLOUR, OPEN_MOUTH, RAISED_NOSE, ROUND, ROUND_EYES, SLOTS, VORONOI,
                      OWN, OWN_PROFILE, PEBBLE, POLYGON, REAL_VASE, SAME, SHAPES, SILK, SLOW_DOWN, SPEED_UP, STRIPES,
-                     SWING, TRANSLUCENT, VaseParams, colour_style_of, load_design, save_design)
+                     SWING, TRANSLUCENT, VaseParams, colour_style_of, load_design, needs_normal, save_design)
 from .plots import ShapePlots
 from .presets import GALLERY, gallery_design, outline, palette, plain_design, slug, surprise
 from .simple_panel import GalleryDialog, SimplePanel, asset, profile_icon
@@ -60,6 +61,10 @@ REAL_COLOUR_STYLES = [(ONE_COLOUR, "One colour"), (GRADIENT, "Gradient spool")]
 USED = [(2, "Two"), (3, "Three"), (4, "Four")]
 HOLE_CHOICES = [(NO_HOLES, "None"), (VORONOI, "Voronoi"), (ROUND, "Round holes"), (DIAMOND, "Diamonds"),
                 (SLOTS, "Slots")]
+EYE_CHOICES = [(NO_EYES, "None"), (ALMOND_EYES, "Almond"), (ROUND_EYES, "Round")]
+NOSE_CHOICES = [(NO_NOSE, "None"), (RAISED_NOSE, "Raised")]
+MOUTH_CHOICES = [(NO_MOUTH, "None"), (OPEN_MOUTH, "Open"), (GRILLE_MOUTH, "A grille of slots"),
+                 (CHIN_MOUTH, "Open down to the chin")]
 
 
 def _shape(k: int) -> tuple:
@@ -169,7 +174,7 @@ SPEC = [
         ("facet_rough", "Rough cut", "pct", 0.0, 100.0, 5.0, " %", "Move the corners about for a rougher, hand-cut look."),
         ("facet_seed", "Cut pattern", "seed", 0, 99999, 1, "", "Another number, another rough cut."),
     ]),
-    ("Holes and an open bottom", [
+    ("Holes and openings", [
         ("holes", "Holes", "choice", HOLE_CHOICES, None, None, "",
          "Holes right through the wall: a Voronoi pattern (a honeycomb when regular), round holes, diamonds\n"
          "or slots. Every hole's top comes to a point, so it prints without support. A vase with holes is\n"
@@ -184,6 +189,52 @@ SPEC = [
         ("hole_rim", "Plain rim", "float", 0.0, 1000.0, 1.0, " mm", "Solid wall kept at the rim."),
         ("open_bottom", "Open at the bottom", "bool", None, None, None, "",
          "No floor: open at both ends - a lampshade, a sleeve, a holder. Printed normally."),
+        ("closed_top", "Closed at the top", "bool", None, None, None, "",
+         "The top closes over in a point, leaning in no more than the overhang limit, so it prints without\n"
+         "support: a helmet, a dome, a bell. The outline is rounded in to meet the point."),
+        ("around", "Goes round", "float", 30.0, 360.0, 10.0, "°",
+         "How far round the wall goes: 360° is all the way round; about 200° makes a mask. The gap\n"
+         "is at the back. Printed normally."),
+    ]),
+    ("Masks and helmets", [
+        ("worn", "For a head", "bool", None, None, None, "",
+         "Made to wear: the panel gives the head it fits, and Head size makes it fit another.\n"
+         "The face is at the front, the side facing you in the 3D view as it starts."),
+        ("head", "Head size", "head", 30.0, 90.0, 0.5, " cm",
+         "Round the head, above the eyebrows and ears, as a hat is measured (an adult: about 54 to 60 cm).\n"
+         "Changing it scales the whole design - its height, outline and face - so the inside fits a head\n"
+         "this size, with a centimetre to spare."),
+        ("eyes", "Eyes", "choice", EYE_CHOICES, None, None, "",
+         "Eye holes at the front. Their tops come to a point, so they print without support."),
+        ("eye_width", "Eye width", "float", 2.0, 200.0, 1.0, " mm", "How wide each eye is."),
+        ("eye_height", "Eye height", "float", 2.0, 200.0, 1.0, " mm",
+         "How tall each eye is, before its top comes to a point."),
+        ("eye_apart", "Eyes apart", "float", 0.0, 400.0, 1.0, " mm",
+         "From the middle of one eye to the middle of the other, along the face (an adult: about 64 mm)."),
+        ("eye_up", "Eyes at", "float", 0.0, 1000.0, 1.0, " mm", "How high the eyes' middles are, from the bottom."),
+        ("eye_tilt", "Eye tilt", "float", -60.0, 60.0, 1.0, "°", "The outer corners raised (+) or lowered (-)."),
+        ("nose", "Nose", "choice", NOSE_CHOICES, None, None, "",
+         "A raised nose: a ridge from between the eyes down to its tip, sloping back to the face\n"
+         "underneath no steeper than the overhang limit. Hollow inside, with room for a real nose."),
+        ("nose_width", "Nose width", "float", 2.0, 200.0, 1.0, " mm", "How wide the nose is at its tip."),
+        ("nose_length", "Nose length", "float", 2.0, 400.0, 1.0, " mm", "From its tip up to between the eyes."),
+        ("nose_depth", "Nose sticks out", "float", 0.0, 80.0, 0.5, " mm", "How far the tip stands out from the face."),
+        ("nose_up", "Nose tip at", "float", -400.0, 1000.0, 1.0, " mm",
+         "How high the tip of the nose is, from the bottom (below nought: only the top of the nose)."),
+        ("mouth", "Mouth", "choice", MOUTH_CHOICES, None, None, "",
+         "A mouth: an open one (its top comes to a point), a grille of upright slots - which can smile -\n"
+         "or an opening down to the chin, like an old Greek helmet's."),
+        ("mouth_width", "Mouth width", "float", 2.0, 400.0, 1.0, " mm", "How wide the mouth is."),
+        ("mouth_height", "Mouth height", "float", 2.0, 200.0, 1.0, " mm", "How tall the mouth, or each slot, is."),
+        ("mouth_up", "Mouth at", "float", 0.0, 1000.0, 1.0, " mm",
+         "How high the mouth's middle is, from the bottom - or, open down to the chin, how high it reaches."),
+        ("mouth_slots", "Slots", "int", 1, 40, 1, "", "How many slots the grille has."),
+        ("mouth_smile", "Smile", "float", -100.0, 100.0, 0.5, " mm",
+         "The slots at the corners of the mouth this much higher than the middle: a smile (or, below\n"
+         "nought, a frown)."),
+        ("straps", "Strap slots", "bool", None, None, None, "",
+         "A slot each side for an elastic strap: near the edges of a mask, or at the sides of a helmet."),
+        ("strap_up", "Strap slots at", "float", 0.0, 1000.0, 1.0, " mm", "How high the strap slots are."),
     ]),
     ("Your own function", [
         ("expression", "", "expr", None, None, None, "",
@@ -407,11 +458,17 @@ class PrintSteps(QDialog):
                    f"{', '.join(str(k) for k in sorted({f for _, f in d.bands}))}: load those colours in those "
                    "slots, or change them in the slicer.")
         where = slicers.slicer_name(slicer) if slicer else "your slicer"
+        edge = ""
+        if p.worn or p.around < 360.0 or p.open_bottom:
+            edge = ("<li>Add a <b>brim</b>: it stands on a thin edge" + (", a mask on its chin" if p.around < 360.0
+                                                                       else "") + ".</li>")
+        if p.straps:
+            edge += "<li>When it is done, thread an <b>elastic strap</b> through the slots at the sides.</li>"
         text = QLabel(
             f"<p>Saved <b>{os.path.basename(path)}</b><br>in {os.path.dirname(path)}</p>"
             f"<ol><li>Open it in {where} (the button below, or File ▸ Import).</li>"
             f"<li>In the print settings: {settings}.</li>"
-            f"<li><b>No supports</b> - none are needed: nothing leans more than {d.worst:.0f}°.</li>"
+            f"<li><b>No supports</b> - none are needed: nothing leans more than {d.worst:.0f}°.</li>{edge}"
             f"<li>{colours}</li>"
             f"<li>Slice it and print. It takes about <b>{duration(d.seconds)}</b> and "
             f"<b>{d.grams:.0f} g</b> of filament.</li></ol>")
@@ -690,6 +747,17 @@ class MainWindow(QMainWindow):
             s.valueChanged.connect(lambda v: self._on_param("widest", float(v)))
             self.widgets[key] = s
             return s
+        if kind == "head":                        # not a setting of its own: it scales the design to fit
+            s = DoubleSpinBox()
+            s.setDecimals(1)
+            s.setRange(lo, hi)
+            s.setSingleStep(step)
+            s.setSuffix(extra)
+            s.setKeyboardTracking(False)
+            s.setValue(57.0)
+            s.valueChanged.connect(lambda v: self._on_param("head", float(v)))
+            self.widgets[key] = s
+            return s
         if kind == "palette":
             b = QToolButton()
             b.setText("Choose a palette")
@@ -881,7 +949,7 @@ class MainWindow(QMainWindow):
             w.blockSignals(True)
             if key == "widest":
                 w.setValue(self._widest())
-            elif key == "palette":
+            elif key in ("palette", "head"):            # the head size follows the design once it is built
                 pass
             elif isinstance(w, QComboBox):
                 w.setCurrentIndex(max(0, w.findData(getattr(self.params, key))))
@@ -1029,6 +1097,20 @@ class MainWindow(QMainWindow):
             show = p.holes != NO_HOLES
         elif key == "hole_jitter":
             show = p.holes == VORONOI
+        elif key == "head":
+            show = p.worn
+        elif key.startswith("eye_"):
+            show = p.eyes != NO_EYES
+        elif key.startswith("nose_"):
+            show = p.nose != NO_NOSE
+        elif key in ("mouth_width", "mouth_up"):
+            show = p.mouth != NO_MOUTH
+        elif key == "mouth_height":
+            show = p.mouth in (OPEN_MOUTH, GRILLE_MOUTH)
+        elif key in ("mouth_slots", "mouth_smile"):
+            show = p.mouth == GRILLE_MOUTH
+        elif key == "strap_up":
+            show = p.straps
         return show
 
     def _apply_mode(self):
@@ -1215,6 +1297,9 @@ class MainWindow(QMainWindow):
     # ============================================================ params
     def _on_param(self, key, value, live=False):
         p = self.params
+        if key == "head":
+            self._set_head(value)
+            return
         if key == "widest":
             old = self._widest()
             if old > 0 and value > 0:
@@ -1248,12 +1333,6 @@ class MainWindow(QMainWindow):
             elif key == "colour_style" and value != ONE_COLOUR and p.colours_used < 2:
                 p.colours_used = 3
                 self._set_widget("colours_used")
-            elif (key == "holes" and value != NO_HOLES or key == "open_bottom" and value) \
-                    and p.vase_mode == REAL_VASE:
-                p.vase_mode = FAKE_VASE                       # spiral vase mode can't print holes or an open end
-                self._set_widget("vase_mode")
-                self.statusBar().showMessage("Holes and an open bottom need a normal print: Print as is now "
-                                             "Normal print", 8000)
             elif key in ("repeat1", "repeat2"):
                 # the drawn piece narrows or widens to fit: one lobe stays one lobe, as deep as before
                 k = key[-1]
@@ -1266,12 +1345,36 @@ class MainWindow(QMainWindow):
             setattr(p, key, value)
             if key in ("repeat1", "repeat2"):
                 self._set_widget(f"drawn{key[-1]}")
+            if key != "vase_mode" and p.vase_mode == REAL_VASE and needs_normal(p):
+                p.vase_mode = FAKE_VASE                       # spiral vase mode prints one closed line a layer
+                self._set_widget("vase_mode")
+                self.statusBar().showMessage("Holes, a face, an open bottom and a wall part way round need a "
+                                             "normal print: Print as is now Normal print", 8000)
         if key in REMEMBERED:
             self.settings.setValue(f"default_{key}", float(value))
         self._sync_widgets()
         self._dirty = True
         self._update_title()
         self._schedule(live=live, text=key in TEXT_KEYS)
+
+    def _set_head(self, cm: float):
+        """Scale the design to fit a head ``cm`` round."""
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            fitted = fit_head(self.params, 10.0 * cm)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.apply_changes({k: getattr(fitted, k) for k in ("silhouette",) + HEAD_SCALED})
+        self.statusBar().showMessage(f"Sized for a head {cm:g} cm round — Ctrl+Z to go back", 6000)
+
+    def _show_head(self, d: VaseDesign):
+        """The head the design fits, in the head size boxes."""
+        cm = round(d.head_fit / 10.0, 1)
+        w = self.widgets["head"]
+        w.blockSignals(True)
+        w.setValue(cm)
+        w.blockSignals(False)
+        self.simple.show_head(cm)
 
     def _set_widget(self, key):
         w = self.widgets[key]
@@ -1541,6 +1644,7 @@ class MainWindow(QMainWindow):
             return
         self.design = d
         self._show_design(d)
+        self._show_head(d)
         dt = (time.perf_counter() - t0) * 1000
         if not draft:
             self._last_full_ms = dt
@@ -1622,7 +1726,8 @@ class MainWindow(QMainWindow):
                     + ("" if p.open_bottom else f" on a {d.zb:g} mm floor") + ", the holes cut through - so the "
                     f"slicer just fills it in. Supports off - none are needed: nothing leans more than "
                     f"{d.worst:.0f}°" + (f", and the points of the holes bridge at most {d.bridge:.1f} mm"
-                                         if d.bridge > 0 else "") + ". A brim helps a narrow foot stay put.</p>")
+                                         if d.bridge > 0 else "") + ". A brim helps a narrow foot, or a "
+                    "mask's thin edge, stay put.</p>")
         self.info.setHtml("".join(html))
 
     @staticmethod
@@ -2003,7 +2108,16 @@ class MainWindow(QMainWindow):
             "pot it is - the wall as thick as Walls × Line width, the floor, the rim, any holes cut through - so "
             "there is nothing to set.</li>"
             "<li>No supports, just as for a seamless one: every hole's top comes to a point, with at most a short "
-            "bridge at its very tip.</li></ul>")
+            "bridge at its very tip.</li></ul>"
+            "<h3>Masks and helmets</h3>"
+            "<ul><li>Gallery ▸ Choose a design has masks and a helmet, sized for a head 57 cm round. "
+            "<b>Head size</b> (Simple, or Advanced ▸ Masks and helmets) fits one to another head: measure round "
+            "the head above the eyebrows and ears, as for a hat.</li>"
+            "<li>A mask prints standing on its chin, a helmet on its rim: add a <b>brim</b>. No supports - the "
+            "eyes, mouth and strap slots come to points at the top, and a closed top comes in to a point no "
+            "steeper than the overhang limit, over a small ceiling the printer bridges.</li>"
+            "<li>Thread an elastic strap through the slots, and pad a helmet with a strip of foam inside.</li>"
+            "</ul>")
 
     def drawing_help(self):
         QMessageBox.information(
@@ -2043,7 +2157,9 @@ class MainWindow(QMainWindow):
             f"<h3>{APP_NAME} {__version__}</h3>"
             "<p>Designs vases that print without supports - normally with walls, or seamless in spiral vase "
             "mode. Shape the outline, the cross-section and how it changes on the way up, spin it, cover it in "
-            "patterns or your own formula, and colour it in bands, stripes or a gradient.</p>"
+            "patterns or your own formula, and colour it in bands, stripes or a gradient. Cut holes through it, "
+            "open it at the bottom, close it over at the top - or give it a face, and make a mask or a "
+            "helmet.</p>"
             "<p><b>3D view:</b> left-drag turn · right-drag / shift-drag pan · wheel zoom · double-click or F to "
             "go back to the chosen view · S spin · F5 watch it print.</p>"
             "<p>Exports are in millimetres, standing on the bed, ready to slice.</p>"

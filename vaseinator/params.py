@@ -21,6 +21,9 @@ OWN_PROFILE = -1                                          # the outline has been
 ONE_COLOUR, BANDS, STRIPES, GRADIENT = 0, 1, 2, 3         # how the colours go up the vase
 REAL_VASE, FAKE_VASE = 0, 1                               # spiral vase mode, or an ordinary print with walls
 NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS = 0, 1, 2, 3, 4  # holes right through the wall
+NO_EYES, ALMOND_EYES, ROUND_EYES = 0, 1, 2                # a face: its eyes ...
+NO_NOSE, RAISED_NOSE = 0, 1                               # ... its nose ...
+NO_MOUTH, OPEN_MOUTH, GRILLE_MOUTH, CHIN_MOUTH = 0, 1, 2, 3   # ... and its mouth (CHIN: open down to the chin)
 MATTE, SILK, GLOSSY, TRANSLUCENT = 0, 1, 2, 3             # how the filament looks in the 3D view
 
 MAX_REPEAT = 100                                          # most copies of a drawn piece round the axis
@@ -126,6 +129,30 @@ class VaseParams:
     hole_foot: float = 18.0       # solid wall kept at the foot, above the floor (mm)
     hole_rim: float = 12.0        # ... and at the rim
     open_bottom: bool = False     # no floor: open at both ends (a lampshade, a sleeve)
+    closed_top: bool = False      # the top closes over in a point no steeper than the overhang limit
+    around: float = 360.0         # how far round the wall goes (degrees): less for a mask
+
+    # --- masks and helmets: a face at the front (-y), sizes and heights in mm --------------------
+    worn: bool = False            # made for a head: sized by the head it fits
+    eyes: int = NO_EYES
+    eye_width: float = 34.0
+    eye_height: float = 18.0
+    eye_apart: float = 64.0       # between the eyes' middles, along the surface
+    eye_up: float = 112.0         # the eyes' middles, from the bottom
+    eye_tilt: float = 10.0        # the outer corners raised (degrees)
+    nose: int = NO_NOSE
+    nose_width: float = 30.0
+    nose_length: float = 46.0     # from its tip up to between the eyes
+    nose_depth: float = 14.0      # how far its tip stands out
+    nose_up: float = 70.0         # its tip, from the bottom
+    mouth: int = NO_MOUTH
+    mouth_width: float = 44.0
+    mouth_height: float = 14.0
+    mouth_up: float = 40.0        # its middle (the top of an opening down to the chin), from the bottom
+    mouth_slots: int = 5          # a grille's slots
+    mouth_smile: float = 0.0      # ... its outer slots this much higher (mm): a smile
+    straps: bool = False          # a slot each side for an elastic strap
+    strap_up: float = 112.0
 
     # --- printing -----------------------------------------------------------
     vase_mode: int = FAKE_VASE    # real: spiral vase mode, one solid, one colour (slicers won't change
@@ -187,7 +214,9 @@ class VaseParams:
                    "strength": (EVERYWHERE, GROWS, FADES, MIDDLE, OWN),
                    "colour_style": (ONE_COLOUR, BANDS, STRIPES, GRADIENT), "colours_used": (1, 2, 3, 4),
                    "look": (MATTE, SILK, GLOSSY, TRANSLUCENT), "vase_mode": (REAL_VASE, FAKE_VASE),
-                   "holes": (NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS)}
+                   "holes": (NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS),
+                   "eyes": (NO_EYES, ALMOND_EYES, ROUND_EYES), "nose": (NO_NOSE, RAISED_NOSE),
+                   "mouth": (NO_MOUTH, OPEN_MOUTH, GRILLE_MOUTH, CHIN_MOUTH)}
         for key, values in allowed.items():
             if getattr(p, key) not in values:
                 setattr(p, key, getattr(fresh, key))
@@ -195,11 +224,16 @@ class VaseParams:
             p.silhouette = fresh.silhouette
         p.walls = min(max(p.walls, 1), 10)
         p.repeat1, p.repeat2 = (min(max(r, 1), MAX_REPEAT) for r in (p.repeat1, p.repeat2))
+        p.mouth_slots = min(max(p.mouth_slots, 1), 40)
         for key, lo, hi in (("depth1", 0.0, 0.9), ("depth2", 0.0, 0.9), ("sharp1", 0.0, 1.0),
                             ("sharp2", 0.0, 1.0), ("rib_sharp", 0.0, 1.0), ("ring_sharp", 0.0, 1.0),
                             ("facet_rough", 0.0, 1.0), ("band_spacing", -1.0, 1.0), ("hole_jitter", 0.0, 1.0),
                             ("hole_size", 3.0, 200.0), ("hole_strut", 0.8, 50.0), ("hole_foot", 0.0, 2000.0),
-                            ("hole_rim", 0.0, 2000.0)):
+                            ("hole_rim", 0.0, 2000.0), ("around", 30.0, 360.0), ("eye_width", 2.0, 400.0),
+                            ("eye_height", 2.0, 400.0), ("eye_apart", 0.0, 2000.0), ("eye_tilt", -80.0, 80.0),
+                            ("nose_width", 2.0, 400.0), ("nose_length", 2.0, 1000.0), ("nose_depth", 0.0, 100.0),
+                            ("mouth_width", 2.0, 1000.0), ("mouth_height", 2.0, 400.0),
+                            ("mouth_smile", -400.0, 400.0)):
             setattr(p, key, min(max(getattr(p, key), lo), hi))
         for k in FILAMENTS:
             try:
@@ -207,6 +241,17 @@ class VaseParams:
             except ValueError:
                 setattr(p, f"color{k}", getattr(fresh, f"color{k}"))
         return p
+
+
+def face_holes(p: VaseParams) -> bool:
+    """Whether the face has holes of its own: eyes, a mouth or strap slots."""
+    return p.eyes != NO_EYES or p.mouth != NO_MOUTH or p.straps
+
+
+def needs_normal(p: VaseParams) -> bool:
+    """Whether the wall is cut open - holes, an open bottom, part way round - so it must be printed normally:
+    spiral vase mode prints one closed line a layer."""
+    return p.holes != NO_HOLES or p.open_bottom or p.around < 360.0 or face_holes(p)
 
 
 def colour_style_of(p: VaseParams) -> int:
