@@ -15,14 +15,14 @@ import sys
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
-from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout, QLabel, QPushButton,
-                               QScrollArea, QSizePolicy, QSlider, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+                               QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
 from .choices import (COLOURS, MANY_COLOURS, NO_PATTERN, PATTERNS, SHAPES_FROM_ABOVE,  # noqa: F401
                       pattern_of, twist_words)
 from .params import CIRCLE, EVENLY, ONE_COLOUR, OWN, POLYGON, SAME
 from .shapes import PALETTES, PROFILES, pchip, shape_table
-from .spinbox import DoubleSpinBox
+from .spinbox import DoubleSpinBox, Slider
 
 ACCENT = QColor(240, 163, 86)
 INK = QColor(225, 230, 236)
@@ -298,7 +298,7 @@ class SimplePanel(QWidget):
         # the twist
         v.addWidget(_title("Twist"))
         trow = QHBoxLayout()
-        self.twist = QSlider(Qt.Horizontal)
+        self.twist = Slider(Qt.Horizontal)
         self.twist.setRange(0, 24)                 # 15 degrees a step, up to two whole turns
         self.twist.setPageStep(6)
         self.twist.setToolTip("How far the shape turns from the bottom to the top")

@@ -135,6 +135,18 @@ def main():
     win.widgets["count2"].setValue(5)
     choose("morph", SWING)
     check("Back and forth asks how many changes", win._wanted("morph_swings") and win.params.morph_swings == 3)
+    # the wheel over a closed drop-down list, or a slider, leaves it alone: it scrolls the panel instead
+    combo = win.widgets["morph"]
+    before = combo.currentIndex()
+    spot = QPointF(combo.width() / 2, combo.height() / 2)
+    QApplication.sendEvent(combo, QWheelEvent(spot, combo.mapToGlobal(spot), QPoint(), QPoint(0, -120), Qt.NoButton,
+                                              Qt.NoModifier, Qt.NoScrollPhase, False))
+    slider = win.simple.twist
+    twist = slider.value()
+    QApplication.sendEvent(slider, QWheelEvent(QPointF(5, 5), slider.mapToGlobal(QPoint(5, 5)), QPoint(),
+                                               QPoint(0, 120), Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False))
+    check("the wheel doesn't change a closed drop-down list or a slider", combo.currentIndex() == before
+          and slider.value() == twist)
     choose("morph", OWN)
     values = [round(v, 2) for _, v in win.params.morph_curve]
     check("... and an own curve starts as the same wave", values[::2] == [0.0, 1.0, 0.0, 1.0])

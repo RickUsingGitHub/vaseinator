@@ -10,7 +10,7 @@ from .params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, EAS
                      GRADIENT, GRILLE_MOUTH, MATTE, NO_EYES, NO_HOLES, NO_MOUTH, NO_NOSE, ONE_COLOUR, OPEN_MOUTH, OWN,
                      OWN_PROFILE, PEBBLE, RAISED_NOSE, REAL_VASE, ROUND, ROUND_EYES, SAME, SHAPES, SILK, SLOTS,
                      SLOW_DOWN, SPEED_UP, STRIPES, SWING, TRANSLUCENT, VORONOI, VaseParams, colour_style_of,
-                     needs_normal)
+                     face_holes, needs_normal)
 from .presets import outline
 from .shapes import (PROFILES, SHAPE_LABELS, SHAPE_NAMES, change as change_of, progress, sample_points, shape_table,
                      strength, strength_names, style_names)
@@ -156,6 +156,10 @@ SPEC = [
         ("hole_seed", "Hole pattern", "seed", 0, 99999, 1, "", "Another number, another pattern of cells."),
         ("hole_foot", "Plain foot", "float", 0.0, 1000.0, 1.0, " mm", "Solid wall kept at the foot, above the floor."),
         ("hole_rim", "Plain rim", "float", 0.0, 1000.0, 1.0, " mm", "Solid wall kept at the rim."),
+        ("hole_swell", "Rounded edges", "float", 0.0, 10.0, 0.25, " mm|None",
+         "The wall swells round the holes, out and in, this much each side: every hole's edge curves\n"
+         "smoothly from outside to in, and the wall between the holes is thick and round, like\n"
+         "carved or cast work. More plastic, and longer to print."),
         ("open_bottom", "Open at the bottom", "bool", None, None, None, "",
          "No floor: open at both ends - a lampshade, a sleeve, a holder. Printed normally."),
         ("closed_top", "Closed at the top", "bool", None, None, None, "",
@@ -345,6 +349,8 @@ def wanted(p, key) -> bool:
         show = p.vase_mode == FAKE_VASE
     elif key in ("hole_size", "hole_strut", "hole_seed", "hole_foot", "hole_rim"):
         show = p.holes != NO_HOLES
+    elif key == "hole_swell":
+        show = p.holes != NO_HOLES or face_holes(p) or p.around < 360.0
     elif key == "hole_jitter":
         show = p.holes == VORONOI
     elif key == "head":

@@ -18,8 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vaseinator import sections  # noqa: E402
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
-from vaseinator.geometry import (TOLERANCE, VaseDesign, edge_check, face_normals, fit_head, lean_angles,  # noqa: E402
-                                 mesh_volume)
+from vaseinator.geometry import (TOLERANCE, VORONOI_LONGEST, VaseDesign, edge_check, face_normals, fit_head,  # noqa: E402
+                                 lean_angles, mesh_volume)
 from vaseinator import hollow  # noqa: E402
 from vaseinator.params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, ELLIPSE, EVENLY,  # noqa: E402
                                FAKE_VASE, FLOWER, GEAR, GRADIENT, GRILLE_MOUTH, NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN,
@@ -58,6 +58,24 @@ def designs():
                                             twist=60)),
     ]
     return out
+
+
+def thinnest_wall(d: VaseDesign) -> float:
+    """The narrowest wall between two holes, along any row of the pot (mm)."""
+    zs, Os, Is, fs, kb, kr, _ = d.pot_rows
+    seg, along, L = hollow.row_lengths(Os)
+    best = np.inf
+    for j in range(len(zs)):
+        hole = fs[j] > 0
+        if hole.all() or not hole.any():
+            continue
+        i = np.nonzero(hole != np.roll(hole, -1))[0]
+        at = along[j][i] + seg[j][i] * fs[j][i] / (fs[j][i] - np.roll(fs[j], -1)[i])
+        order = np.argsort(at)
+        at, leaving = at[order], hole[i][order]
+        for k in np.nonzero(leaving)[0]:                       # a hole ends: the wall runs to the next one
+            best = min(best, (at[(k + 1) % len(at)] - at[k]) % L[j])
+    return best
 
 
 def layer_loops(d: VaseDesign, z: float) -> int:
@@ -218,7 +236,8 @@ def test_a_normal_print_is_the_hollow_pot():
 
 def test_holes_print_without_supports():
     """Every pattern of holes, on round and drawn shapes, twisting or not: a closed pot whose holes' tops
-    lean no more than the limit, but for a short bridge at their very points."""
+    lean no more than the limit, but for a short bridge at their very points - and Voronoi holes, ovals with
+    round tops, that leave every wall between them as thick as set, and can swell round their edges."""
     cases = [plain(holes=VORONOI), plain(holes=VORONOI, hole_jitter=0.0, twist=360.0),
              plain(holes=ROUND, twist=720.0), plain(holes=DIAMOND, open_bottom=True),
              plain(holes=SLOTS, hole_size=10.0, hole_strut=2.0),
@@ -229,13 +248,25 @@ def test_holes_print_without_supports():
         verts, faces = d.print_mesh()
         assert not d.errors and d.holes_open and edge_check(faces)[0], p.holes
         assert d.worst <= p.max_overhang + TOLERANCE, (p.holes, d.worst)
-        assert 0.0 <= d.bridge < 8.0 and 0.15 < d.hole_share < 0.7, (d.bridge, d.hole_share)
+        longest = VORONOI_LONGEST + 0.5 if p.holes == VORONOI else 8.0   # Voronoi ovals' round tops bridge further
+        assert 0.0 <= d.bridge < longest and 0.15 < d.hole_share < 0.7, (d.bridge, d.hole_share)
         assert d.capacity == 0.0 and d.info()["Holds"].startswith("nothing")
         assert max(layer_loops(d, z) for z in np.linspace(0.3 * d.H, 0.7 * d.H, 5)) > 1
         parts = d.print_parts()
         assert all(edge_check(f)[0] for _, _, f in parts)
         whole = mesh_volume(verts, faces)
         assert abs(sum(mesh_volume(v, f) for _, v, f in parts) - whole) < 1e-6 * whole
+    # Voronoi holes are rounded, pointed inside their own cells: no wall between them is cut thinner than set
+    for p in (plain(holes=VORONOI), plain(holes=VORONOI, hole_jitter=0.0), gallery_design("Voronoi Lamp")):
+        d = VaseDesign(p)
+        assert thinnest_wall(d) >= 0.9 * p.hole_strut, (thinnest_wall(d), p.hole_strut)
+    # rounded edges: the wall swells round the holes, the pot still closed, printable, and heavier
+    flat = VaseDesign(plain(holes=VORONOI, hole_swell=0.0))
+    d = VaseDesign(plain(holes=VORONOI, hole_swell=1.5))
+    swollen = d.pot_rows[6]
+    assert edge_check(d.print_mesh()[1])[0] and d.worst <= p.max_overhang + TOLERANCE
+    assert 1.2 < swollen.max() <= 1.5 and np.all(swollen[d.pot_rows[3] > 0] == 0.0)
+    assert d.grams > 1.3 * flat.grams and "edges rounded" in d.info()["Holes"]
     # every hole side the overhang check sees leans out over its hole no more than the limit
     d = VaseDesign(plain(holes=ROUND))
     over = np.degrees(np.arcsin(np.clip(-face_normals(d.shell_verts, d.shell_faces)[:, 2], 0, 1)))

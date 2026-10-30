@@ -31,6 +31,8 @@ from .shapes import (TABLE, TAU, blur, change, lobes_needed, organic, pchip, pro
 
 TOLERANCE = 0.3          # degrees over the overhang limit still counted as within it
 HOLE_WORDS = {VORONOI: "Voronoi", ROUND: "round holes", DIAMOND: "diamonds", SLOTS: "slots"}
+VORONOI_BRIDGE = 0.7     # a Voronoi oval's round top is bridged once it is this share of the cells' size across
+VORONOI_LONGEST = 14.0   # ... and never more than this (mm): a round top that size bridges on most printers
 HEAD_ROOM = 10.0         # mm more round the inside of a mask or helmet than round the head it fits
 # what grows with a design sized for a head: its height and the face, in mm
 HEAD_SCALED = ("height", "eye_width", "eye_height", "eye_apart", "eye_up", "nose_width", "nose_length",
@@ -315,6 +317,7 @@ class VaseDesign:
         self.bridge = 0.0
         self.holes_open = False
         self.pattern_open = False
+        self.bridge_allowed = 0.0                 # how wide a hole's top may be bridged (mm): Voronoi ovals
         self.hole_share = 0.0
         self.head_fit = 0.0
         self.ceiling = 0.0
@@ -667,10 +670,16 @@ class VaseDesign:
         else:
             zs, (Os, Is, fs), at = hollow.insert_rows(self.z, [O, I, f], [zb])
             kb = at[zb]
+        b = None
+        if p.hole_swell > 0 and (fs > 0).any():
+            # rounded edges: the wall swells out and in round every hole, curving from outside to in
+            far = max(6.0, 0.5 * p.hole_size) if p.holes != NO_HOLES else 6.0
+            b = hollow.swell(fs, zs, p.hole_swell, far, 0.6 * math.tan(math.radians(p.max_overhang)))
         kr = self._roof(zs, Os, kb) if p.closed_top else None
-        verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb, roof_row=kr)
-        kinds, self.bridge, side_worst = hollow.bridges(verts, faces, kinds, p.max_overhang)
-        self.pot_rows = (zs, Os, Is, fs, kb, kr)
+        verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb, roof_row=kr, swell=b)
+        kinds, self.bridge, side_worst = hollow.bridges(verts, faces, kinds, p.max_overhang,
+                                                        longest=max(8.0, self.bridge_allowed + 1.0))
+        self.pot_rows = (zs, Os, Is, fs, kb, kr, np.zeros_like(fs) if b is None else b)
         lo, hi = (0 if kb is None else kb), (len(zs) - 1 if kr is None else kr)
         if kr is not None:
             self.ceiling = hollow.bridge_span(Is[kr])
@@ -732,18 +741,23 @@ class VaseDesign:
             if (face > 0).any():
                 face = hollow.pointed_tops(face, self.z, O, slope)
             f = face
+        bridge = None
         if p.holes != NO_HOLES:
-            pattern = self._pattern_holes(O, zb, seg, along, L)
-            if face is not None:                  # a strut's width of wall round the face and along the edges
-                pattern = np.minimum(pattern, -face - max(p.hole_strut, 2.0))
+            # a strut's width of wall round the face and along the edges
+            room = None if face is None else -face - max(p.hole_strut, 2.0)
+            pattern, spans = self._pattern_holes(O, zb, seg, along, L, room)
             self.pattern_open = bool((pattern > 0).any())
             f = pattern if face is None else np.maximum(face, pattern)
+            if spans is not None:                 # Voronoi ovals: their round tops close over a short bridge
+                bridge = np.where(pattern > 0, spans, 0.0)
+                self.bridge_allowed = float(bridge.max())
         if not (f > 0).any():
             return f
-        return hollow.pointed_tops(f, self.z, O, slope)
+        return hollow.pointed_tops(f, self.z, O, slope, bridge)
 
-    def _pattern_holes(self, O, zb, seg, along, L):
-        """The pattern of holes, Voronoi, round, diamonds or slots, as a hole field."""
+    def _pattern_holes(self, O, zb, seg, along, L, room=None):
+        """The pattern of holes, Voronoi, round, diamonds or slots, as a hole field - only where room is above
+        nought, if given."""
         p = self.p
         K, N = O.shape[:2]
         # the holes turn with the twist - but no faster than a wall may lean, so their sides stay printable
@@ -759,12 +773,13 @@ class VaseDesign:
         t = np.mod((along - start[:, None]) / L[:, None], 1.0)
         z_lo = zb + max(p.hole_foot, 0.0)
         z_hi = (self.dome_from if p.closed_top else self.H) - max(p.hole_rim, 0.0)    # not up a closed top
-        f = hollow.hole_field(p.holes, t, self.z, L, p.hole_size, p.hole_strut, p.hole_jitter, p.hole_seed,
-                              z_lo, z_hi)
+        f, spans = hollow.hole_field(p.holes, t, self.z, L, p.hole_size, p.hole_strut, p.hole_jitter, p.hole_seed,
+                                     z_lo, z_hi, room, 0.85 * math.tan(math.radians(p.max_overhang)),
+                                     min(VORONOI_BRIDGE * p.hole_size, VORONOI_LONGEST))
         if not (f > 0).any():
             self.notes.append("There is no room for the holes between the plain foot and rim: make the vase "
                               "taller, the holes smaller, or the plain foot and rim less.")
-        return f
+        return f, spans
 
     def print_mesh(self):
         """The vase as one closed mesh for the slicer: the hollow pot for a normal print, the solid for
@@ -780,13 +795,13 @@ class VaseDesign:
             return self.band_parts()
         if self.pot_rows is None:
             return self._loft_parts()
-        zs, Os, Is, fs, kb, kr = self.pot_rows
+        zs, Os, Is, fs, kb, kr, swollen = self.pot_rows
         floor = kb is not None
         # bands start on top of the floor, and the solid point of a closed top is one with the band below it
         lowest = (zs[kb] if floor else 0.0) + 0.5 * self.p.layer_height
         highest = self.H if kr is None else zs[kr] - 0.5 * self.p.layer_height
         tops = sorted({max(z, lowest) for z, _ in self.bands[1:] if z < min(self.H - 1e-6, highest)})
-        z2, (O2, I2, f2), at = hollow.insert_rows(zs, [Os, Is, fs], tops)
+        z2, (O2, I2, f2, s2), at = hollow.insert_rows(zs, [Os, Is, fs, swollen], tops)
         kb2 = int(np.argmin(np.abs(z2 - zs[kb]))) if floor else None
         kr2 = None if kr is None else int(np.argmin(np.abs(z2 - zs[kr])))
         bounds = [0] + [at[t] for t in tops] + [len(z2) - 1]
@@ -796,7 +811,8 @@ class VaseDesign:
             rows = slice(a, b + 1)
             verts, faces, _ = hollow.pot(z2[rows], O2[rows], I2[rows], f2[rows],
                                          floor_row=kb2 if (floor and a == 0) else None,
-                                         roof_row=kr2 - a if (kr2 is not None and b == len(z2) - 1) else None)
+                                         roof_row=kr2 - a if (kr2 is not None and b == len(z2) - 1) else None,
+                                         swell=s2[rows])
             parts.append((fil, verts, faces))
         return parts
 
@@ -1295,9 +1311,7 @@ class VaseDesign:
                      f"{max(int(p.walls), 1)} walls of {p.line_width:g} mm (about {self.wall:.1f} mm)")
                     + (", open at the bottom" if p.open_bottom else
                        f", on a {self.zb:g} mm solid bottom ({self.bottom_layers} layers)"),
-            **({"Holes": f"{HOLE_WORDS[p.holes]}, {p.hole_size:g} mm apart with {p.hole_strut:g} mm between; "
-                         f"pointed tops" + (f" ({self.bridge:.1f} mm bridges at their points)" if self.bridge > 0 else "")}
-               if self.pattern_open else {}),
+            **({"Holes": self._hole_words()} if self.pattern_open else {}),
             **({"Face": self._face_words()} if self._face_words() else {}),
             "Steepest overhang": lean,
             "Filament": f"{self.grams:.0f} g, {self.metres:.1f} m",
@@ -1308,6 +1322,18 @@ class VaseDesign:
             for key in ("Widest", "Base", "Opening at the top"):
                 d.pop(key, None)
         return d
+
+    def _hole_words(self) -> str:
+        p = self.p
+        if p.holes == VORONOI:
+            text = (f"Voronoi ovals, {p.hole_size:g} mm apart with at least {p.hole_strut:g} mm between; round tops"
+                    + (f", bridging at most {self.bridge:.1f} mm" if self.bridge > 0 else ""))
+        else:
+            text = (f"{HOLE_WORDS[p.holes]}, {p.hole_size:g} mm apart with {p.hole_strut:g} mm between; pointed tops"
+                    + (f" ({self.bridge:.1f} mm bridges at their points)" if self.bridge > 0 else ""))
+        if p.hole_swell > 0:
+            text += f"; edges rounded, the wall swelling {p.hole_swell:g} mm each side round them"
+        return text
 
     def _face_words(self) -> str:
         p = self.p

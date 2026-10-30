@@ -128,6 +128,7 @@ class VaseParams:
     hole_seed: int = 5
     hole_foot: float = 18.0       # solid wall kept at the foot, above the floor (mm)
     hole_rim: float = 12.0        # ... and at the rim
+    hole_swell: float = 0.0       # the wall swells this much each side round the holes, rounding their edges (mm)
     open_bottom: bool = False     # no floor: open at both ends (a lampshade, a sleeve)
     closed_top: bool = False      # the top closes over in a point no steeper than the overhang limit
     around: float = 360.0         # how far round the wall goes (degrees): less for a mask
@@ -229,7 +230,7 @@ class VaseParams:
                             ("sharp2", 0.0, 1.0), ("rib_sharp", 0.0, 1.0), ("ring_sharp", 0.0, 1.0),
                             ("facet_rough", 0.0, 1.0), ("band_spacing", -1.0, 1.0), ("hole_jitter", 0.0, 1.0),
                             ("hole_size", 3.0, 200.0), ("hole_strut", 0.8, 50.0), ("hole_foot", 0.0, 2000.0),
-                            ("hole_rim", 0.0, 2000.0), ("around", 30.0, 360.0), ("eye_width", 2.0, 400.0),
+                            ("hole_rim", 0.0, 2000.0), ("hole_swell", 0.0, 10.0), ("around", 30.0, 360.0), ("eye_width", 2.0, 400.0),
                             ("eye_height", 2.0, 400.0), ("eye_apart", 0.0, 2000.0), ("eye_tilt", -80.0, 80.0),
                             ("nose_width", 2.0, 400.0), ("nose_length", 2.0, 1000.0), ("nose_depth", 0.0, 100.0),
                             ("mouth_width", 2.0, 1000.0), ("mouth_height", 2.0, 400.0),

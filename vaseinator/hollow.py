@@ -26,6 +26,9 @@ from .params import (ALMOND_EYES, CHIN_MOUTH, DIAMOND, GRILLE_MOUTH, NO_EYES, NO
 
 OUTER, INNER, SIDE, CAP, TIP = 0, 1, 2, 3, 4   # what each face of the pot is: TIP is the short bridge at the
                                                # very top of a hole, where it closes between two grid points
+TALL = 1.3               # Voronoi cells this much taller than a honeycomb's: their oval holes stand upright
+OVAL = 0.97              # a Voronoi hole's oval fills this much of the room its cell leaves it
+TILT = 0.5               # ... and leans this share as far as its cell does
 
 
 # ================================================================= the holes
@@ -48,7 +51,7 @@ def _lattice(kind, size, strut, z_lo, z_hi, n_round):
     elif kind == SLOTS:                              # a slot, its pointed top, and the wall above it
         pitch = 2.0 * size + 1.5 * (size - strut) + strut
     else:
-        pitch = size * math.sqrt(3.0) / 2.0
+        pitch = size * math.sqrt(3.0) / 2.0 * (TALL if kind == VORONOI else 1.0)
     span = z_hi - z_lo
     first = 1 if kind != VORONOI else 0
     # each hole needs room for its pointed top above it; Voronoi cells stop at their solid neighbours
@@ -63,24 +66,33 @@ def _lattice(kind, size, strut, z_lo, z_hi, n_round):
     return pitch, zs, n_round
 
 
-def hole_field(kind, t, z, L, size, strut, jitter, seed, z_lo, z_hi):
-    """How far inside a hole each grid point is, in mm (below nought in the wall).
+def hole_field(kind, t, z, L, size, strut, jitter, seed, z_lo, z_hi, room=None, slope=0.85, bridge=10.0):
+    """How far inside a hole each grid point is, in mm (below nought in the wall), and how wide a hole's top may
+    be bridged at each point (mm: Voronoi's ovals; None for the other patterns, which come to points).
 
     t (K, N): the share of the way round of each grid point, 0..1 (turning with the shape when it twists);
-    z (K,): the rows' heights; L (K,): their lengths round. Holes keep between z_lo and z_hi.
+    z (K,): the rows' heights; L (K,): their lengths round. Holes keep between z_lo and z_hi, and inside room
+    (K, N) where it is given: above nought where a hole may go (clear of a face's holes, say). slope: how fast
+    a hole's sides may close in going up (mm each side for each mm up); bridge: the widest top a Voronoi oval
+    may close over.
+
+    A Voronoi hole is an oval in its cell - as long, as wide and as tilted as the cell itself - kept a strut's
+    width in from the cell's sides: the wall between the holes is thin where two cells meet and thick where
+    three do, with no corners anywhere.
     """
     K, N = t.shape
     f = np.full((K, N), -1.0)
+    spans = np.zeros((K, N)) if kind == VORONOI else None
     if kind == NO_HOLES or z_hi - z_lo < 0.5 * size:
-        return f
+        return f, spans
     band = (z >= z_lo - size) & (z <= z_hi + size)
     rows_in = np.nonzero(band)[0]
     if not len(rows_in):
-        return f
+        return f, spans
     n_round = max(int(round(float(np.mean(L[band])) / size)), 3)
     pitch, zs, n_round = _lattice(kind, size, strut, z_lo, z_hi, n_round)
     if not len(zs):
-        return f
+        return f, spans
     rng = np.random.default_rng(int(seed))
     solid_rows = kind == VORONOI
     if solid_rows:                                   # a row of solid cells either side
@@ -101,6 +113,8 @@ def hole_field(kind, t, z, L, size, strut, jitter, seed, z_lo, z_hi):
     r0 = np.broadcast_to(r0, tt.shape)
     best = np.full(tt.shape + (2,), np.inf)
     best_hole = np.zeros(tt.shape, dtype=bool)
+    best_dx, best_dz = np.zeros(tt.shape), np.zeros(tt.shape)       # from the nearest centre to the point
+    best_cell = np.zeros(tt.shape, dtype=np.intp)
     reach_r = 2 if kind == VORONOI else 1
     for dr in range(-reach_r, reach_r + 1):
         r = r0 + dr
@@ -128,9 +142,32 @@ def hole_field(kind, t, z, L, size, strut, jitter, seed, z_lo, z_hi):
             best[..., 1] = np.where(closer, best[..., 0], np.minimum(best[..., 1], d))
             best_hole = np.where(closer, hole_seed[rc, c], best_hole)
             best[..., 0] = np.where(closer, d, best[..., 0])
+            if kind == VORONOI:
+                best_dx = np.where(closer, dx, best_dx)
+                best_dz = np.where(closer, dzz, best_dz)
+                best_cell = np.where(closer, rc * n_round + c, best_cell)
     if kind == VORONOI:
-        edge = 0.5 * (best[..., 1] - best[..., 0])          # how far in from the cell's edge
-        fr = np.where(best_hole, edge - 0.5 * strut, -edge - 0.5 * strut)
+        # how far in from the cell's sides: each is the line halfway to a neighbouring centre
+        inside = np.full(tt.shape, np.inf)
+        for dr in range(-reach_r, reach_r + 1):
+            r = r0 + dr
+            ok = (r >= 0) & (r < R)
+            rc = np.clip(r, 0, R - 1)
+            c0 = np.floor(tt * n_round - stagger * (rc % 2)).astype(int)
+            for dc in range(-2, 3):
+                c = np.mod(c0 + dc, n_round)
+                dx = (np.mod(tt - tc[rc, c] + 0.5, 1.0) - 0.5) * LL
+                dzz = zz - zc[rc, c]
+                gap = np.hypot(best_dx - dx, best_dz - dzz)          # from this centre to the nearest
+                side = (dx * dx + dzz * dzz - best_dx * best_dx - best_dz * best_dz) / (2.0 * np.maximum(gap, 1e-9))
+                inside = np.where(ok & (gap > 1e-6), np.minimum(inside, side), inside)
+        # the room for a hole: the cell, a strut's width in from its sides, clear of the plain foot and rim
+        cell = np.minimum(inside - 0.5 * strut, np.minimum(zz - z_lo, z_hi - zz))
+        if room is not None:
+            cell = np.minimum(cell, room[rows_in])
+        ovals, span = _ovals(cell, best_cell, best_dx, best_dz, slope, bridge)
+        fr = np.where(best_hole, np.minimum(ovals, cell), -inside - 0.5 * strut)
+        spans[rows_in] = np.where(best_hole, span, 0.0)
     elif kind == ROUND:
         sx = LL / n_round
         near = np.minimum(sx, np.hypot(0.5 * sx, pitch))     # the nearest neighbour's distance, this row
@@ -138,10 +175,81 @@ def hole_field(kind, t, z, L, size, strut, jitter, seed, z_lo, z_hi):
     else:
         fr = -best[..., 0]
     fr = np.where(np.isfinite(fr), fr, -1.0)
-    # never into the foot or the rim
+    # never into the foot or the rim, nor out of the room given
     fr = np.minimum(fr, np.minimum(zz - z_lo, z_hi - zz))
+    if room is not None:
+        fr = np.minimum(fr, room[rows_in])
     f[rows_in] = fr
-    return f
+    return f, spans
+
+
+def _ovals(cell, ids, dx, dz, slope, bridge):
+    """Each Voronoi cell's oval, as a hole field (mm in from its edge), and the span its round top is bridged
+    at, at each of its points.
+
+    The oval is centred on the middle of the room the cell leaves for a hole, as long, as wide and as tilted as
+    that room (the oval with the same spread of points), and as big as fits wholly inside it - so no oval is
+    ever clipped flat by its cell, and the wall left round it is thin where it nears a side and thick in the
+    corners. Its top closes over a bridge where its sides grow flatter than ``slope``; an oval whose bridge
+    would be wider than ``bridge`` is made smaller. dx, dz: each point from its cell's centre (mm); ids: its
+    cell; cell: how far inside the room it is."""
+    use = cell > 0
+    n = int(ids.max()) + 1
+    out = np.full(cell.shape, -1.0)
+    if not use.any():
+        return out, np.zeros(cell.shape)
+    w = use.astype(float)
+    count = np.maximum(np.bincount(ids.ravel(), w.ravel(), n), 1.0)
+    mx = np.bincount(ids.ravel(), (w * dx).ravel(), n) / count
+    mz = np.bincount(ids.ravel(), (w * dz).ravel(), n) / count
+    u, v = dx - mx[ids], dz - mz[ids]
+    sxx = np.bincount(ids.ravel(), (w * u * u).ravel(), n) / count
+    szz = np.bincount(ids.ravel(), (w * v * v).ravel(), n) / count
+    sxz = np.bincount(ids.ravel(), (w * u * v).ravel(), n) / count
+    # its axes: an even oval's points spread a quarter of its half-length squared along each
+    spread = np.sqrt(0.25 * (sxx - szz) ** 2 + sxz ** 2)
+    a = 2.0 * np.sqrt(np.maximum(0.5 * (sxx + szz) + spread, 1e-6))
+    b = 2.0 * np.sqrt(np.maximum(0.5 * (sxx + szz) - spread, 1e-6))
+    turn = 0.5 * np.arctan2(2.0 * sxz, sxx - szz)
+    # leaning less than their cells: an upright oval's top needs the shortest bridge, so it can be bigger
+    upright = np.where(sxx > szz, 0.0, 0.5 * math.pi)
+    turn = upright + TILT * (np.mod(turn - upright + 0.5 * math.pi, math.pi) - 0.5 * math.pi)
+    c, s = np.cos(turn)[ids], np.sin(turn)[ids]
+    along, across = u * c + v * s, -u * s + v * c
+    reach = np.hypot(along / a[ids], across / b[ids])         # 1 on that oval
+    # as big as fits: shrunk to just inside the nearest point of the cell that has no room
+    fits = np.full(n, np.inf)
+    np.minimum.at(fits, ids[~use], reach[~use])
+    scale = np.minimum(OVAL * np.where(np.isfinite(fits), fits, 1.0), 1.0)
+    # the bridge its top needs: its width where, coming down from the top, its sides first lean no flatter
+    # than the slope allows; bigger than allowed, the oval is made smaller to suit
+    need = _top_span(a * scale, b * scale, turn, slope)
+    smaller = np.minimum(bridge / np.maximum(need, 1e-9), 1.0)
+    scale = scale * smaller
+    span = need * smaller + 0.3
+    return (scale[ids] - reach) * np.minimum(a, b)[ids], span[ids]
+
+
+def _top_span(a, b, turn, slope, samples=240):
+    """For ovals with half-lengths a and b, the a-axis turned ``turn`` from the row: how wide each is (along the
+    row) where, coming down from its top, both its sides first close in by no more than ``slope`` for each mm
+    up - the bridge its round top needs. A tilted oval's two sides lean differently: each is looked at."""
+    c, s = np.cos(turn), np.sin(turn)
+    # x along the row, y up: A x^2 + B x y + C y^2 = 1
+    A = (c / a) ** 2 + (s / b) ** 2
+    B = 2.0 * c * s * (1.0 / a ** 2 - 1.0 / b ** 2)
+    C = (s / a) ** 2 + (c / b) ** 2
+    top = np.sqrt(4.0 * A / np.maximum(4.0 * A * C - B * B, 1e-12))
+    low = -top
+    y = top[:, None] + (low - top)[:, None] * np.linspace(0.0, 1.0, samples)[None, :]   # from the top down
+    root = np.sqrt(np.maximum((B[:, None] * y) ** 2 - 4.0 * A[:, None] * (C[:, None] * y * y - 1.0), 0.0))
+    left = (-B[:, None] * y - root) / (2.0 * A[:, None])
+    right = (-B[:, None] * y + root) / (2.0 * A[:, None])
+    dy = np.maximum(2.0 * top[:, None] / (samples - 1), 1e-12)
+    # going up, how fast each side moves in over the hole
+    gentle = ((left[:, :-1] - left[:, 1:]) / dy <= slope) & ((right[:, 1:] - right[:, :-1]) / dy <= slope)
+    first = np.where(gentle.any(axis=1), np.argmax(gentle, axis=1), samples - 2)
+    return (right - left)[np.arange(len(a)), first]
 
 
 # ================================================================ the face
@@ -230,13 +338,16 @@ def nose(s, z, p, slope: float):
     return depth * across
 
 
-def pointed_tops(f, z, O, slope):
+def pointed_tops(f, z, O, slope, bridge=None):
     """Every hole closes at its top no faster than ``slope`` (mm in, each side, for each mm up).
 
     Going up row by row, the wall over a hole may only reach in that far past the wall below it - measured
     from the point really below, so on a twisting vase, whose grid leans round with the shape, the holes'
     sides lean no further than their tops. Where a hole would close faster it is kept open, so its top comes
     to a point instead of a flat roof that would need support.
+
+    bridge (K, N), mm: where a hole is already narrower than this it may close at once - the printer bridges
+    the rest of its rounded top - so an oval keeps its round top.
     """
     f = f.copy()
     K, N = f.shape
@@ -264,20 +375,60 @@ def pointed_tops(f, z, O, slope):
             row = np.where(hole, edge, -edge)
             if below is not None:                 # just above a closing hole, the wall goes on from its edges
                 row = np.where(hole, row, np.maximum(row, below))
+            if bridge is not None:                # narrow enough to bridge: free to close above
+                narrow = hole & (at[k] - at[k - 1] < bridge[j])
         elif not hole.any() and below is not None:
             row = below                           # a hole closes under this row: its top rises from its edges
         f[j] = row
         if j + 1 < K:
             step = slope * (z[j + 1] - z[j])
-            if (row > -4.0 * step).any():
+            carry = row
+            if bridge is not None and hole.any() and not hole.all():
+                carry = np.where(narrow, -4.0 * step, row)
+            if (carry > -4.0 * step).any():
                 # this row, read at the points under the next row's, narrowed by a step
                 ext = np.concatenate([along[j] - L[j], along[j], along[j] + L[j]])
-                val = np.concatenate([row, row, row])
+                val = np.concatenate([carry, carry, carry])
                 q = np.mod(along[j] + slide[j], L[j])
                 below = np.interp(q, ext, val) - step
             else:
                 below = None
     return f
+
+
+# ================================================================== rounded edges
+def hole_distance(f, z, cap):
+    """How far each grid point is from the nearest hole (mm), up to cap - straight-line distance. Every row a
+    hole crosses holds, where it is wall, how far along the row the nearest hole's edge is (see
+    ``pointed_tops``); from those, across the rows within reach."""
+    hole = f > 0
+    row = np.where(hole.any(axis=1)[:, None], np.where(hole, 0.0, -f), cap) ** 2
+    best = row.copy()
+    for o in range(1, len(z)):                               # rows o apart, while any is near enough to matter
+        rise = (z[o:] - z[:-o])[:, None] ** 2
+        if float(rise.min()) >= cap * cap:
+            break
+        np.minimum(best[o:], row[:-o] + rise, out=best[o:])
+        np.minimum(best[:-o], row[o:] + rise, out=best[:-o])
+    return np.minimum(np.sqrt(best), cap)
+
+
+def swell(f, z, amount, far, slope):
+    """How far the wall swells out - and in, the same - round the holes (mm, each side): from nothing at a
+    hole's edge it curves up (a quarter wave) to ``amount``, so each edge is rounded from outside to in, and
+    fades away again past ``far`` mm from the nearest hole. Going up, the swell may only grow by ``slope`` mm
+    for each mm - where the wall over a hole would bulge out faster than it may lean, it bulges less."""
+    hole = f > 0
+    radius = 1.6 * amount + 0.6                              # the rounding of each edge
+    fade = 3.0 * radius + 4.0
+    d = hole_distance(f, z, far + fade + 1.0)
+    rise = np.sin(0.5 * math.pi * np.clip(d / radius, 0.0, 1.0))
+    t = np.clip((d - far) / fade, 0.0, 1.0)
+    b = amount * rise * (1.0 - t * t * (3.0 - 2.0 * t))
+    b[hole] = 0.0
+    for j in range(1, len(z)):                               # printable: it grows upward no faster than slope
+        np.minimum(b[j], b[j - 1] + slope * (z[j] - z[j - 1]), out=b[j])
+    return b
 
 
 # ================================================================== the pot
@@ -300,13 +451,15 @@ def insert_rows(z, arrays, zs):
     return z, arrays, index
 
 
-def pot(z, O, I, f, floor_row=None, roof_row=None):
+def pot(z, O, I, f, floor_row=None, roof_row=None, swell=None):
     """The hollow pot from rows at heights z (K,): the outer face O and inner face I (K, N, 2), and the hole
     field f (K, N), below nought in the wall.
 
     floor_row: the row at the top of a solid floor - the outer face alone below it, over a flat bottom - or
     None for a wall open at the bottom. roof_row: the row under a closed top's solid point - the inner face
     ends there in a small ceiling, and the outer face alone goes on up - or None for an open rim.
+    swell (K, N): how far the wall swells out and in at each point, mm each side (see ``swell``); the holes'
+    edges stay where the faces were, so each swell curves down to meet its hole's side.
     Returns (verts (V, 3), faces (F, 3), kind of each face).
     """
     K, N = f.shape
@@ -321,8 +474,12 @@ def pot(z, O, I, f, floor_row=None, roof_row=None):
         f[kr:] = np.minimum(f[kr:], -1e-9)                  # ... and above the ceiling
     hole = f > 0
     zz = np.broadcast_to(z[:, None, None], (K, N, 1))
-    pts = [np.concatenate([O, zz], axis=2).reshape(-1, 3),
-           np.concatenate([I, zz], axis=2)[kb:kr + 1].reshape(-1, 3)]
+    Ow, Iw = O, I                                       # the faces' own points, swollen
+    if swell is not None:
+        Ow = O + sections.normals(O) * swell[..., None]
+        Iw = I - sections.normals(I) * swell[..., None]
+    pts = [np.concatenate([Ow, zz], axis=2).reshape(-1, 3),
+           np.concatenate([Iw, zz], axis=2)[kb:kr + 1].reshape(-1, 3)]
     vo = np.arange(K * N).reshape(K, N)
     vi = np.full((K, N), -1, dtype=np.int64)
     vi[kb:kr + 1] = K * N + np.arange((kr + 1 - kb) * N).reshape(kr + 1 - kb, N)
@@ -428,12 +585,12 @@ def pot(z, O, I, f, floor_row=None, roof_row=None):
     if roof_row is None:
         caps = [ends(K - 1, True)]
     else:                                                   # the closed top's point, and the ceiling under it
-        caps = [vo[K - 1][sections.triangulate(O[K - 1])], vi[kr][sections.triangulate(I[kr])][:, ::-1]]
+        caps = [vo[K - 1][sections.triangulate(Ow[K - 1])], vi[kr][sections.triangulate(Iw[kr])][:, ::-1]]
     if floor_row is None:
         caps.append(ends(0, False))
     else:
-        caps.append(vo[0][sections.triangulate(O[0])][:, ::-1])
-        caps.append(vi[kb][sections.triangulate(I[kb])])
+        caps.append(vo[0][sections.triangulate(Ow[0])][:, ::-1])
+        caps.append(vi[kb][sections.triangulate(Iw[kb])])
     caps = np.concatenate(caps)
     faces.append(caps)
     kinds.append(np.full(len(caps), CAP))

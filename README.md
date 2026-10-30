@@ -63,6 +63,10 @@ ready to slice.
   **diamonds** or **slots**, as big and as far apart as you like, kept clear of a plain foot and rim, and
   turning with the twist. Every hole's top comes to a **point** that closes no faster than the overhang
   limit, so it prints **without support** – with at most a short bridge, a few millimetres, at its very tip.
+  Voronoi holes are **ovals** instead, each as long, as wide and as tilted as its cell and as big as fits
+  inside it, so the wall between them is thin where two holes come close and thick in the corners; their
+  round tops close over a bridge of at most 14 mm. **Rounded edges** swells the wall round every hole, so
+  it curves smoothly from the outside, through the hole, to the inside.
   And **open at the bottom** too, for lampshades, sleeves and holders.
 * **Closed at the top**: the top comes in to a point, leaning no more than the overhang limit, over a
   ceiling a few millimetres across that the printer bridges – a helmet, a dome, a bell, a sealed egg. The
@@ -156,11 +160,14 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Spin** | How far the shape turns from bottom to top, and how the turning is spread up the vase – including back and forth, and your own curve. **Both ways** twists it both ways at once. |
 | **Surface** | Ribs, rings, bumps and organic lumps; whether they turn with the twist; how strong they are up the vase; and a plain foot and rim. |
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |
-| **Holes and openings** | The **holes** – none, Voronoi, round, diamonds or slots – their size, the wall between them, how irregular the Voronoi cells are and their pattern, and how much plain wall to keep at the foot and the rim; **open at the bottom**; **closed at the top**; and how far the wall **goes round**. Holes, an open bottom and a wall part way round are printed normally. |
+| **Holes and openings** | The **holes** – none, Voronoi, round, diamonds or slots – their size, the wall between them, how irregular the Voronoi cells are and their pattern, how much plain wall to keep at the foot and the rim, and **rounded edges** round them; **open at the bottom**; **closed at the top**; and how far the wall **goes round**. Holes, an open bottom and a wall part way round are printed normally. |
 | **Masks and helmets** | **For a head** and its **head size**; the **eyes** – almond or round, their size, how far apart, how high and tilted; a raised **nose** – its width, length, how far it sticks out and how high its tip is; the **mouth** – open, a grille of slots (how many, and how much they smile) or open down to the chin; and **strap slots**. Sizes and heights are in millimetres along the face, from the bottom. |
 | **Your own function** | A formula added to the radius. **Examples** has eight to try; **Help…** lists the variables and functions. |
 | **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go up the vase: one colour, bands, stripes or a gradient spool. How it looks: matte, silk, glossy, translucent. |
 | **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail. |
+
+The mouse wheel scrolls the panel: a drop-down list only changes with it once it is dropped down, a number
+box only over its arrows, and a slider never.
 
 **3D view:** left-drag turns it, right-drag or shift-drag moves it, the wheel zooms, double-click or F goes
 back to the chosen view. **S** spins it, **F5** watches it print, **Ctrl+1–4** switch views, **Ctrl+R**
@@ -280,13 +287,22 @@ and a flat top, so the solid is closed, watertight and one piece, with no boolea
 A normal print is exported as the **hollow pot**: the outer face, an inner face moved in square to it by
 the wall's thickness, a flat floor (or an open bottom) and the rim, built row by row on the same grid as
 the surface. A **hole pattern** is a number at each grid point – how far inside a hole it is, in mm,
-below nought in the wall – from the nearest hole centres (two of them, for Voronoi's cell edges). The
+below nought in the wall – from the nearest hole centres. A Voronoi cell's sides are the lines halfway to
+its neighbouring centres, and it leaves room for a hole half a strut in from them. Its hole is the oval
+with the same spread as that room – as long, as wide and as tilted, the tilt damped a little, the cells a
+little taller than a honeycomb's so most ovals stand upright – made as big as fits wholly inside it. Its
+round top closes over a bridge where its sides grow flatter than the overhang limit allows; an oval whose
+bridge would be too wide is made smaller. The
 wall is cut where that number is nought (marching squares), the same on both faces, with a side face
 joining them round each hole; each cut is one vertex shared by every face beside it, so the pot stays
 closed. Going up row by row, the wall over a hole may only reach in so far past the wall below it –
 measured from the point really below, so on a twisting vase the holes' sides lean no more than their
 tops – so every hole's top closes to a point at no more than the overhang limit. Where it finally closes
-between two grid points there is a short bridge, which the app measures and tells you about. Colour
+between two grid points there is a short bridge (a Voronoi oval's is the width found for it), which the
+app measures and tells you about. **Rounded edges** moves the outer and inner faces apart round each
+hole, by a smooth curve of the distance from its edge that fades away a little further off and grows no
+faster going up than the overhang limit allows; the cut edge itself stays put, so the wall curves round
+through the hole. Colour
 bands of the pot are cut on rows put in at the band heights, each a closed part.
 
 A **face** is more of the same: the eyes, mouth and strap slots are hole fields too, placed in
@@ -329,7 +345,9 @@ vase holds, is refused if it crosses itself, can be traced from a picture, and r
 narrowed to fit, checked, filled and built closed in a few seconds; that a normal print is the hollow pot,
 with the right volume, its colour bands parts that make it up exactly; and that every pattern of holes,
 on round and drawn shapes, twisting or not, makes a closed pot whose holes' sides lean no more than the
-limit but for short bridges at their points, that holds nothing, with an open bottom too; and that a
+limit but for short bridges at their points, that holds nothing, with an open bottom too – and Voronoi
+ovals that leave every wall between them as thick as set, and rounded edges that swell as set and keep
+within the limit; and that a
 closed top comes to a point over a small ceiling (drawn and banded too), a wall part way round stops where
 it should, a face's holes and nose are where they should be and print without support, and a design sized
 for a head fits it – the masks and helmet a head 57 cm round; and that the web version's Python, put

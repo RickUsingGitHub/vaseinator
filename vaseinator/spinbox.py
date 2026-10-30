@@ -1,4 +1,4 @@
-"""Number boxes that behave the way people expect.
+"""Number boxes, drop-down lists and sliders that behave the way people expect.
 
 Qt's own spin boxes have three habits that catch people out:
 
@@ -14,12 +14,16 @@ These classes fix all three: clicking picks the number out so typing replaces
 it and the caret never lands in the suffix, an out-of-range number can be typed
 in full and is brought into range when you press Enter or leave the box, and
 the wheel only works over the up and down arrows.
+
+Drop-down lists and sliders have the same habit with the wheel. Here a list's
+choice only changes with the wheel once it has been dropped down, and a slider
+is moved by dragging or the keys: over either, the wheel scrolls the page.
 """
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QValidator
-from PySide6.QtWidgets import QDoubleSpinBox, QSpinBox, QStyle, QStyleOptionSpinBox
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QSlider, QSpinBox, QStyle, QStyleOptionSpinBox
 
 
 class _Behaviour:
@@ -125,3 +129,17 @@ class DoubleSpinBox(_Behaviour, QDoubleSpinBox):
     @staticmethod
     def _parse(body: str) -> float:
         return float(body.replace(",", "."))
+
+
+class ComboBox(QComboBox):
+    """A drop-down list the wheel only scrolls when it is dropped down (the list scrolls itself then)."""
+
+    def wheelEvent(self, ev):
+        ev.ignore()              # closed: let whatever is underneath scroll the page
+
+
+class Slider(QSlider):
+    """A slider moved by dragging or the keys, never by a wheel that is scrolling the page."""
+
+    def wheelEvent(self, ev):
+        ev.ignore()

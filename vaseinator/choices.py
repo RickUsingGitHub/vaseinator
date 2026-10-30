@@ -23,7 +23,7 @@ SHAPES_FROM_ABOVE = [
 
 # the patterns: (name, the settings it sets); each starts from no pattern at all
 NO_PATTERN = dict(rib_count=0, rib_lean=0.0, rib_cross=False, ring_count=0, bump_around=0, organic_depth=0.0,
-                  facets=False, holes=NO_HOLES)
+                  facets=False, holes=NO_HOLES, hole_swell=0.0)
 PATTERNS = [
     ("Smooth", {}),
     ("Ribs", dict(rib_count=24, rib_depth=1.2, rib_sharp=0.3)),
@@ -33,7 +33,8 @@ PATTERNS = [
     ("Diamonds", dict(rib_count=36, rib_depth=0.9, rib_sharp=0.6, rib_lean=360.0, rib_cross=True)),
     ("Lumpy", dict(organic_depth=2.0, organic_scale=22.0)),
     ("Gem", dict(facets=True, facets_around=14, facets_up=10, facet_rough=0.2)),
-    ("Voronoi holes", dict(holes=VORONOI, hole_size=14.0, hole_strut=3.0, hole_jitter=0.7, vase_mode=FAKE_VASE)),
+    ("Voronoi holes", dict(holes=VORONOI, hole_size=14.0, hole_strut=3.0, hole_jitter=0.7, hole_swell=1.5,
+                           vase_mode=FAKE_VASE)),
     ("Round holes", dict(holes=ROUND, hole_size=12.0, hole_strut=3.0, vase_mode=FAKE_VASE)),
 ]
 

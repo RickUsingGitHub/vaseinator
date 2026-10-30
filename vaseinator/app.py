@@ -31,7 +31,7 @@ from .settings import (COLOUR_STYLES, REAL_COLOUR_STYLES, REMEMBERED, SPEC, TEXT
                        outline_from_shape, wanted)
 from .presets import GALLERY, gallery_design, outline, palette, plain_design, slug, surprise
 from .simple_panel import GalleryDialog, SimplePanel, asset, profile_icon
-from .spinbox import DoubleSpinBox, SpinBox
+from .spinbox import ComboBox, DoubleSpinBox, Slider, SpinBox
 from .shapes import PALETTES, SHAPE_LABELS
 from .stl import write_stl
 from .threemf import write_3mf
@@ -140,7 +140,7 @@ class FunctionHelp(QDialog):
         box.addWidget(text)
         row = QHBoxLayout()
         row.addWidget(QLabel("Try an example:"))
-        pick = QComboBox()
+        pick = ComboBox()
         for name, formula in EXAMPLES:
             pick.addItem(name, formula)
         row.addWidget(pick, 1)
@@ -556,7 +556,7 @@ class MainWindow(QMainWindow):
             w.setChecked(val)
             w.toggled.connect(lambda v, k=key: self._on_param(k, bool(v)))
         elif kind == "choice":
-            w = QComboBox()
+            w = ComboBox()
             for value, label in lo:
                 w.addItem(label, value)
             w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
@@ -572,7 +572,7 @@ class MainWindow(QMainWindow):
             vl = QVBoxLayout(box)
             vl.setContentsMargins(0, 0, 0, 0)
             vl.setSpacing(1)
-            s = QSlider(Qt.Horizontal)
+            s = Slider(Qt.Horizontal)
             s.setRange(int(round(lo * 100)), int(round(hi * 100)))
             s.setPageStep(10)
             s.setTickInterval(100)
