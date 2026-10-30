@@ -17,4 +17,8 @@ dist/
 Thumbs.db
 .DS_Store
 .vscode/
+.claude/
 .idea/
+
+# The web version, put together by tools/build_web.py
+site/

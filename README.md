@@ -8,6 +8,10 @@ allow.
 **Simple** mode is a handful of choices made from pictures – easy enough for anyone – and one big
 **Save for printing** button; **Advanced** has every setting.
 
+**Try it in your browser – nothing to install:** <https://rickusinggithub.github.io/vaseinator/>. The web
+version is Simple mode, built by the app's own geometry running right in the browser; the Windows app has
+every setting.
+
 Shape the outline, pick a cross-section and what it turns into on the way up, **spin** it, cover it in
 ribs, rings, bumps, organic lumps or **your own formula**, and colour it in bands, stripes or a
 gradient spool. Cut **holes** through it, open it at the bottom, close it over at the top – or give it a
@@ -96,6 +100,10 @@ ready to slice.
 
 ## Download and run
 
+* **In your browser:** <https://rickusinggithub.github.io/vaseinator/> – choose a design, size it (or fit a
+  mask or helmet to a head), change its shape, twist, pattern and colour, and save it for printing as a 3MF
+  or STL. Designs save as `.vase` files that the Windows app opens too, and back. The first visit takes a
+  little while to load; after that it starts quickly.
 * **Windows app (no Python needed):** download `Vaseinator.exe` from the
   [Releases](../../releases) page and run it. It is a single file: nothing to unzip or install.
   It isn't code-signed, so Windows SmartScreen may ask once; choose **More info → Run anyway**.
@@ -237,6 +245,7 @@ same kind of file as Lenticular Sign Maker and Maze Tube Designer. **Open in sli
 | `main.py` | Starts the app. |
 | `vaseinator/app.py` | The main window: the Advanced settings, views, animations, gallery, undo, exports. |
 | `vaseinator/simple_panel.py` | Simple mode: the picture choices, and the gallery of pictures. |
+| `vaseinator/choices.py` | What each of Simple mode's pictures sets – shared with the web version. |
 | `vaseinator/slicers.py` | Finding the slicers installed, to open a vase in one. |
 | `vaseinator/geometry.py` | The vase itself: the surface, softening, the solid and the shown shell, and the sums. |
 | `vaseinator/shapes.py` | Outlines, cross-sections, curves up the height, textures, palettes. |
@@ -252,7 +261,9 @@ same kind of file as Lenticular Sign Maker and Maze Tube Designer. **Open in sli
 | `vaseinator/stl.py`, `threemf.py` | The exports. |
 | `tests/test_vase.py`, `tests/test_app.py` | Self-tests of the geometry and the window. |
 | `assets/gallery/` | A picture of each ready-made vase, drawn by `tools/make_thumbnails.py`. |
-| `tools/` | The icon, the gallery pictures, the example files, and the STL checker. |
+| `tools/` | The icon, the gallery pictures, the example files, the STL checker, and `build_web.py`. |
+| `web/` | The web version: the page (`index.html`, `app.js`, `style.css`), the worker that runs the Python (`worker.js`) and the Python it calls (`bridge.py`). |
+| `.github/workflows/pages.yml` | Publishes the web version on GitHub Pages at every push to `main`. |
 
 ### How the geometry works
 
@@ -317,13 +328,35 @@ on round and drawn shapes, twisting or not, makes a closed pot whose holes' side
 limit but for short bridges at their points, that holds nothing, with an open bottom too; and that a
 closed top comes to a point over a small ceiling (drawn and banded too), a wall part way round stops where
 it should, a face's holes and nose are where they should be and print without support, and a design sized
-for a head fits it – the masks and helmet a head 57 cm round.
+for a head fits it – the masks and helmet a head 57 cm round; and that the web version's Python, put
+together as the site has it, runs with no Qt at all – it starts, builds a mask, fits it to a head and makes
+the slicer's file.
 `.venv\Scripts\python -m tests.test_app` drives the window itself: edits, curves, undo, the gallery,
 Surprise me, every view, the print animation, saving and exporting, and drawing (with the mouse, close
 up and in a full window, zoomed with the wheel), repeating up to a hundred times and tracing a
 cross-section, and Simple mode: each kind of picture, the gallery of pictures, Save for printing with its
 steps and Open in slicer, bigger text and the light theme, and a mask sized by the head it fits, its face's
 settings and Undo. Test windows open on the second screen, if there is one.
+
+### The web version
+
+The page runs the **same Python** as the desktop app – the parts of `vaseinator` that need no Qt: the
+geometry, the designs and the exports – in the browser with [Pyodide](https://pyodide.org) and numpy, in a
+web worker so the page stays smooth while a vase is built. `web/bridge.py` is the little bit between them:
+it builds a vase and hands back its mesh as raw arrays, which the page draws with
+[three.js](https://threejs.org), and makes the 3MF, STL and `.vase` files the page saves. A quick draft
+shows at once; the full detail follows a moment later. Nothing is sent anywhere: the vase is built on your
+own computer.
+
+`tools\build_web.py` puts the site together in `site\`: the page, the Python and the gallery pictures. To
+try it locally:
+
+```
+.venv\Scripts\python tools\build_web.py
+.venv\Scripts\python -m http.server 8000 -d site
+```
+
+and open <http://localhost:8000>. GitHub Pages builds and publishes it the same way on every push to `main`.
 
 ## License
 

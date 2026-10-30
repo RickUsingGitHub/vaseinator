@@ -314,6 +314,34 @@ def test_masks_and_helmets():
         assert abs(d.head_fit - 570.0) < 3.0 and d.p.worn and d.H < 220.0, (title, d.head_fit, d.H)
 
 
+def test_the_web_version():
+    """The web page's Python - the bridge and the package's modules that need no Qt, as tools/build_web.py puts
+    them together - runs without Qt: it starts, builds a mask, fits it to a head, and makes the slicer's file."""
+    import subprocess
+    out = tempfile.mkdtemp()
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "build_web.py"), out], check=True, capture_output=True)
+    for name in ("index.html", "app.js", "worker.js", "style.css", "gallery/theatre_mask.png", "py/files.json"):
+        assert os.path.exists(os.path.join(out, name)), name
+    code = r"""
+import json, sys
+sys.modules["PySide6"] = None                    # as in the browser: no Qt at all
+sys.path.insert(0, sys.argv[1])
+import bridge
+s = json.loads(bridge.start())
+keep = json.dumps(s["defaults"])
+mask = bridge.design_of("Theatre Mask", keep)
+meta, pos, tri, col = bridge.build(mask, True)
+m = json.loads(meta)
+assert not m["errors"] and m["head"] == 57.0 and len(pos) == len(col) and len(tri) % 12 == 0, m["errors"]
+assert json.loads(bridge.fit(mask, 520.0))["eye_up"] < json.loads(mask)["eye_up"]
+assert bridge.export_3mf(bridge.design_of("Plain cylinder", keep))[:2] == b"PK"
+assert json.loads(bridge.open_vase(bridge.save_vase(mask)))["name"] == "theatre_mask"
+print("ok", len(s["gallery"]))
+"""
+    r = subprocess.run([sys.executable, "-I", "-c", code, os.path.join(out, "py")], capture_output=True, text=True)
+    assert r.returncode == 0 and r.stdout.startswith(f"ok {len(GALLERY)}"), r.stderr[-2000:]
+
+
 def test_low_poly_facets_are_flat():
     p = VaseParams(facets=True, facets_around=10, facets_up=6, facet_rough=0.4)
     d = VaseDesign(p)
