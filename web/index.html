@@ -19,82 +19,152 @@
       <h1>Vaseinator</h1>
       <p>Vases, lampshades, masks and helmets that print without supports</p>
     </div>
+    <div id="menubar" class="menubar" role="menubar">
+      <details class="menu"><summary>File</summary><div class="items" role="menu">
+        <button data-do="new">New</button>
+        <button data-do="plain">New plain cylinder</button>
+        <button data-do="open">Open design…<kbd>Ctrl+O</kbd></button>
+        <button data-do="savevase">Save design<kbd>Ctrl+S</kbd></button>
+        <hr>
+        <button data-do="print">Save for printing…</button>
+        <button data-do="stl">Export STL</button>
+        <button data-do="3mf">Export 3MF</button>
+        <button data-do="picture">Save picture</button>
+      </div></details>
+      <details class="menu"><summary>Edit</summary><div class="items" role="menu">
+        <button data-do="undo">Undo<kbd>Ctrl+Z</kbd></button>
+        <button data-do="redo">Redo<kbd>Ctrl+Y</kbd></button>
+        <hr>
+        <button data-do="surprise">Surprise me</button>
+        <hr>
+        <button data-do="plan">Copy colour changes</button>
+      </div></details>
+      <details class="menu"><summary>Designs</summary><div class="items" role="menu" id="designsmenu">
+        <button data-do="gallery">Choose a design…<kbd>Ctrl+G</kbd></button>
+        <button data-do="plain">Plain cylinder</button>
+        <hr>
+      </div></details>
+      <details class="menu"><summary>View</summary><div class="items" role="menu">
+        <button data-do="view0">Vase</button>
+        <button data-do="view1">Section</button>
+        <button data-do="view2">Overhangs</button>
+        <button data-do="view3">Print layout</button>
+        <hr>
+        <button data-do="spin">Spin<kbd>S</kbd></button>
+        <button data-do="printing">Watch it print</button>
+        <button data-do="reset">Reset view</button>
+        <hr>
+        <button data-do="bigger">Bigger text</button>
+        <button data-do="theme">Light or dark</button>
+      </div></details>
+      <details class="menu"><summary>Help</summary><div class="items" role="menu">
+        <button data-do="help-printing">Printing it watertight</button>
+        <button data-do="help-function">Your own function</button>
+        <button data-do="help-drawing">Drawing a cross-section</button>
+        <hr>
+        <button data-do="help-about">About Vaseinator</button>
+      </div></details>
+    </div>
     <nav>
-      <button id="undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
-      <button id="redo" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
-      <button id="bigger" title="Bigger text" aria-pressed="false">A+</button>
+      <button id="undo" data-do="undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+      <button id="redo" data-do="redo" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
+      <button id="bigger" data-do="bigger" title="Bigger text" aria-pressed="false">A+</button>
       <a href="https://github.com/RickUsingGitHub/vaseinator/releases/latest" target="_blank" rel="noopener"
-         title="The Windows app has every setting: curves, drawn shapes, your own formula">Windows app</a>
+         title="The same app for Windows, with Open in slicer">Windows app</a>
     </nav>
   </header>
 
   <main>
     <aside id="panel">
-      <h2 id="name">Your vase</h2>
-      <div class="row">
-        <button id="choose" class="big">Choose a design…</button>
-        <button id="surprise" class="big" title="A new random vase that still prints">Surprise me</button>
+      <div class="modes" role="tablist">
+        <button id="simplebtn" role="tab" aria-selected="true">Simple</button>
+        <button id="advancedbtn" role="tab" aria-selected="false">Advanced</button>
       </div>
 
-      <h3>How big</h3>
-      <div id="size" class="row numbers">
-        <label>Tall <input id="tall" type="number" min="2" max="100" step="0.5"> cm</label>
-        <label>Wide <input id="wide" type="number" min="1" max="100" step="0.5"> cm</label>
-      </div>
-      <div id="headrow" class="row numbers" hidden>
-        <label title="Measure round the head, above the eyebrows and ears, as for a hat (an adult: about 54 to 60 cm). The whole mask or helmet grows or shrinks to fit, with a centimetre to spare.">
-          Head size <input id="head" type="number" min="30" max="90" step="0.5"> cm round</label>
-      </div>
-
-      <h3>Shape from above</h3>
-      <div id="above" class="tiles"></div>
-
-      <h3 id="sidetitle">Shape from the side</h3>
-      <div id="side" class="tiles"></div>
-
-      <h3>Twist</h3>
-      <div class="row">
-        <input id="twist" type="range" min="0" max="24" step="1">
-        <span id="twistwords" class="words"></span>
-      </div>
-
-      <h3>Pattern</h3>
-      <div id="pattern" class="tiles"></div>
-
-      <h3>Colour</h3>
-      <div id="colour" class="swatches"></div>
-
-      <button id="save" class="save">Save for printing…</button>
-      <div class="row files">
-        <button id="stl">Download STL</button>
-        <button id="savevase" title="Save the design, to open again here or in the Windows app">Save design</button>
-        <button id="openvase" title="Open a .vase design, from here or the Windows app">Open design…</button>
-        <input id="openfile" type="file" accept=".vase,.json" hidden>
-      </div>
-
-      <details id="printer">
-        <summary>Your printer</summary>
-        <p class="hint">Kept when you choose another design.</p>
-        <div class="grid">
-          <label>Line width <input data-key="line_width" type="number" min="0.2" max="2.5" step="0.02"> mm</label>
-          <label>Walls <input data-key="walls" type="number" min="1" max="10" step="1"></label>
-          <label>Layer height <input data-key="layer_height" type="number" min="0.04" max="1" step="0.02"> mm</label>
-          <label>Steepest overhang <input data-key="max_overhang" type="number" min="10" max="70" step="1"> °</label>
-          <label>Bed width <input data-key="bed_x" type="number" min="30" max="2000" step="5"> mm</label>
-          <label>Bed depth <input data-key="bed_y" type="number" min="30" max="2000" step="5"> mm</label>
-          <label>Printer height <input data-key="printer_height" type="number" min="20" max="2000" step="5"> mm</label>
+      <div id="simple">
+        <h2 id="name">Your vase</h2>
+        <div class="row">
+          <button data-do="gallery" class="big">Choose a design…</button>
+          <button data-do="surprise" class="big" title="A new random vase that still prints">Surprise me</button>
         </div>
-      </details>
+
+        <h3>How big</h3>
+        <div id="size" class="row numbers">
+          <label>Tall <input id="tall" type="number" min="2" max="100" step="0.5"> cm</label>
+          <label>Wide <input id="wide" type="number" min="1" max="100" step="0.5"> cm</label>
+        </div>
+        <div id="headrow" class="row numbers" hidden>
+          <label title="Measure round the head, above the eyebrows and ears, as for a hat (an adult: about 54 to 60 cm). The whole mask or helmet grows or shrinks to fit, with a centimetre to spare.">
+            Head size <input id="head" type="number" min="30" max="90" step="0.5"> cm round</label>
+        </div>
+
+        <h3>Shape from above</h3>
+        <div id="above" class="tiles"></div>
+        <button id="drawown" class="wide" title="Draw the shape from above yourself, in a big window">Draw my own shape…</button>
+
+        <h3 id="sidetitle">Shape from the side</h3>
+        <div id="side" class="tiles"></div>
+
+        <h3>Twist</h3>
+        <div class="row">
+          <input id="twist" type="range" min="0" max="24" step="1">
+          <span id="twistwords" class="words"></span>
+        </div>
+
+        <h3>Pattern</h3>
+        <div id="pattern" class="tiles"></div>
+
+        <h3>Colour</h3>
+        <div id="colour" class="swatches"></div>
+
+        <button data-do="print" class="save">Save for printing…</button>
+        <div class="row files">
+          <button data-do="stl">Download STL</button>
+          <button data-do="savevase" title="Save the design, to open again here or in the Windows app">Save design</button>
+          <button data-do="open" title="Open a .vase design, from here or the Windows app">Open design…</button>
+        </div>
+
+        <details id="printer">
+          <summary>Your printer</summary>
+          <p class="hint">Kept when you choose another design. Advanced has every printing setting.</p>
+          <div class="grid">
+            <label>Line width <input data-key="line_width" type="number" min="0.2" max="2.5" step="0.02"> mm</label>
+            <label>Walls <input data-key="walls" type="number" min="1" max="10" step="1"></label>
+            <label>Layer height <input data-key="layer_height" type="number" min="0.04" max="1" step="0.02"> mm</label>
+            <label>Steepest overhang <input data-key="max_overhang" type="number" min="10" max="70" step="1"> °</label>
+            <label>Bed width <input data-key="bed_x" type="number" min="30" max="2000" step="5"> mm</label>
+            <label>Bed depth <input data-key="bed_y" type="number" min="30" max="2000" step="5"> mm</label>
+            <label>Printer height <input data-key="printer_height" type="number" min="20" max="2000" step="5"> mm</label>
+          </div>
+        </details>
+      </div>
+
+      <div id="advanced" hidden>
+        <label class="namerow">Name <input id="designname" type="text" maxlength="80"></label>
+        <div class="row">
+          <button data-do="gallery">Choose a design…</button>
+          <button data-do="surprise">Surprise me</button>
+        </div>
+        <div id="groups"></div>
+        <button data-do="print" class="save">Save for printing…</button>
+      </div>
     </aside>
 
     <section id="viewer">
       <canvas id="canvas"></canvas>
-      <div id="busy" hidden><span class="spinner"></span> <span id="busytext">Building…</span></div>
-      <div class="viewbuttons">
-        <button id="spin" aria-pressed="false" title="Turn it round on a turntable">⟳ Spin</button>
-        <button id="reset" title="Back to the starting view">Reset view</button>
+      <div class="viewbar">
+        <div class="views" role="tablist">
+          <button data-view="0" aria-pressed="true">Vase</button>
+          <button data-view="1" aria-pressed="false">Section</button>
+          <button data-view="2" aria-pressed="false">Overhangs</button>
+          <button data-view="3" aria-pressed="false">Print layout</button>
+        </div>
+        <button id="spin" data-do="spin" aria-pressed="false" title="Turn it round on a turntable (S)">⟳ Spin</button>
+        <button id="printing" data-do="printing" aria-pressed="false" title="Watch it print, in real print time">▸ Watch it print</button>
+        <button data-do="reset" title="Back to the starting view">Reset view</button>
       </div>
-      <p class="help">Drag to turn · wheel or pinch to zoom · right-drag to move</p>
+      <div id="busy" hidden><span class="spinner"></span> <span id="busytext">Building…</span></div>
+      <p id="hint" class="help">Drag to turn · wheel or pinch to zoom · right-drag to move</p>
       <div id="loading">
         <img src="icon.png" alt="">
         <p><b>Getting Vaseinator ready…</b></p>
@@ -103,12 +173,20 @@
       </div>
     </section>
 
-    <section id="info">
-      <h3>The vase</h3>
-      <table id="facts"></table>
-      <div id="notes"></div>
+    <section id="below">
+      <div id="plots">
+        <figure><figcaption>From the side</figcaption><canvas id="sideplot"></canvas></figure>
+        <figure><figcaption>Layers from above</figcaption><canvas id="topplot"></canvas></figure>
+      </div>
+      <div id="info">
+        <div id="report"></div>
+        <p id="status" class="status"></p>
+      </div>
     </section>
   </main>
+
+  <input id="openfile" type="file" accept=".vase,.json" hidden>
+  <input id="picturefile" type="file" accept="image/*" hidden>
 
   <dialog id="gallery">
     <form method="dialog" class="dialoghead">
@@ -124,9 +202,34 @@
       <h2>How to print it</h2>
       <button value="cancel" aria-label="Close">✕</button>
     </form>
-    <p id="saved"></p>
-    <ol id="steplist"></ol>
+    <div id="steplist"></div>
     <form method="dialog"><button class="big">Close</button></form>
+  </dialog>
+
+  <dialog id="help">
+    <form method="dialog" class="dialoghead">
+      <h2 id="helptitle">Help</h2>
+      <button value="cancel" aria-label="Close">✕</button>
+    </form>
+    <div id="helptext" class="helptext"></div>
+    <div id="helpexamples" class="row" hidden>
+      <label>Try an example: <select id="examplepick"></select></label>
+      <button id="useexample">Use it</button>
+    </div>
+  </dialog>
+
+  <dialog id="outlinewin" class="full">
+    <div class="dialoghead">
+      <h2 id="outlinetitle">Drawing the cross-section</h2>
+      <div class="row tools">
+        <label>Repeat around <input id="winrepeat" type="number" min="1" max="100" step="1"></label>
+        <select id="winstart" aria-label="Start from"></select>
+        <button id="winclose" aria-pressed="false" title="One repeat close up, turned to point upwards">One repeat close up</button>
+        <button id="winfit" title="Show it all again (F)">Fit</button>
+        <button id="windone" class="big">Done</button>
+      </div>
+    </div>
+    <canvas id="bigoutline"></canvas>
   </dialog>
 
   <script type="module" src="app.js"></script>

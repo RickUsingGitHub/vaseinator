@@ -1,13 +1,15 @@
-// Vaseinator on the web: Simple mode, as in the desktop app. The vase is built by the app's own Python
-// (in worker.js, with Pyodide) and drawn here with three.js.
+// Vaseinator on the web: the desktop app, Simple and Advanced. The vase is built by the app's own Python (in
+// worker.js, with Pyodide) - the settings, the rules for which are shown and what each change brings with it,
+// and the report beside the view are the desktop app's own - and drawn here with three.js.
 
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { CurveEditor } from "./curves.js";
+import { OutlineEditor } from "./outline.js";
+import { drawSide, drawTop } from "./plots.js";
+import { View } from "./view.js";
 
 const $ = (id) => document.getElementById(id);
 
-// what this browser remembers: the design, the printer, bigger text - if it may
+// what this browser remembers: the design, the printer, the mode and the look - if it may
 const store = {
   get(key) {
     try { return JSON.parse(localStorage.getItem("vaseinator." + key)); } catch { return null; }
@@ -17,25 +19,30 @@ const store = {
   },
 };
 
-// ================================================================== the worker
-const worker = new Worker("worker.js");
-const waiting = new Map();
-let nextId = 1;
-worker.onmessage = (event) => {
-  const { id, ok, result, error } = event.data;
-  const w = waiting.get(id);
-  waiting.delete(id);
-  if (ok) w.resolve(result);
-  else w.reject(new Error(lastLine(error)));
-};
-worker.onerror = (event) => failed(event.message || "the worker stopped");
+// ================================================================== Python, in two workers
+// one builds the vase (which can take a few seconds); the other answers everything else straight away
+class Python {
+  constructor() {
+    this.worker = new Worker("worker.js");
+    this.waiting = new Map();
+    this.next = 1;
+    this.worker.onmessage = (event) => {
+      const { id, ok, result, error } = event.data;
+      const w = this.waiting.get(id);
+      this.waiting.delete(id);
+      if (ok) w.resolve(result);
+      else w.reject(new Error(lastLine(error)));
+    };
+    this.worker.onerror = (event) => failed(event.message || "Python stopped");
+  }
 
-function call(name, ...args) {
-  return new Promise((resolve, reject) => {
-    const id = nextId++;
-    waiting.set(id, { resolve, reject });
-    worker.postMessage({ id, call: name, args });
-  });
+  call(name, ...args) {
+    return new Promise((resolve, reject) => {
+      const id = this.next++;
+      this.waiting.set(id, { resolve, reject });
+      this.worker.postMessage({ id, call: name, args });
+    });
+  }
 }
 
 function lastLine(text) {
@@ -44,15 +51,22 @@ function lastLine(text) {
   return lines[lines.length - 1].replace(/^\w*Error: /, "");
 }
 
+const builder = new Python();
+const helper = new Python();
+
 // ================================================================== the design
-let C = null;                 // the choices and constants, from Python
+let C = null;                 // the settings, choices, constants and help, from Python
+let K = null;                 // C.constants
 let params = null;            // the design's settings
 let meta = null;              // what the last build says about it
+let shown = new Set();        // the Advanced settings shown for it
 const undoStack = [];
 const redoStack = [];
+let liveFrom = null;          // the settings before a drag began, for Undo
+let queue = Promise.resolve();
 
-function remember() {
-  undoStack.push(JSON.stringify(params));
+function pushUndo(snapshot) {
+  undoStack.push(snapshot);
   if (undoStack.length > 100) undoStack.shift();
   redoStack.length = 0;
   undoButtons();
@@ -63,27 +77,66 @@ function undoButtons() {
   $("redo").disabled = !redoStack.length;
 }
 
+function status(text) {
+  $("status").textContent = text || "";
+}
+
 function needsNormal(p) {
   // holes, a face, an open bottom or a wall part way round: spiral vase mode prints one closed line a layer
   return p.holes !== 0 || p.open_bottom || p.around < 360 || p.eyes !== 0 || p.mouth !== 0 || p.straps;
 }
 
 function change(updates) {
+  // several settings at once, as a picture in Simple mode sets them
   if (!C) return;
-  remember();
+  pushUndo(JSON.stringify(params));
   Object.assign(params, updates);
+  if (params.vase_mode === K.REAL_VASE && needsNormal(params)) params.vase_mode = K.FAKE_VASE;
   settled({});
 }
 
-function settled({ refit = false }) {
-  if (params.vase_mode === C.constants.REAL_VASE && needsNormal(params)) params.vase_mode = C.constants.FAKE_VASE;
+function commit(key, value, live = false) {
+  // one setting, as the desktop app's panel changes it: Python applies the app's own rules
+  if (!C) return Promise.resolve();
+  if (live) {
+    if (liveFrom === null) liveFrom = JSON.stringify(params);
+    params[key] = value;
+    if (key === "silhouette") params.profile = K.OWN_PROFILE;
+    rebuild({ live: true });
+    return Promise.resolve();
+  }
+  queue = queue.then(async () => {
+    const before = liveFrom !== null ? liveFrom : JSON.stringify(params);
+    liveFrom = null;
+    try {
+      const r = JSON.parse(await helper.call("apply", JSON.stringify(params), key, JSON.stringify(value)));
+      pushUndo(before);
+      params = r.params;
+      shown = new Set(r.shown);
+      status(r.message);
+      settled({ known: true });
+    } catch (err) {
+      showProblem(err.message);
+    }
+  });
+  return queue;
+}
+
+function settled({ refit = false, known = false }) {
   store.set("design", params);
-  refreshPanel();
-  rebuild(refit);
+  refreshSimple();
+  refreshAdvanced();
+  if (!known) {
+    helper.call("shown", JSON.stringify(params)).then((keys) => {
+      shown = new Set(JSON.parse(keys));
+      refreshAdvanced();
+    }).catch(() => {});
+  }
+  rebuild({ refit });
 }
 
 function replace(next, refit = true) {
-  remember();
+  pushUndo(JSON.stringify(params));
   params = next;
   settled({ refit });
 }
@@ -103,11 +156,11 @@ let busy = false;
 let refit = true;
 let refineTimer = 0;
 
-function rebuild(fit = false) {
+function rebuild({ refit: fit = false, live = false } = {}) {
   seq += 1;
   refit = refit || fit;
   clearTimeout(refineTimer);
-  wanted = { seq, draft: true, text: JSON.stringify(params) };
+  wanted = { seq, draft: true, live, text: JSON.stringify(params) };
   pump();
 }
 
@@ -119,14 +172,14 @@ async function pump() {
   showBusy(job.draft ? "Building…" : "Adding the fine detail…");
   let result = null;
   try {
-    result = await call("build", job.text, job.draft);
+    result = await builder.call("build", job.text, job.draft);
   } catch (err) {
     showProblem(err.message);
   }
   busy = false;
   if (result && job.seq === seq) {
     show(result);
-    if (job.draft) {
+    if (job.draft && !job.live) {
       // a quick draft first; then, if nothing changes for a moment, the vase in full detail
       refineTimer = setTimeout(() => {
         if (job.seq === seq) {
@@ -145,172 +198,49 @@ function showBusy(text) {
   if (text) $("busytext").textContent = text;
 }
 
-// ================================================================== the 3D view
-const canvas = $("canvas");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-const scene = new THREE.Scene();
-const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
-const camera = new THREE.PerspectiveCamera(30, 1, 1, 20000);
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.autoRotateSpeed = 1.5;
-scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f48, 0.6));
-const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-sun.position.set(300, 600, 450);
-scene.add(sun);
-const fill = new THREE.DirectionalLight(0xffffff, 0.5);
-fill.position.set(-500, 150, -300);
-scene.add(fill);
-
-// the vase is built z-up, on the bed; three.js looks y-up
-const world = new THREE.Group();
-world.rotation.x = -Math.PI / 2;
-scene.add(world);
-const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial());
-world.add(mesh);
-let bed = null;
-let bedSize = "";
-let home = null;
-
-function materialFor(look) {
-  const base = { vertexColors: true };
-  if (look === 0) return new THREE.MeshStandardMaterial({ ...base, roughness: 0.85, metalness: 0.0 });     // matte
-  if (look === 2) return new THREE.MeshPhysicalMaterial({ ...base, roughness: 0.2, clearcoat: 1.0 });      // glossy
-  if (look === 3) {                                                                                       // translucent
-    return new THREE.MeshPhysicalMaterial({ ...base, roughness: 0.35, transparent: true, opacity: 0.72 });
-  }
-  return new THREE.MeshStandardMaterial({ ...base, roughness: 0.32, metalness: 0.35 });                   // silk
-}
-
-function linear(srgb) {
-  // the colours come as the filament's own (sRGB); three.js lights in linear light
-  for (let i = 0; i < srgb.length; i++) {
-    const v = srgb[i];
-    srgb[i] = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-  }
-  return srgb;
-}
-
-function setBed([x, y]) {
-  const key = `${x}x${y}`;
-  if (key === bedSize) return;
-  bedSize = key;
-  if (bed) {
-    world.remove(bed);
-    bed.traverse((o) => o.geometry && o.geometry.dispose());
-  }
-  bed = new THREE.Group();
-  const plate = new THREE.Mesh(new THREE.PlaneGeometry(x, y),
-    new THREE.MeshStandardMaterial({ color: 0x2a2e35, roughness: 0.9, transparent: true, opacity: 0.55 }));
-  plate.position.z = -0.3;
-  bed.add(plate);
-  const lines = [];
-  for (let gx = -x / 2; gx <= x / 2 + 1e-6; gx += 10) lines.push(gx, -y / 2, 0, gx, y / 2, 0);
-  for (let gy = -y / 2; gy <= y / 2 + 1e-6; gy += 10) lines.push(-x / 2, gy, 0, x / 2, gy, 0);
-  const grid = new THREE.BufferGeometry();
-  grid.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
-  const g = new THREE.LineSegments(grid, new THREE.LineBasicMaterial({ color: 0x59606b, transparent: true, opacity: 0.5 }));
-  g.position.z = -0.2;
-  bed.add(g);
-  world.add(bed);
-}
-
-function fitCamera() {
-  world.updateMatrixWorld(true);              // the turn to y-up, before the first frame has drawn it
-  const box = new THREE.Box3().setFromObject(mesh);
-  if (box.isEmpty()) return;
-  const centre = box.getCenter(new THREE.Vector3());
-  const radius = box.getSize(new THREE.Vector3()).length() / 2;
-  const vfov = THREE.MathUtils.degToRad(camera.fov);
-  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
-  const dist = radius / Math.sin(Math.min(vfov, hfov) / 2) * 1.12;
-  // as the desktop app starts: from the front and a little to the right, a little above
-  const dir = new THREE.Vector3(0.475, 0.309, 0.823).normalize();
-  camera.position.copy(centre).addScaledVector(dir, dist);
-  camera.near = dist / 100;
-  camera.far = dist * 50;
-  camera.updateProjectionMatrix();
-  controls.target.copy(centre);
-  controls.update();
-  home = { position: camera.position.clone(), target: centre.clone() };
-}
-
-function resize() {
-  const view = $("viewer");
-  const w = view.clientWidth;
-  const h = view.clientHeight;
-  if (!w || !h) return;
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-new ResizeObserver(resize).observe($("viewer"));
-renderer.setAnimationLoop(() => {
-  controls.update();
-  renderer.render(scene, camera);
-});
+// ================================================================== the view, the pictures, the report
+const view = new View($("canvas"), $("viewer"), (text) => { $("hint").textContent = text; });
+window.vaseinator = { view, get params() { return params; }, get meta() { return meta; } };   // for checking it
 
 function show(result) {
   const m = JSON.parse(result.meta);
   if (m.errors && m.errors.length) {
-    facts(null, m.errors, m.warnings || [], []);
+    $("report").innerHTML = m.report;
+    flagCrossing(m.errors);
     return;
   }
+  flagCrossing([]);
   meta = m;
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(result.positions), 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(linear(new Float32Array(result.colours)), 3));
-  geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(result.triangles), 1));
-  geometry.computeVertexNormals();
-  mesh.geometry.dispose();
-  mesh.geometry = geometry;
-  mesh.material.dispose();
-  mesh.material = materialFor(m.look);
-  setBed(m.bed);
-  if (refit) {
-    fitCamera();
-    refit = false;
-  }
+  view.show(result, m, refit);
+  refit = false;
   setNumber($("head"), m.head);
+  setNumber(widgetInput("head"), m.head);
   lightTile($("pattern"), m.pattern);
-  facts(m.info, [], m.warnings, m.notes);
+  $("report").innerHTML = m.report;
+  drawPlots();
 }
 
-// ================================================================== the facts
-function facts(info, errors, warnings, notes) {
-  const table = $("facts");
-  table.replaceChildren();
-  for (const [k, v] of Object.entries(info || {})) {
-    const tr = document.createElement("tr");
-    const a = document.createElement("td");
-    const b = document.createElement("td");
-    a.textContent = k;
-    b.textContent = v;
-    if (v.endsWith("✓")) b.className = "good";
-    else if (v.endsWith("✗")) b.className = "bad";
-    tr.append(a, b);
-    table.append(tr);
-  }
-  const box = $("notes");
-  box.replaceChildren();
-  const add = (text, cls, mark) => {
-    const p = document.createElement("p");
-    p.className = cls;
-    p.textContent = `${mark} ${text}`;
-    box.append(p);
-  };
-  errors.forEach((e) => add(e, "err", "✗"));
-  warnings.forEach((w) => add(w, "warn", "⚠"));
-  notes.forEach((n) => add(n, "", "ℹ"));
+function drawPlots() {
+  if (!meta) return;
+  drawSide($("sideplot"), meta.plots);
+  drawTop($("topplot"), meta.plots);
 }
+new ResizeObserver(drawPlots).observe($("plots"));
 
 function showProblem(text) {
-  facts(meta ? meta.info : null, [text], [], []);
+  const p = document.createElement("p");
+  p.className = "e";
+  p.textContent = `✗ ${text}`;
+  $("report").prepend(p);
 }
 
-// ================================================================== the pictures
+function flagCrossing(errors) {
+  // a drawn outline that crosses itself: the build says so; the editors show it red themselves
+  const crossing = errors.some((e) => e.includes("crosses itself"));
+  document.body.classList.toggle("crossing", crossing);
+}
+
+// ================================================================== Simple: the pictures
 const ACCENT = "#F0A356";
 const EDGE = "#966636";
 const DEEP = "#82582E";
@@ -384,11 +314,11 @@ function patternIcon(name) {
 
 function swatch(colours) {
   const n = colours.length;
+  const id = "s" + colours.join("").replace(/#/g, "");
   const bands = colours.map((c, k) =>
     `<rect x="0" y="${40 - (40 * (k + 1)) / n}" width="40" height="${40 / n + 0.5}" fill="${c}"/>`).join("");
-  return `<svg viewBox="0 0 40 40" aria-hidden="true"><defs><clipPath id="s${colours.join("").replace(/#/g, "")}">` +
-    `<circle cx="20" cy="20" r="19"/></clipPath></defs><g clip-path="url(#s${colours.join("").replace(/#/g, "")})">` +
-    `${bands}</g></svg>`;
+  return `<svg viewBox="0 0 40 40" aria-hidden="true"><defs><clipPath id="${id}"><circle cx="20" cy="20" r="19"/>` +
+    `</clipPath></defs><g clip-path="url(#${id})">${bands}</g></svg>`;
 }
 
 function tiles(box, items, onPick, cls = "tile") {
@@ -413,13 +343,12 @@ function lightTile(box, k) {
   [...box.children].forEach((b, i) => b.setAttribute("aria-pressed", String(i === k)));
 }
 
-// ================================================================== the panel
 function widest() {
   return Math.max(...params.silhouette.map(([, d]) => d));
 }
 
 function setNumber(input, value) {
-  if (document.activeElement !== input && value !== undefined && value !== null) input.value = value;
+  if (input && document.activeElement !== input && value !== undefined && value !== null) input.value = value;
 }
 
 function twistWords(deg) {
@@ -437,9 +366,8 @@ function titleOf(p) {
   return name ? name[0].toUpperCase() + name.slice(1) : "Your vase";
 }
 
-function refreshPanel() {
+function refreshSimple() {
   const p = params;
-  const K = C.constants;
   $("name").textContent = titleOf(p);
   document.title = `${titleOf(p)} – Vaseinator`;
   setNumber($("tall"), Math.round(p.height) / 10);
@@ -463,8 +391,7 @@ function refreshPanel() {
   for (const input of document.querySelectorAll("#printer input")) setNumber(input, p[input.dataset.key]);
 }
 
-function buildPanel() {
-  const K = C.constants;
+function buildSimple() {
   tiles($("above"), C.shapes.map((s) => ({ label: s.name, icon: aboveIcon(s.outline) })),
     (k) => change({ shape2: K.SAME, turn1: 0, ...C.shapes[k].settings }));
   tiles($("side"), C.profiles.map((s) => ({ label: s.name, icon: sideIcon(s.widths), tip: s.full })),
@@ -481,27 +408,464 @@ function buildPanel() {
       change({ colour_style: K.ONE_COLOUR, color1: C.colours[k].colour });
     } else {
       const m = C.many_colours[k - C.colours.length];
-      const cols = Object.fromEntries(m.colours.map((c, i) => [`color${i + 1}`, c]));
-      change({ ...m.settings, ...cols });
+      change({ ...m.settings, ...Object.fromEntries(m.colours.map((c, i) => [`color${i + 1}`, c])) });
     }
   }, "swatch");
+  $("tall").addEventListener("change", (e) => {
+    const cm = parseFloat(e.target.value);
+    if (cm > 0) change({ height: Math.round(cm * 100) / 10 });
+  });
+  $("wide").addEventListener("change", (e) => {
+    const cm = parseFloat(e.target.value);
+    if (cm > 0) commit("widest", cm * 10);
+  });
+  $("head").addEventListener("change", (e) => {
+    const cm = parseFloat(e.target.value);
+    if (cm > 0) fitHead(cm);
+  });
+  $("twist").addEventListener("input", (e) => {
+    $("twistwords").textContent = twistWords(15 * e.target.value);
+  });
+  $("twist").addEventListener("change", (e) => {
+    const updates = { twist: 15 * Number(e.target.value) };
+    if (params.twist_style === K.OWN) updates.twist_style = K.EVENLY;
+    change(updates);
+  });
+  for (const input of document.querySelectorAll("#printer input")) {
+    input.addEventListener("change", () => {
+      const v = parseFloat(input.value);
+      if (!(v > 0)) return;
+      change({ [input.dataset.key]: input.dataset.key === "walls" ? Math.round(v) : v });
+      rememberPrinter();
+    });
+  }
+  $("drawown").addEventListener("click", async () => {
+    if (params.shape1 !== K.DRAWN) await commit("shape1", K.DRAWN);
+    openOutline(1);
+  });
+}
 
-  // the gallery: the plain cylinder, then every ready-made design
+function rememberPrinter() {
+  store.set("printer", Object.fromEntries(C.printer_keys.map((k) => [k, params[k]])));
+}
+
+async function fitHead(cm) {
+  await withBusy("Fitting it to the head…", async () =>
+    replace(JSON.parse(await helper.call("fit", JSON.stringify(params), cm * 10)), false));
+  status(`Sized for a head ${cm} cm round — Undo to go back`);
+}
+
+// ================================================================== Advanced: every setting
+const widgets = new Map();    // key -> {rows: [elements], set(p), input}
+const editors = {};           // the outline editors in the panel, by k
+
+function widgetInput(key) {
+  const w = widgets.get(key);
+  return w ? w.input : null;
+}
+
+function colourStyleOf(p) {
+  // a seamless vase prints one filament: no bands or stripes
+  return p.vase_mode === K.REAL_VASE && (p.colour_style === 1 || p.colour_style === 2) ? K.ONE_COLOUR : p.colour_style;
+}
+
+function numberBox(row, { scale = 1, decimals = 2 } = {}) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = row.lo * scale;
+  input.max = row.hi * scale;
+  input.step = row.step * scale;
+  input.dataset.decimals = decimals;
+  return input;
+}
+
+function makeRow(row, rowsBox) {
+  const { key, label, kind } = row;
+  const [unit, none] = String(row.extra || "").split("|");
+  const lab = document.createElement("label");
+  lab.className = "label";
+  lab.textContent = label;
+  lab.title = row.tip || "";
+  const control = document.createElement("div");
+  control.className = "control";
+  control.title = row.tip || "";
+  let set = () => {};
+  let input = null;
+  const whole = ["curve", "expr", "outline"].includes(kind);
+  if (kind === "float" || kind === "int" || kind === "seed" || kind === "pct" || kind === "widest" || kind === "head") {
+    const scale = kind === "pct" ? 100 : 1;
+    input = numberBox(row, { scale });
+    lab.htmlFor = input.id = `set-${key}`;
+    control.append(input);
+    if (unit) {
+      const u = document.createElement("span");
+      u.className = "unit";
+      u.textContent = unit.trim();
+      control.append(u);
+    }
+    let noneLabel = null;
+    if (none) {
+      noneLabel = document.createElement("span");
+      noneLabel.className = "none";
+      noneLabel.textContent = `(${none.toLowerCase()})`;
+      control.append(noneLabel);
+    }
+    if (kind === "seed") {
+      const dice = document.createElement("button");
+      dice.className = "dice";
+      dice.textContent = "🎲";
+      dice.title = "Another pattern";
+      dice.addEventListener("click", () => commit(key, Math.floor(Math.random() * 99999)));
+      control.append(dice);
+    }
+    input.addEventListener("change", () => {
+      let v = parseFloat(input.value);
+      if (Number.isNaN(v)) return;
+      v = Math.min(Math.max(v, row.lo * scale), row.hi * scale) / scale;
+      if (kind === "int" || kind === "seed") v = Math.round(v);
+      if (kind === "head") return fitHead(v);
+      commit(key, v);
+    });
+    set = (p) => {
+      let v;
+      if (kind === "widest") v = Math.round(widest() * 10) / 10;
+      else if (kind === "head") v = meta ? meta.head : 57;
+      else v = p[key] * scale;
+      setNumber(input, kind === "pct" ? Math.round(v * 10) / 10 : Math.round(v * 1000) / 1000);
+      if (noneLabel) noneLabel.hidden = !(p[key] === row.lo);
+      if (/^count[12]$/.test(key)) input.min = p[`shape${key.slice(-1)}`] === K.POLYGON ? 3 : 1;
+    };
+  } else if (kind === "bool") {
+    input = document.createElement("input");
+    input.type = "checkbox";
+    lab.htmlFor = input.id = `set-${key}`;
+    control.append(input);
+    input.addEventListener("change", () => commit(key, input.checked));
+    set = (p) => { input.checked = Boolean(p[key]); };
+  } else if (kind === "choice") {
+    input = document.createElement("select");
+    lab.htmlFor = input.id = `set-${key}`;
+    const fill = (choices) => {
+      const now = JSON.stringify(choices);
+      if (input.dataset.choices === now) return;
+      input.dataset.choices = now;
+      input.replaceChildren(...choices.map(([v, t]) => new Option(t, v)));
+    };
+    fill(row.choices);
+    control.append(input);
+    input.addEventListener("change", () => commit(key, Number(input.value)));
+    set = (p) => {
+      if (key === "colour_style") {
+        fill(p.vase_mode === K.REAL_VASE ? C.real_colour_styles : C.colour_styles);
+        input.value = colourStyleOf(p);
+      } else {
+        input.value = p[key];
+      }
+    };
+  } else if (kind === "color") {
+    input = document.createElement("input");
+    input.type = "color";
+    lab.htmlFor = input.id = `set-${key}`;
+    const hex = document.createElement("span");
+    hex.className = "unit";
+    control.append(input, hex);
+    input.addEventListener("change", () => commit(key, input.value.toUpperCase()));
+    set = (p) => {
+      input.value = p[key].toLowerCase();
+      hex.textContent = p[key].toUpperCase();
+    };
+  } else if (kind === "slider") {
+    input = document.createElement("input");
+    input.type = "range";
+    input.min = row.lo;
+    input.max = row.hi;
+    input.step = row.step;
+    lab.htmlFor = input.id = `set-${key}`;
+    const note = document.createElement("span");
+    note.className = "unit";
+    control.append(input, note);
+    const words = (v) => (Math.abs(v) < 0.05 ? "Even" : v > 0 ? "Thicker towards the top" : "Thicker towards the bottom");
+    input.addEventListener("input", () => {
+      note.textContent = words(Number(input.value));
+      commit(key, Number(input.value), true);
+    });
+    input.addEventListener("change", () => commit(key, Number(input.value)));
+    set = (p) => {
+      if (document.activeElement !== input) input.value = p[key];
+      note.textContent = words(p[key]);
+    };
+  } else if (kind === "palette") {
+    input = document.createElement("select");
+    lab.htmlFor = input.id = `set-${key}`;
+    input.append(new Option("Choose a palette…", ""), ...C.palettes.map((pal) => new Option(pal.name, pal.name)));
+    control.append(input);
+    input.addEventListener("change", () => {
+      const pal = C.palettes.find((x) => x.name === input.value);
+      input.value = "";
+      if (pal) change(Object.fromEntries(pal.colours.map((c, i) => [`color${i + 1}`, c])));
+    });
+  } else if (kind === "curve") {
+    control.className = "whole";
+    const canvas = document.createElement("canvas");
+    control.append(canvas);
+    const o = row.curve;
+    const editor = new CurveEditor(canvas, { lo: o.lo, hi: o.hi, unit: o.unit || "", mirror: Boolean(o.mirror),
+      height: o.height || 110, floor: o.floor ?? null, grow: Boolean(o.grow), decimals: o.decimals || 0 },
+    (pts, live) => commit(key, pts, live));
+    set = (p) => editor.setPoints(p[key]);
+  } else if (kind === "expr") {
+    control.className = "whole";
+    const text = document.createElement("textarea");
+    text.spellcheck = false;
+    text.placeholder = "1.5 * sin(6*theta + 4*pi*h)";
+    text.setAttribute("aria-label", "Your own function");
+    input = text;
+    const tools = document.createElement("div");
+    tools.className = "row";
+    const examples = document.createElement("select");
+    examples.append(new Option("Examples…", ""), ...C.examples.map(([n, f]) => new Option(`${n}:  ${f}`, f)));
+    const help = document.createElement("button");
+    help.textContent = "Help…";
+    const clear = document.createElement("button");
+    clear.textContent = "Clear";
+    tools.append(examples, help, clear);
+    control.append(text, tools);
+    let timer = 0;
+    text.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => commit(key, text.value), 600);
+    });
+    examples.addEventListener("change", () => {
+      if (examples.value) setFormula(examples.value);
+      examples.value = "";
+    });
+    help.addEventListener("click", () => openHelp("function"));
+    clear.addEventListener("click", () => setFormula(""));
+    set = (p) => { if (document.activeElement !== text && text.value !== p[key]) text.value = p[key]; };
+  } else if (kind === "outline") {
+    control.className = "whole outlinebox";
+    const k = Number(key.slice(-1));
+    const canvas = document.createElement("canvas");
+    const tools = document.createElement("div");
+    tools.className = "row";
+    const start = startFromMenu(k);
+    const close = document.createElement("button");
+    close.textContent = "Close up";
+    close.title = "Show one repeat close up, turned to point upwards - or the whole outline. Above 8 repeats it starts close up.";
+    const big = document.createElement("button");
+    big.textContent = "Full window…";
+    big.title = "Draw it in a window as big as the screen: the wheel zooms, a right-drag moves it.";
+    tools.append(start, close, big);
+    control.append(canvas, tools);
+    const editor = new OutlineEditor(canvas, {}, (pts, live) => commit(key, pts, live),
+      () => close.setAttribute("aria-pressed", String(editor.closeUp())));
+    editors[k] = editor;
+    close.addEventListener("click", () => editor.setCloseUp(!editor.closeUp()));
+    big.addEventListener("click", () => openOutline(k));
+    set = (p) => editor.setOutline(p[key], p[`repeat${k}`]);
+  }
+  if (whole) {
+    if (label) {
+      lab.className = "label wholelabel";
+      rowsBox.append(lab);
+    }
+    rowsBox.append(control);
+    widgets.set(key, { rows: label ? [lab, control] : [control], set, input, lab });
+  } else {
+    rowsBox.append(lab, control);
+    widgets.set(key, { rows: [lab, control], set, input, lab });
+  }
+}
+
+function startFromMenu(k) {
+  const start = document.createElement("select");
+  start.setAttribute("aria-label", "Start from");
+  start.title = "Start again from a ready-made outline, or trace one from a picture: dark lines drawn round a shape on a light or see-through ground.";
+  start.append(new Option("Start from…", ""), ...C.outlines.map((o, i) => new Option(o.name, String(i))),
+    new Option("Trace a picture…", "trace"));
+  start.addEventListener("change", () => {
+    const v = start.value;
+    start.value = "";
+    if (v === "trace") tracePicture(k);
+    else if (v !== "") useOutline(k, C.outlines[Number(v)].points, C.outlines[Number(v)].repeat);
+  });
+  return start;
+}
+
+function useOutline(k, points, repeat) {
+  // start drawn outline k again from given control points
+  liveFrom = JSON.stringify(params);
+  params[`repeat${k}`] = repeat;
+  return commit(`drawn${k}`, points);
+}
+
+let traceFor = 1;
+function tracePicture(k) {
+  traceFor = k;
+  $("picturefile").click();
+}
+
+async function traceFile(file) {
+  await withBusy("Tracing the picture…", async () => {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1080 / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(Math.round(bitmap.width * scale), 1);
+    const h = Math.max(Math.round(bitmap.height * scale), 1);
+    const canvas = new OffscreenCanvas(w, h);
+    const g = canvas.getContext("2d");
+    g.drawImage(bitmap, 0, 0, w, h);
+    const pixels = g.getImageData(0, 0, w, h).data;
+    let text = "";
+    for (let i = 0; i < pixels.length; i += 0x8000) text += String.fromCharCode(...pixels.subarray(i, i + 0x8000));
+    const pts = JSON.parse(await helper.call("trace", btoa(text), w, h));
+    await useOutline(traceFor, pts, 1);
+    status(`Traced ${file.name}: ${pts.length} points, ${pts.filter((q) => q[2]).length} sharp corners.`);
+  }).catch(() => {});
+}
+
+function setFormula(text) {
+  const w = widgets.get("expression");
+  if (w && w.input) w.input.value = text;
+  commit("expression", text);
+}
+
+function buildAdvanced() {
+  const box = $("groups");
+  box.replaceChildren();
+  for (const group of C.spec) {
+    const section = document.createElement("details");
+    section.className = "group";
+    section.open = !store.get(`closed.${group.title}`);
+    section.addEventListener("toggle", () => store.set(`closed.${group.title}`, !section.open));
+    const summary = document.createElement("summary");
+    summary.textContent = group.title;
+    const rows = document.createElement("div");
+    rows.className = "rows";
+    section.append(summary, rows);
+    box.append(section);
+    group.rows.forEach((row) => makeRow(row, rows));
+    group.element = section;
+  }
+  $("designname").addEventListener("change", (e) => commit("name", e.target.value.trim() || "vase"));
+}
+
+function refreshAdvanced() {
+  if (!C || !params) return;
+  const p = params;
+  setNumber($("designname"), p.name);
+  for (const [key, w] of widgets) {
+    const show = shown.size === 0 || shown.has(key);
+    w.rows.forEach((el) => { el.hidden = !show; });
+    if (show) w.set(p);
+  }
+  for (const group of C.spec) group.element.hidden = !group.rows.some((r) => shown.size === 0 || shown.has(r.key));
+  // the settings named for the shape: sides, points, petals, teeth
+  for (const k of [1, 2]) {
+    const names = C.shape_labels[String(p[`shape${k}`])] || [null, null, null];
+    ["count", "depth", "sharp"].forEach((what, i) => {
+      const w = widgets.get(`${what}${k}`);
+      if (w && names[i]) w.lab.textContent = names[i];
+    });
+  }
+  const c1 = widgets.get("color1");
+  if (c1) c1.lab.textContent = colourStyleOf(p) === K.ONE_COLOUR ? "Colour" : "Filament 1";
+  if (outlineWindow.k) {
+    const k = outlineWindow.k;
+    outlineWindow.editor.setOutline(p[`drawn${k}`], p[`repeat${k}`]);
+    setNumber($("winrepeat"), p[`repeat${k}`]);
+  }
+}
+
+function setMode(advanced) {
+  $("simple").hidden = advanced;
+  $("advanced").hidden = !advanced;
+  $("simplebtn").setAttribute("aria-selected", String(!advanced));
+  $("advancedbtn").setAttribute("aria-selected", String(advanced));
+  store.set("advanced", advanced);
+  if (advanced) refreshAdvanced();
+}
+
+// ================================================================== drawing in a window of its own
+const outlineWindow = { k: 0, editor: null };
+
+function openOutline(k) {
+  const win = $("outlinewin");
+  outlineWindow.k = k;
+  $("outlinetitle").textContent = k === 1 ? "Drawing the cross-section" : "Drawing what it turns into";
+  $("winrepeat").value = params[`repeat${k}`];
+  win.showModal();
+  outlineWindow.editor.view = null;
+  outlineWindow.editor.setOutline(params[`drawn${k}`], params[`repeat${k}`]);
+  $("bigoutline").focus();
+}
+
+function buildOutlineWindow() {
+  const close = $("winclose");
+  outlineWindow.editor = new OutlineEditor($("bigoutline"), { big: true },
+    (pts, live) => commit(`drawn${outlineWindow.k}`, pts, live),
+    () => close.setAttribute("aria-pressed", String(outlineWindow.editor.closeUp())));
+  close.addEventListener("click", () => outlineWindow.editor.setCloseUp(!outlineWindow.editor.closeUp()));
+  $("winfit").addEventListener("click", () => outlineWindow.editor.fit());
+  $("windone").addEventListener("click", () => $("outlinewin").close());
+  $("outlinewin").addEventListener("close", () => { outlineWindow.k = 0; });
+  $("winrepeat").addEventListener("change", (e) => {
+    const n = Math.min(Math.max(Math.round(Number(e.target.value)), 1), 100);
+    if (n) commit(`repeat${outlineWindow.k}`, n);
+  });
+  const start = $("winstart");
+  start.append(new Option("Start from…", ""), ...C.outlines.map((o, i) => new Option(o.name, String(i))),
+    new Option("Trace a picture…", "trace"));
+  start.addEventListener("change", () => {
+    const v = start.value;
+    start.value = "";
+    if (v === "trace") tracePicture(outlineWindow.k);
+    else if (v !== "") useOutline(outlineWindow.k, C.outlines[Number(v)].points, C.outlines[Number(v)].repeat);
+  });
+}
+
+// ================================================================== the gallery, help and files
+function buildGallery() {
   const designs = $("designs");
   const entries = [{ title: "Plain cylinder", slug: "plain_cylinder",
-    about: "200 mm across and 200 mm tall, with everything else off: a blank start" }].concat(C.gallery);
+    about: "200 mm across and 200 mm tall, with everything else off: a blank start for your own shape or function" }]
+    .concat(C.gallery);
   for (const g of entries) {
     const b = document.createElement("button");
     b.className = "design";
     b.title = g.about;
     b.innerHTML = `<img src="gallery/${g.slug}.png" alt="" loading="lazy"><b></b>`;
     b.querySelector("b").textContent = g.title;
-    b.addEventListener("click", async () => {
+    b.addEventListener("click", () => {
       $("gallery").close();
-      await withBusy("Getting it ready…", async () => replace(JSON.parse(await call("design_of", g.title, JSON.stringify(params)))));
+      chooseDesign(g.title);
     });
     designs.append(b);
   }
+  const menu = $("designsmenu");
+  for (const g of C.gallery) {
+    const b = document.createElement("button");
+    b.textContent = g.title;
+    b.title = g.about;
+    b.addEventListener("click", () => {
+      closeMenus();
+      chooseDesign(g.title);
+    });
+    menu.append(b);
+  }
+}
+
+function chooseDesign(title) {
+  return withBusy("Getting it ready…", async () =>
+    replace(JSON.parse(await helper.call("design_of", title, JSON.stringify(params)))));
+}
+
+function openHelp(which) {
+  const titles = { printing: "Printing it watertight", function: "Your own function", drawing: "Drawing a cross-section",
+    about: `About Vaseinator ${C.version}` };
+  $("helptitle").textContent = titles[which];
+  $("helptext").innerHTML = C.help[which];
+  $("helpexamples").hidden = which !== "function";
+  $("help").showModal();
 }
 
 async function withBusy(text, work) {
@@ -510,13 +874,14 @@ async function withBusy(text, work) {
     await work();
   } catch (err) {
     showProblem(err.message);
+    throw err;
   } finally {
     if (!busy) showBusy(null);
   }
 }
 
 function download(data, name, type) {
-  const url = URL.createObjectURL(new Blob([data], { type }));
+  const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
@@ -530,93 +895,141 @@ function fileName() {
   return (params.name || "vase").replace(/[^\w\- ]/g, "_").trim() || "vase";
 }
 
-function wire() {
-  $("choose").addEventListener("click", () => C && $("gallery").showModal());
-  $("surprise").addEventListener("click", () => C && withBusy("Thinking of something…", async () =>
-    replace(JSON.parse(await call("surprise_me", JSON.stringify(params), Math.floor(Math.random() * 1e6))))));
-  $("tall").addEventListener("change", (e) => {
-    const cm = parseFloat(e.target.value);
-    if (cm > 0) change({ height: Math.round(cm * 100) / 10 });
-  });
-  $("wide").addEventListener("change", (e) => {
-    const cm = parseFloat(e.target.value);
-    const old = widest();
-    if (cm > 0 && old > 0) {
-      change({ silhouette: params.silhouette.map(([h, d]) => [h, Math.round((d * cm * 10 * 1000) / old) / 1000]) });
-    }
-  });
-  $("head").addEventListener("change", (e) => {
-    const cm = parseFloat(e.target.value);
-    if (cm > 0 && C) {
-      withBusy("Fitting it to the head…", async () => replace(JSON.parse(await call("fit", JSON.stringify(params), cm * 10)), false));
-    }
-  });
-  $("twist").addEventListener("input", (e) => {
-    $("twistwords").textContent = twistWords(15 * e.target.value);
-  });
-  $("twist").addEventListener("change", (e) => {
-    const updates = { twist: 15 * Number(e.target.value) };
-    if (params.twist_style === C.constants.OWN) updates.twist_style = C.constants.EVENLY;
-    change(updates);
-  });
-  for (const input of document.querySelectorAll("#printer input")) {
-    input.addEventListener("change", () => {
-      const v = parseFloat(input.value);
-      if (!(v > 0)) return;
-      change({ [input.dataset.key]: input.dataset.key === "walls" ? Math.round(v) : v });
-      store.set("printer", Object.fromEntries(C.printer_keys.map((k) => [k, params[k]])));
-    });
-  }
-  $("save").addEventListener("click", () => C && withBusy("Making the file for your slicer…", async () => {
-    const data = await call("export_3mf", JSON.stringify(params));
-    const name = fileName() + ".3mf";
-    download(data, name, "model/3mf");
-    $("saved").innerHTML = "";
-    $("saved").append(`Saved ${name} to your downloads.`);
-    $("steplist").innerHTML = (meta ? meta.steps : []).map((s) => `<li>${s}</li>`).join("");
+// ================================================================== the menus and buttons
+let currentView = 0;
+
+function setView(n) {
+  currentView = n;
+  view.setMode(n);
+  document.querySelectorAll(".views button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.view) === n)));
+}
+
+function toggle(id, on) {
+  $(id).setAttribute("aria-pressed", String(on));
+}
+
+function effectiveLight() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === "light" : window.matchMedia("(prefers-color-scheme: light)").matches;
+}
+
+const actions = {
+  new: () => replace({ ...C.defaults, ...Object.fromEntries(C.printer_keys.map((k) => [k, params[k]])) }),
+  plain: () => chooseDesign("Plain cylinder"),
+  open: () => $("openfile").click(),
+  savevase: async () => download(await helper.call("save_vase", JSON.stringify(params)), fileName() + ".vase", "application/json"),
+  print: () => withBusy("Making the file for your slicer…", async () => {
+    const { data, steps } = await builder.call("export_3mf", JSON.stringify(params));
+    download(data, fileName() + ".3mf", "model/3mf");
+    $("steplist").innerHTML = steps;
     $("steps").showModal();
-  }));
-  $("stl").addEventListener("click", () => C && withBusy("Making the STL…", async () =>
-    download(await call("export_stl", JSON.stringify(params)), fileName() + ".stl", "model/stl")));
-  $("savevase").addEventListener("click", async () => {
-    if (!C) return;
-    download(await call("save_vase", JSON.stringify(params)), fileName() + ".vase", "application/json");
+  }).catch(() => {}),
+  stl: () => withBusy("Making the STL…", async () =>
+    download(await builder.call("export_stl", JSON.stringify(params)), fileName() + ".stl", "model/stl")).catch(() => {}),
+  "3mf": () => withBusy("Making the 3MF…", async () => {
+    const { data } = await builder.call("export_3mf", JSON.stringify(params));
+    download(data, fileName() + ".3mf", "model/3mf");
+    status(`Saved ${fileName()}.3mf - in your slicer use File ▸ Import`);
+  }).catch(() => {}),
+  picture: async () => download(await view.picture(), fileName() + "_3d.png", "image/png"),
+  undo: () => step(undoStack, redoStack),
+  redo: () => step(redoStack, undoStack),
+  surprise: () => withBusy("Thinking of something…", async () =>
+    replace(JSON.parse(await helper.call("surprise_me", JSON.stringify(params), Math.floor(Math.random() * 1e6))))).catch(() => {}),
+  plan: async () => {
+    if (!meta) return;
+    try {
+      await navigator.clipboard.writeText(meta.plan);
+      status("Colour changes copied to the clipboard");
+    } catch {
+      status("The browser didn't allow copying: the colour changes are in the panel");
+    }
+  },
+  gallery: () => $("gallery").showModal(),
+  view0: () => setView(0),
+  view1: () => setView(1),
+  view2: () => setView(2),
+  view3: () => setView(3),
+  spin: () => {
+    const on = $("spin").getAttribute("aria-pressed") !== "true";
+    view.setSpin(on);
+    toggle("spin", on);
+  },
+  printing: () => {
+    const on = $("printing").getAttribute("aria-pressed") !== "true";
+    view.setPrinting(on);
+    toggle("printing", on);
+  },
+  reset: () => view.reset(),
+  bigger: () => {
+    const on = $("bigger").getAttribute("aria-pressed") !== "true";
+    document.documentElement.style.setProperty("--scale", on ? "1.25" : "1");
+    toggle("bigger", on);
+    store.set("bigger", on);
+  },
+  theme: () => {
+    const light = !effectiveLight();
+    document.documentElement.dataset.theme = light ? "light" : "dark";
+    store.set("theme", light ? "light" : "dark");
+    drawPlots();
+    Object.values(editors).forEach((e) => e.draw());
+    for (const w of widgets.values()) if (w.set) w.set(params);
+  },
+  "help-printing": () => openHelp("printing"),
+  "help-function": () => openHelp("function"),
+  "help-drawing": () => openHelp("drawing"),
+  "help-about": () => openHelp("about"),
+};
+
+function closeMenus(except) {
+  document.querySelectorAll(".menu[open]").forEach((m) => { if (m !== except) m.open = false; });
+}
+
+function wire() {
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-do]");
+    if (b) {
+      closeMenus();
+      if (C && actions[b.dataset.do]) actions[b.dataset.do]();
+      return;
+    }
+    if (!e.target.closest(".menu")) closeMenus();
   });
-  $("openvase").addEventListener("click", () => C && $("openfile").click());
+  document.querySelectorAll(".menu").forEach((m) => m.addEventListener("toggle", () => { if (m.open) closeMenus(m); }));
+  document.querySelectorAll(".views button").forEach((b) => b.addEventListener("click", () => setView(Number(b.dataset.view))));
+  $("simplebtn").addEventListener("click", () => setMode(false));
+  $("advancedbtn").addEventListener("click", () => setMode(true));
   $("openfile").addEventListener("change", async (e) => {
     const file = e.target.files[0];
     e.target.value = "";
     if (!file) return;
-    await withBusy("Opening it…", async () => replace(JSON.parse(await call("open_vase", await file.text()))));
+    await withBusy("Opening it…", async () => replace(JSON.parse(await helper.call("open_vase", await file.text())))).catch(() => {});
   });
-  $("undo").addEventListener("click", () => step(undoStack, redoStack));
-  $("redo").addEventListener("click", () => step(redoStack, undoStack));
+  $("picturefile").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (file) traceFile(file);
+  });
+  $("useexample").addEventListener("click", () => {
+    setFormula($("examplepick").value);
+    $("help").close();
+  });
   document.addEventListener("keydown", (e) => {
-    if (e.target.matches("input") || !(e.ctrlKey || e.metaKey)) return;
-    const key = e.key.toLowerCase();
-    if (key === "z" && !e.shiftKey) step(undoStack, redoStack);
-    else if (key === "y" || (key === "z" && e.shiftKey)) step(redoStack, undoStack);
-    else return;
-    e.preventDefault();
+    if (!C) return;
+    const typing = e.target.matches("input, textarea, select");
+    if (e.ctrlKey || e.metaKey) {
+      const key = e.key.toLowerCase();
+      const act = { z: e.shiftKey ? "redo" : "undo", y: "redo", s: "savevase", o: "open", g: "gallery" }[key];
+      if (!act || (typing && (key === "z" || key === "y"))) return;
+      e.preventDefault();
+      actions[act]();
+    } else if (!typing && !e.target.matches("canvas") && (e.key === "s" || e.key === "S")) {
+      actions.spin();
+    }
   });
-  $("spin").addEventListener("click", (e) => {
-    controls.autoRotate = !controls.autoRotate;
-    e.currentTarget.setAttribute("aria-pressed", String(controls.autoRotate));
-  });
-  $("reset").addEventListener("click", () => {
-    if (!home) return;
-    camera.position.copy(home.position);
-    controls.target.copy(home.target);
-    controls.update();
-  });
-  const bigger = $("bigger");
-  const scale = (on) => {
-    document.documentElement.style.setProperty("--scale", on ? "1.25" : "1");
-    bigger.setAttribute("aria-pressed", String(on));
-    store.set("bigger", on);
-  };
-  scale(Boolean(store.get("bigger")));
-  bigger.addEventListener("click", () => scale(bigger.getAttribute("aria-pressed") !== "true"));
+  const theme = store.get("theme");
+  if (theme) document.documentElement.dataset.theme = theme;
+  if (store.get("bigger")) actions.bigger();
 }
 
 // ================================================================== starting up
@@ -630,16 +1043,23 @@ function failed(text) {
 async function boot() {
   wire();
   try {
-    C = JSON.parse(await call("start"));
+    const [choices] = await Promise.all([helper.call("start"), builder.call("start")]);
+    C = JSON.parse(choices);
   } catch (err) {
     failed(err.message);
     return;
   }
-  buildPanel();
+  K = C.constants;
+  $("examplepick").append(...C.examples.map(([n, f]) => new Option(`${n}:  ${f}`, f)));
+  buildSimple();
+  buildAdvanced();
+  buildOutlineWindow();
+  buildGallery();
   const printer = store.get("printer") || {};
   params = { ...C.defaults, ...(store.get("design") || {}), ...printer };
   $("loading").hidden = true;
   undoButtons();
+  setMode(Boolean(store.get("advanced")));
   settled({ refit: true });
 }
 

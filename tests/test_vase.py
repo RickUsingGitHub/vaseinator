@@ -320,7 +320,8 @@ def test_the_web_version():
     import subprocess
     out = tempfile.mkdtemp()
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "build_web.py"), out], check=True, capture_output=True)
-    for name in ("index.html", "app.js", "worker.js", "style.css", "gallery/theatre_mask.png", "py/files.json"):
+    for name in ("index.html", "app.js", "view.js", "curves.js", "outline.js", "plots.js", "worker.js", "style.css",
+                 "gallery/theatre_mask.png", "py/files.json", "py/vaseinator/settings.py"):
         assert os.path.exists(os.path.join(out, name)), name
     code = r"""
 import json, sys
@@ -330,12 +331,28 @@ import bridge
 s = json.loads(bridge.start())
 keep = json.dumps(s["defaults"])
 mask = bridge.design_of("Theatre Mask", keep)
-meta, pos, tri, col = bridge.build(mask, True)
+meta, pos, tri, col, lean = bridge.build(mask, True)
 m = json.loads(meta)
-assert not m["errors"] and m["head"] == 57.0 and len(pos) == len(col) and len(tri) % 12 == 0, m["errors"]
+assert not m["errors"] and m["head"] == 57.0 and len(pos) == len(col) == 3 * len(lean) and len(tri) % 12 == 0, m["errors"]
 assert json.loads(bridge.fit(mask, 520.0))["eye_up"] < json.loads(mask)["eye_up"]
-assert bridge.export_3mf(bridge.design_of("Plain cylinder", keep))[:2] == b"PK"
+data, steps = bridge.export_3mf(bridge.design_of("Plain cylinder", keep))
+assert data[:2] == b"PK" and "No supports" in steps
 assert json.loads(bridge.open_vase(bridge.save_vase(mask)))["name"] == "theatre_mask"
+# the Advanced panel: every setting, and the desktop app's own rules for a change
+assert [g["title"] for g in s["spec"]][0] == "Size" and "eye_tilt" in json.loads(bridge.shown(mask))
+r = json.loads(bridge.apply(keep, "twist_style", "5"))
+assert r["touched"] == ["twist_curve"] and r["params"]["twist_style"] == 5
+r = json.loads(bridge.apply(keep, "shape1", "7"))
+assert r["params"]["shape1"] == 7 and len(r["params"]["drawn1"]) >= 3 and "repeat1" in r["shown"]
+r = json.loads(bridge.apply(json.dumps(dict(s["defaults"], vase_mode=0)), "holes", "1"))
+assert r["params"]["vase_mode"] == 1 and "normal print" in r["message"]
+assert "<style>" not in m["report"] and "Steepest overhang" in m["report"] and len(m["plots"]["slices"]) == 15
+# tracing a picture: a dark square on white
+import base64
+import numpy as np
+img = np.full((60, 80, 4), 255, np.uint8)
+img[10:50, 20:60, :3] = 0
+assert len(json.loads(bridge.trace(base64.b64encode(img.tobytes()).decode(), 80, 60))) >= 4
 print("ok", len(s["gallery"]))
 """
     r = subprocess.run([sys.executable, "-I", "-c", code, os.path.join(out, "py")], capture_output=True, text=True)

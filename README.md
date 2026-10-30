@@ -8,9 +8,9 @@ allow.
 **Simple** mode is a handful of choices made from pictures – easy enough for anyone – and one big
 **Save for printing** button; **Advanced** has every setting.
 
-**Try it in your browser – nothing to install:** <https://rickusinggithub.github.io/vaseinator/>. The web
-version is Simple mode, built by the app's own geometry running right in the browser; the Windows app has
-every setting.
+**Use it in your browser – nothing to install:** <https://rickusinggithub.github.io/vaseinator/>. The web
+version is the whole app – Simple and Advanced, every setting, the curves, drawing your own cross-section,
+the views and the exports – built by the app's own Python running right in the browser.
 
 Shape the outline, pick a cross-section and what it turns into on the way up, **spin** it, cover it in
 ribs, rings, bumps, organic lumps or **your own formula**, and colour it in bands, stripes or a
@@ -100,10 +100,12 @@ ready to slice.
 
 ## Download and run
 
-* **In your browser:** <https://rickusinggithub.github.io/vaseinator/> – choose a design, size it (or fit a
-  mask or helmet to a head), change its shape, twist, pattern and colour, and save it for printing as a 3MF
-  or STL. Designs save as `.vase` files that the Windows app opens too, and back. The first visit takes a
-  little while to load; after that it starts quickly.
+* **In your browser:** <https://rickusinggithub.github.io/vaseinator/> – the whole app, Simple and Advanced:
+  every setting, the curves, drawing and tracing your own cross-section (in a full window too), your own
+  function, the Vase, Section, Overhangs and Print layout views, Spin and Watch it print, the side and
+  from-above pictures, and Save for printing (3MF), STL, a picture and `.vase` designs – which the Windows
+  app opens too, and back. The first visit takes a little while to load; after that it starts quickly. The
+  one thing only the Windows app does is open the file in your slicer for you.
 * **Windows app (no Python needed):** download `Vaseinator.exe` from the
   [Releases](../../releases) page and run it. It is a single file: nothing to unzip or install.
   It isn't code-signed, so Windows SmartScreen may ask once; choose **More info → Run anyway**.
@@ -246,6 +248,8 @@ same kind of file as Lenticular Sign Maker and Maze Tube Designer. **Open in sli
 | `vaseinator/app.py` | The main window: the Advanced settings, views, animations, gallery, undo, exports. |
 | `vaseinator/simple_panel.py` | Simple mode: the picture choices, and the gallery of pictures. |
 | `vaseinator/choices.py` | What each of Simple mode's pictures sets – shared with the web version. |
+| `vaseinator/settings.py` | Every Advanced setting, the rules for which are shown and what a change brings with it – shared with the web version. |
+| `vaseinator/report.py` | The panel beside the 3D view, the steps to print it, and the help – shared with the web version. |
 | `vaseinator/slicers.py` | Finding the slicers installed, to open a vase in one. |
 | `vaseinator/geometry.py` | The vase itself: the surface, softening, the solid and the shown shell, and the sums. |
 | `vaseinator/shapes.py` | Outlines, cross-sections, curves up the height, textures, palettes. |
@@ -262,7 +266,7 @@ same kind of file as Lenticular Sign Maker and Maze Tube Designer. **Open in sli
 | `tests/test_vase.py`, `tests/test_app.py` | Self-tests of the geometry and the window. |
 | `assets/gallery/` | A picture of each ready-made vase, drawn by `tools/make_thumbnails.py`. |
 | `tools/` | The icon, the gallery pictures, the example files, the STL checker, and `build_web.py`. |
-| `web/` | The web version: the page (`index.html`, `app.js`, `style.css`), the worker that runs the Python (`worker.js`) and the Python it calls (`bridge.py`). |
+| `web/` | The web version: the page (`index.html`, `app.js`, `style.css`), the 3D view (`view.js`), the curve and cross-section editors (`curves.js`, `outline.js`), the side and from-above pictures (`plots.js`), the worker that runs the Python (`worker.js`) and the Python it calls (`bridge.py`). |
 | `.github/workflows/pages.yml` | Publishes the web version on GitHub Pages at every push to `main`. |
 
 ### How the geometry works
@@ -341,15 +345,20 @@ settings and Undo. Test windows open on the second screen, if there is one.
 ### The web version
 
 The page runs the **same Python** as the desktop app – the parts of `vaseinator` that need no Qt: the
-geometry, the designs and the exports – in the browser with [Pyodide](https://pyodide.org) and numpy, in a
-web worker so the page stays smooth while a vase is built. `web/bridge.py` is the little bit between them:
-it builds a vase and hands back its mesh as raw arrays, which the page draws with
-[three.js](https://threejs.org), and makes the 3MF, STL and `.vase` files the page saves. A quick draft
-shows at once; the full detail follows a moment later. Nothing is sent anywhere: the vase is built on your
-own computer.
+geometry, the designs, the settings and their rules, the report and the exports – in the browser with
+[Pyodide](https://pyodide.org) and numpy. It runs two web workers, so the page stays smooth: one builds the
+vase, the other answers everything else at once – what a change of setting brings with it, which settings
+to show, tracing a picture, fitting a head. `web/bridge.py` is the little bit between them and the page: it
+builds a vase and hands back its mesh as raw arrays, which the page draws with
+[three.js](https://threejs.org), along with the desktop app's own report, the pictures' data and the
+print's timing, and makes the 3MF, STL and `.vase` files the page saves. The Advanced panel is made from
+the desktop app's own list of settings. A quick draft shows at once – and follows the hand while a curve
+or an outline is dragged – and the full detail follows a moment later. Nothing is sent anywhere: the vase
+is built on your own computer.
 
-`tools\build_web.py` puts the site together in `site\`: the page, the Python and the gallery pictures. To
-try it locally:
+`tools\build_web.py` puts the site together in `site\`: the page, the Python and the gallery pictures,
+the page's files stamped with a version so that after an update a browser never mixes old files with new.
+To try it locally:
 
 ```
 .venv\Scripts\python tools\build_web.py

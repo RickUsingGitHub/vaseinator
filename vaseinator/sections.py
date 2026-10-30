@@ -479,7 +479,13 @@ def trace_picture(path: str, size: int = 360):
     img = img.convertToFormat(QImage.Format_RGBA8888)
     w, h = img.width(), img.height()
     arr = np.frombuffer(img.constBits(), dtype=np.uint8, count=img.sizeInBytes())
-    arr = arr.reshape(h, img.bytesPerLine())[:, :w * 4].reshape(h, w, 4).astype(float)
+    return trace_rgba(arr.reshape(h, img.bytesPerLine())[:, :w * 4].reshape(h, w, 4), size)
+
+
+def trace_rgba(pixels, size: int = 360):
+    """Control points tracing the outline drawn in a picture's pixels (rows, columns, RGBA 0..255)."""
+    arr = np.asarray(pixels).astype(float)
+    h, w = arr.shape[:2]
     lum = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
     ink = (arr[..., 3] > 100) & (lum < 120)
     block = max(1, math.ceil(max(w, h) / size))            # shrink, keeping any ink in a block

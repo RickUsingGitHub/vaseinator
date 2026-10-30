@@ -1,20 +1,21 @@
-// Vaseinator in the browser: the desktop app's own Python geometry, run by Pyodide in this worker so the
-// page stays responsive while a vase is built.
+// Vaseinator in the browser: the desktop app's own Python, run by Pyodide in a worker so the page stays
+// responsive. The page runs two: one builds the vase, the other answers everything else at once.
 //
 // Messages in:  {id, call, args}   - call is a function of bridge.py
-// Messages out: {id, ok, result} or {id, ok: false, error}; a build's mesh comes as transferable arrays.
+// Messages out: {id, ok, result} or {id, ok: false, error}; a mesh or a file comes as transferable buffers.
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js");
 
 let bridge = null;
+const VERSION = self.location.search;          // the site's version, so its Python comes fresh with it
 
 async function start() {
   const py = await loadPyodide();
   await py.loadPackage("numpy");
-  const files = await (await fetch("py/files.json")).json();
+  const files = await (await fetch("py/files.json" + VERSION)).json();
   py.FS.mkdirTree("/home/pyodide/vaseinator");
   for (const name of files) {
-    const text = await (await fetch("py/" + name)).text();
+    const text = await (await fetch("py/" + name + VERSION)).text();
     py.FS.writeFile("/home/pyodide/" + name, text);
   }
   py.runPython("import sys; sys.path.insert(0, '/home/pyodide')");
@@ -38,14 +39,21 @@ self.onmessage = async (event) => {
     }
     if (call === "build") {
       const out = bridge.build(...args);
-      const [meta, pos, tri, col] = [out.get(0), out.get(1), out.get(2), out.get(3)];
-      const result = { meta, positions: bytesOf(pos), triangles: bytesOf(tri), colours: bytesOf(col) };
+      const result = { meta: out.get(0), positions: bytesOf(out.get(1)), triangles: bytesOf(out.get(2)),
+        colours: bytesOf(out.get(3)), lean: bytesOf(out.get(4)) };
       out.destroy();
-      self.postMessage({ id, ok: true, result }, [result.positions, result.triangles, result.colours]);
+      self.postMessage({ id, ok: true, result }, [result.positions, result.triangles, result.colours, result.lean]);
       return;
     }
-    if (call === "export_3mf" || call === "export_stl") {
-      const buffer = bytesOf(bridge[call](...args));
+    if (call === "export_3mf") {
+      const out = bridge.export_3mf(...args);
+      const result = { data: bytesOf(out.get(0)), steps: out.get(1) };
+      out.destroy();
+      self.postMessage({ id, ok: true, result }, [result.data]);
+      return;
+    }
+    if (call === "export_stl") {
+      const buffer = bytesOf(bridge.export_stl(...args));
       self.postMessage({ id, ok: true, result: buffer }, [buffer]);
       return;
     }
