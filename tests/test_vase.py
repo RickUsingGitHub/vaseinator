@@ -157,7 +157,12 @@ def test_a_cylinder_has_the_right_volume():
     d = VaseDesign(plain(height=H, silhouette=[[0.0, 2 * r], [1.0, 2 * r]], facet_size=0.5))
     want = math.pi * r * r * H
     assert abs(mesh_volume(d.verts, d.faces) - want) / want < 0.002
-    # it holds the inside of a 0.6 mm wall above a 1.2 mm floor
+    # printed normally, it holds the inside of two 0.6 mm walls above a 1.2 mm floor
+    assert abs(d.wall - 1.2) < 1e-9
+    holds = math.pi * (r - 1.2) ** 2 * (H - 1.2) / 1000.0
+    assert abs(d.capacity - holds) / holds < 0.01, (d.capacity, holds)
+    # seamless, inside one 0.6 mm line
+    d = VaseDesign(plain(height=H, silhouette=[[0.0, 2 * r], [1.0, 2 * r]], facet_size=0.5, vase_mode=REAL_VASE))
     holds = math.pi * (r - 0.6) ** 2 * (H - 1.2) / 1000.0
     assert abs(d.capacity - holds) / holds < 0.01, (d.capacity, holds)
 
@@ -172,7 +177,7 @@ def test_the_plain_start_is_a_plain_cylinder():
     assert abs(d.H - 200.0) < 1e-9 and abs(d.widest - 200.0) < 0.01 and d.worst < 0.01 and d.softened == 0.0
     side = d.verts[d.faces[:d.side].ravel()]
     assert np.allclose(np.hypot(side[:, 0], side[:, 1]), 100.0, atol=1e-6)       # round, straight, no pattern
-    assert not d.gradient and len(d.bands) == 1 and p.expression == "" and p.vase_mode == REAL_VASE
+    assert not d.gradient and len(d.bands) == 1 and p.expression == "" and p.vase_mode == FAKE_VASE
     # ready for your own function
     p.expression = "2 * sin(8*theta)"
     d = VaseDesign(p)

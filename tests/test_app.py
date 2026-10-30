@@ -12,15 +12,17 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PySide6.QtCore import QPoint, QPointF, QSettings, Qt  # noqa: E402
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF, QWheelEvent  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPainter, QPalette, QPen, QPolygonF, QWheelEvent  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QLabel, QMessageBox, QPushButton  # noqa: E402
 
 from vaseinator import app as appmod  # noqa: E402
 from vaseinator import sections  # noqa: E402
+from vaseinator.presets import GALLERY, slug  # noqa: E402
+from vaseinator.simple_panel import PATTERNS, SHAPES_FROM_ABOVE, asset  # noqa: E402
 from vaseinator.geometry import edge_check  # noqa: E402
 from vaseinator.params import (BANDS, CIRCLE, DRAWN, FAKE_VASE, FLOWER, GRADIENT, ONE_COLOUR, OWN,  # noqa: E402
-                               OWN_PROFILE, POLYGON, REAL_VASE, SAME, STAR, SWING, load_design)
+                               OWN_PROFILE, POLYGON, REAL_VASE, SAME, STAR, SWING, VaseParams, load_design)
 from vaseinator.stl import read_stl  # noqa: E402
 from vaseinator.threemf import read_3mf  # noqa: E402
 
@@ -61,7 +63,7 @@ def main():
     settle()
     check("an own twist curve starts from the twist as it was",
           win.params.twist_style == OWN and abs(win.params.twist_curve[-1][1] - 150.0) < 1e-6
-          and win._wanted("twist_curve") is not win.simple_mode)
+          and win._wanted("twist_curve"))
 
     # a curve dragged: live draft builds, then a full one
     win.set_simple_mode(False, remember=False)
@@ -322,6 +324,86 @@ def main():
     qapp.processEvents()
     choose("shape1", CIRCLE)
     check("the full window closes when the shape is no longer drawn", not win.outline_windows[1].isVisible())
+
+    # Simple mode, for anyone: a few pictures, and one button to save it for printing
+    win.use_plain()
+    settle()
+    win.set_simple_mode(True, remember=False)
+    sp = win.simple
+    check("Simple shows the picture panel, Advanced every setting, and a vase prints normally unless asked",
+          win.panels.currentIndex() == 0 and win.detail_btn.text() == "Advanced"
+          and VaseParams().vase_mode == FAKE_VASE and sp.name.text() == "Plain cylinder")
+    star = [n for n, _ in SHAPES_FROM_ABOVE].index("Star")
+    sp.above.buttons[star].click()
+    settle()
+    check("the Star picture makes it a five-pointed star, the same all the way up",
+          win.params.shape1 == STAR and win.params.count1 == 5 and win.params.shape2 == SAME
+          and win.design.closed and sp.above.buttons[star].isChecked())
+    sp.side.buttons[5].click()                                    # Bulb
+    settle()
+    check("a picture from the side gives it that outline", win.params.profile == 5
+          and sp.side.buttons[5].isChecked() and win.design.closed)
+    sp.wide.setValue(12.0)
+    sp.tall.setValue(15.0)
+    settle()
+    check("Tall and Wide, in centimetres, size it", abs(win.design.widest - 120.0) < 1.0
+          and abs(win.design.H - 150.0) < 1e-6)
+    sp.twist.setValue(6)
+    settle()
+    check("the twist slider turns it a quarter turn", win.params.twist == 90.0
+          and sp.twist_label.text() == "A quarter turn")
+    ribs = [n for n, _ in PATTERNS].index("Ribs")
+    sp.pattern.buttons[ribs].click()
+    settle()
+    check("a pattern picture puts on ribs, and nothing else", win.params.rib_count == 24
+          and win.params.ring_count == 0 and win.params.bump_around == 0 and sp.pattern.buttons[ribs].isChecked())
+    sp.colour.buttons[3].click()                                  # red
+    settle()
+    check("a colour makes it that colour", win.params.colour_style == ONE_COLOUR
+          and win.params.color1.lower() == "#d62828" and sp.colour.buttons[3].isChecked())
+    win.undo()
+    check("Undo takes back one picture at a time", win.params.color1.lower() != "#d62828"
+          and win.params.rib_count == 24)
+    check("every design has its picture in the gallery",
+          all(asset("gallery", slug(t) + ".png") for t, _, _ in GALLERY) and asset("gallery", "plain_cylinder.png"))
+    appmod.GalleryDialog.exec = lambda self: (setattr(self, "chosen", "Claw Shell"), QDialog.Accepted)[1]
+    sp.choose_design.emit()
+    settle()
+    check("Choose a design starts from the picture picked", win.params.name == "claw_shell"
+          and sp.name.text() == "Claw Shell")
+    win.use_plain()
+    settle()
+    sp.draw_own.emit()
+    qapp.processEvents()
+    check("Draw my own shape opens the big drawing window, starting as the shape it was",
+          win.params.shape1 == DRAWN and win.params.repeat1 == 1 and win.outline_windows[1].isVisible())
+    win.outline_windows[1].close()
+    opened = []
+    appmod.slicers.open_in = lambda program, file: opened.append((program, file)) or True
+    win.settings.setValue("slicer", sys.executable)               # a program that exists; it isn't started
+    os.remove(out["3mf"])
+    sp.save.emit()
+    qapp.processEvents()
+    words = " ".join(lab.text() for lab in win.steps.findChildren(QLabel))
+    check("Save for printing writes the 3MF and says how to print it", os.path.exists(out["3mf"])
+          and win.steps.isVisible() and "No supports" in words and "walls" in words and "0% infill" in words)
+    go = next(b for b in win.steps.findChildren(QPushButton) if b.text().startswith("Open in"))
+    go.click()
+    qapp.processEvents()
+    check("... and Open in opens it in the slicer", opened and opened[-1][1] == out["3mf"])
+    pt = QApplication.font().pointSizeF()
+    win.a_big.trigger()
+    qapp.processEvents()
+    check("Bigger text makes the writing bigger", QApplication.font().pointSizeF() > 1.25 * pt)
+    win.a_big.trigger()
+    win.a_light.trigger()
+    qapp.processEvents()
+    check("... the light theme is light", QApplication.palette().color(QPalette.Window).lightness() > 200)
+    win.a_light.trigger()
+    qapp.processEvents()
+    check("... and both go back", abs(QApplication.font().pointSizeF() - pt) < 0.01
+          and QApplication.palette().color(QPalette.Window).lightness() < 80)
+    win.set_simple_mode(False, remember=False)
 
     # a broken function is reported, not crashed on
     win.widgets["expression"].setPlainText("sin(theta")

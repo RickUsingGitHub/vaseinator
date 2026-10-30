@@ -117,7 +117,7 @@ class VaseParams:
     look: int = SILK
 
     # --- printing -----------------------------------------------------------
-    vase_mode: int = REAL_VASE    # real: spiral vase mode, one solid, one colour (slicers won't change
+    vase_mode: int = FAKE_VASE    # real: spiral vase mode, one solid, one colour (slicers won't change
     #                               filament in it); fake: an ordinary print with walls, the colour
     #                               bands as parts of their own filaments
     walls: int = 2                # fake vase: walls round the vase

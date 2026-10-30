@@ -1,9 +1,12 @@
 # Vaseinator
 
-A Windows desktop app that designs **vases for a 3D printer's spiral vase mode**: one continuous wall
-climbing round and round on a solid bottom. Every vase it makes is a closed, watertight model, every
-layer is one single loop, and no part of the wall leans further than you allow – so it **prints
-without supports**.
+A Windows desktop app that designs **vases that print without supports** – as an ordinary print with a
+few walls, in any colours, or **seamless** in the slicer's spiral vase mode. Every vase it makes is a
+closed, watertight model, every layer is one single loop, and no part of the wall leans further than you
+allow.
+
+**Simple** mode is a handful of choices made from pictures – easy enough for anyone – and one big
+**Save for printing** button; **Advanced** has every setting.
 
 Shape the outline, pick a cross-section and what it turns into on the way up, **spin** it, cover it in
 ribs, rings, bumps, organic lumps or **your own formula**, and colour it in bands, stripes or a
@@ -15,9 +18,9 @@ ready to slice.
 
 ![The ready-made vases](docs/images/gallery.png)
 
-| Draw how things change up the vase | Section: the single printed wall |
+| Advanced: draw how things change up the vase | Section: the printed wall |
 |---|---|
-| ![Detailed mode with curves](docs/images/detailed.png) | ![Section view](docs/images/section.png) |
+| ![Advanced mode with curves](docs/images/detailed.png) | ![Section view](docs/images/section.png) |
 | **Overhangs: green is easy, red needs support** | **Watch it print, in real print time** |
 | ![Overhang check](docs/images/overhangs.png) | ![Print layout and animation](docs/images/print_layout.png) |
 | **Draw any cross-section, sharp corners and all** | **Draw one lobe, repeat it: three bulbs become six** |
@@ -46,14 +49,15 @@ ready to slice.
   lines – they are read as one, so start each new line with + - * or / – with notes after a `#`. It is
   checked and run safely: numbers, the listed variables and functions only; a mistake is pointed out by
   line and character.
-* **Real or fake spiral vase**: a *real* one prints in the slicer's spiral vase mode – one continuous
-  line, fast and clean, in one filament (or a gradient spool). A *fake* one is an ordinary print of a
-  hollow vase – a few walls, no infill, no top – slower, but sturdier and in colour.
+* **A normal print, or seamless**: a vase prints like any other print – a few walls, no infill, no top –
+  sturdy, watertight and in colour. Or, in one colour (or a gradient spool), **seamless** in the slicer's
+  spiral vase mode: one line climbing round and round, with no seam and a single wall that glows when
+  lit. Spiral vase mode is hardly any quicker, so a normal print is the usual.
 * **Colours**: one colour or a **gradient spool** – shown where its colours will really land, worked out
-  from the filament each height uses – and, for a fake spiral vase, up to four filaments in **bands**
+  from the filament each height uses – and, printed normally, up to four filaments in **bands**
   (even, or thicker at the top or the bottom) or **stripes**, with palettes.
 * **Looks**: matte, silk, glossy or translucent in the 3D view.
-* **Printable, always**: a spiral wall rests on the single line below it, so it may lean neither out nor
+* **Printable, always**: each layer of the wall rests on the one below it, so it may lean neither out nor
   in further than the limit (45° by default). **Soften to fit** reshapes only what leans too far – and
   tells you by how much – and every triangle is checked afterwards.
 * **Views**: the vase, a **section** through the printed wall, an **overhang check**, and the print
@@ -63,11 +67,13 @@ ready to slice.
   time, steepest overhang, and the mesh – closed and watertight.
 * **Gallery** of nineteen ready-made vases, a **plain cylinder** to start from blank, **Surprise me** (a
   new random vase that still prints), and **undo / redo** of everything.
-* Exports a solid **STL**, or a **3MF** in the middle of the bed – one solid for a real spiral vase, each
-  colour band its own part, set to its filament, for a fake one – as Lenticular Sign Maker and Maze Tube
-  Designer do. Designs save as `.vase` files (JSON).
-* **Simple** shows the essentials, your own function among them; **Detailed** shows every setting and the
-  curves.
+* **Save for printing**: a **3MF** in the middle of the bed – each colour band its own part, set to its
+  filament (one solid for a seamless vase) – as Lenticular Sign Maker and Maze Tube Designer do, with plain
+  steps to print it and **Open in slicer** (Flash Studio, OrcaSlicer, Bambu Studio, PrusaSlicer, Cura… –
+  whichever is installed). Also a solid **STL**. Designs save as `.vase` files (JSON).
+* **Simple**: a design chosen from pictures, how big (in centimetres), the shape from above and from the
+  side, the twist, a pattern and a colour – each a picture to click. **Advanced** has every setting and
+  the curves, your own function among them. **Bigger text** and a **light theme** are in the View menu.
 
 ## Download and run
 
@@ -97,11 +103,17 @@ Sign Maker, if you have used them. Printer settings are remembered for new desig
 
 ## Using it
 
-Pick a vase from the **Gallery** or press **Surprise me**, then change it. Or start blank: **Plain
-cylinder**, at the top of the Gallery (or **File ▸ New plain cylinder**, Ctrl+Shift+N), is a cylinder
-200 mm across and 200 mm tall with everything else off, ready for your own function or a drawn
-cross-section; your printer settings are kept. Every change rebuilds the vase at once; while you drag a
-point on a curve, a quicker rough version follows your hand.
+In **Simple** mode, click **Choose a design…** (every ready-made vase as a picture) or **Surprise me**,
+then click the pictures to change it: the shape from above, the shape from the side, a pattern, a colour;
+**Tall** and **Wide** size it and the slider twists it. **Draw my own shape…** opens a big window to draw
+the shape from above yourself. When it looks right, **Save for printing…** saves it for the slicer and
+says, in plain steps, how to print it – with a button to open it in your slicer (File ▸ Choose slicer
+program picks a different one).
+
+Or start blank: **Plain cylinder**, first in the gallery (or **File ▸ New plain cylinder**, Ctrl+Shift+N),
+is a cylinder 200 mm across and 200 mm tall with everything else off, ready for your own function or a
+drawn cross-section; your printer settings are kept. Every change rebuilds the vase at once; while you
+drag a point on a curve, a quicker rough version follows your hand.
 
 The curves for the twist, the change of shape and the pattern strength are ordinary graphs: the vase
 from bottom to top runs left to right, and the value runs up – drag a point up for more, down for
@@ -116,8 +128,8 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Surface** | Ribs, rings, bumps and organic lumps; whether they turn with the twist; how strong they are up the vase; and a plain foot and rim. |
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |
 | **Your own function** | A formula added to the radius. **Examples** has eight to try; **Help…** lists the variables and functions. |
-| **Colours** | **Vase mode**: real spiral vase (one colour, or a gradient spool) or fake spiral vase (colours). The colour, or – for a fake spiral vase – a palette or four filament colours, and how they go up the vase: one colour, bands, stripes or a gradient spool. How it looks: matte, silk, glossy, translucent. |
-| **Printing** | For a fake spiral vase, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail. |
+| **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go up the vase: one colour, bands, stripes or a gradient spool. How it looks: matte, silk, glossy, translucent. |
+| **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail. |
 
 **3D view:** left-drag turns it, right-drag or shift-drag moves it, the wheel zooms, double-click or F goes
 back to the chosen view. **S** spins it, **F5** watches it print, **Ctrl+1–4** switch views, **Ctrl+R**
@@ -143,9 +155,18 @@ shows fifteen layers stacked, so the twist and the change of shape are easy to s
 
 ## Printing
 
-Choose the **Vase mode** under *Colours* first.
+**Save for printing** gives the steps for your vase. *Advanced ▸ Printing ▸ Print as* chooses a normal
+print (the usual) or seamless.
 
-**A real spiral vase**
+**A normal print**
+
+* Leave spiral vase mode **off**. Set the **walls** (wall loops) the app is set to – two make a sturdy,
+  watertight vase – **0% sparse infill**, **0 top layers**, and the bottom layers the panel gives.
+* The colour bands and stripes are parts of their own filaments in the 3MF, so the slicer prints them in
+  colour by itself; on a printer with several toolheads, like the Creator 5 Pro, each band uses its own
+  head. It prints a layer at a time, with a seam.
+
+**Seamless (spiral vase mode)**
 
 * **Slice with spiral vase mode on** (Spiralize). The exported model is **solid**: the slicer prints only
   its outside, as one continuous line. Don't slice it normally with infill – it would print as a solid
@@ -157,14 +178,6 @@ Choose the **Vase mode** under *Colours* first.
 * It prints **one filament**. Flash Studio won't change filament in spiral vase mode (*Change Filament* is
   greyed out on the layer slider), and won't spiral an object made of parts of several filaments. A
   gradient spool is one filament, so it works.
-
-**A fake spiral vase**
-
-* Leave spiral vase mode **off**. Set the **walls** (wall loops) the app is set to – two make a sturdy,
-  watertight vase – **0% sparse infill**, **0 top layers**, and the bottom layers the panel gives.
-* The colour bands and stripes are parts of their own filaments in the 3MF, so the slicer prints them in
-  colour by itself; on a printer with several toolheads, like the Creator 5 Pro, each band uses its own
-  head. It prints a layer at a time, so it is slower than a spiral, with a seam.
 
 **Either way**
 
@@ -185,20 +198,23 @@ one closed loop.
 
 ## Opening the 3MF in your slicer
 
-**Export 3MF** writes the vase as one object in the middle of the bed – the same kind of file as Lenticular
-Sign Maker and Maze Tube Designer. In **Flash Studio or OrcaSlicer**, use **File ▸ Import** (Ctrl+I).
+**Save for printing** (and **Export 3MF**) writes the vase as one object in the middle of the bed – the
+same kind of file as Lenticular Sign Maker and Maze Tube Designer. **Open in slicer** opens it for you; in
+**Flash Studio or OrcaSlicer** you can also use **File ▸ Import** (Ctrl+I).
 
-* **Real spiral vase:** the vase is one solid part. Turn on spiral vase mode and print.
-* **Fake spiral vase:** each colour band is its own part, set to filaments 1, 2, 3… in the vase's colours;
+* **A normal print:** each colour band is its own part, set to filaments 1, 2, 3… in the vase's colours;
   reassign them in the slicer as you like. Leave spiral vase mode off, set the walls, 0% infill and 0 top
   layers, and print.
+* **Seamless:** the vase is one solid part. Turn on spiral vase mode and print.
 
 ## Project layout
 
 | File | What it holds |
 | --- | --- |
 | `main.py` | Starts the app. |
-| `vaseinator/app.py` | The main window: settings panel, views, animations, gallery, undo, exports. |
+| `vaseinator/app.py` | The main window: the Advanced settings, views, animations, gallery, undo, exports. |
+| `vaseinator/simple_panel.py` | Simple mode: the picture choices, and the gallery of pictures. |
+| `vaseinator/slicers.py` | Finding the slicers installed, to open a vase in one. |
 | `vaseinator/geometry.py` | The vase itself: the surface, softening, the solid and the shown shell, and the sums. |
 | `vaseinator/shapes.py` | Outlines, cross-sections, curves up the height, textures, palettes. |
 | `vaseinator/expr.py` | Your own function: checked, then evaluated with numpy. |
@@ -211,7 +227,8 @@ Sign Maker and Maze Tube Designer. In **Flash Studio or OrcaSlicer**, use **File
 | `vaseinator/params.py` | Settings, and saving and opening designs. |
 | `vaseinator/stl.py`, `threemf.py` | The exports. |
 | `tests/test_vase.py`, `tests/test_app.py` | Self-tests of the geometry and the window. |
-| `tools/` | The icon, the example files, and the STL checker. |
+| `assets/gallery/` | A picture of each ready-made vase, drawn by `tools/make_thumbnails.py`. |
+| `tools/` | The icon, the gallery pictures, the example files, and the STL checker. |
 
 ### How the geometry works
 
@@ -251,7 +268,8 @@ narrowed to fit, checked, filled and built closed in a few seconds.
 `.venv\Scripts\python -m tests.test_app` drives the window itself: edits, curves, undo, the gallery,
 Surprise me, every view, the print animation, saving and exporting, and drawing (with the mouse, close
 up and in a full window, zoomed with the wheel), repeating up to a hundred times and tracing a
-cross-section. Test windows open on the second
+cross-section, and Simple mode: each kind of picture, the gallery of pictures, Save for printing with its
+steps and Open in slicer, bigger text and the light theme. Test windows open on the second
 screen, if there is one.
 
 ## License

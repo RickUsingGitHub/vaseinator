@@ -114,7 +114,7 @@ GALLERY = [
 PLAIN = dict(name="plain_cylinder", height=200.0, profile=1, silhouette=outline(1, 200.0),
              shape1=CIRCLE, turn1=0.0, shape2=SAME, twist=0.0, twist_style=EVENLY, lattice=False,
              rib_count=0, rib_lean=0.0, rib_cross=False, ring_count=0, bump_around=0, organic_depth=0.0,
-             strength=EVERYWHERE, facets=False, expression="", vase_mode=REAL_VASE, colour_style=ONE_COLOUR,
+             strength=EVERYWHERE, facets=False, expression="", vase_mode=FAKE_VASE, colour_style=ONE_COLOUR,
              colours_used=1, look=MATTE, **palette("Porcelain"))
 
 
@@ -224,7 +224,7 @@ def surprise(keep: VaseParams, seed: int) -> VaseParams:
     for k, v in palette(rng.choice(PALETTES)[0]).items():
         setattr(p, k, v)
     p.colour_style = rng.choices([ONE_COLOUR, BANDS, STRIPES, GRADIENT], [3, 3, 1, 2])[0]
-    p.vase_mode = FAKE_VASE if p.colour_style in (BANDS, STRIPES) else REAL_VASE
+    p.vase_mode = FAKE_VASE                     # a normal print; seamless is for those who ask for it
     p.colours_used = rng.randint(2, 4)
     p.band_count = rng.randint(2, 6)
     p.band_spacing = round(rng.uniform(-0.6, 0.6), 2)

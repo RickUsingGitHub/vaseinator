@@ -9,17 +9,17 @@ import sys
 import time
 
 import numpy as np
-from PySide6.QtCore import QSettings, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (QAction, QColor, QDesktopServices, QFontDatabase, QIcon, QKeySequence, QPainter,
                            QPalette, QPen, QPixmap, QSurfaceFormat)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
-                               QScrollArea, QSlider, QSpinBox, QSplitter, QStyle, QTextBrowser,
-                               QToolButton, QVBoxLayout, QWidget)
+                               QScrollArea, QSlider, QSpinBox, QSplitter, QStackedWidget, QStyle,
+                               QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
 from . import __version__
-from . import sections
+from . import sections, slicers
 from .curves import CurveEditor
 from .expr import EXAMPLES, FUNCTION_HELP, VARIABLES
 from .geometry import VaseDesign, duration
@@ -28,7 +28,8 @@ from .params import (BANDS, CIRCLE, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, FIL
                      OWN, OWN_PROFILE, PEBBLE, POLYGON, REAL_VASE, SAME, SHAPES, SILK, SLOW_DOWN, SPEED_UP, STRIPES,
                      SWING, TRANSLUCENT, VaseParams, colour_style_of, load_design, save_design)
 from .plots import ShapePlots
-from .presets import GALLERY, gallery_design, outline, palette, plain_design, surprise
+from .presets import GALLERY, gallery_design, outline, palette, plain_design, slug, surprise
+from .simple_panel import GalleryDialog, SimplePanel, asset, profile_icon
 from .spinbox import DoubleSpinBox, SpinBox
 from .shapes import (PALETTES, PROFILES, SHAPE_LABELS, SHAPE_NAMES, change, progress, sample_points, shape_table,
                      strength, strength_names, style_names)
@@ -52,7 +53,8 @@ STRENGTHS = list(strength_names().items())
 COLOUR_STYLES = [(ONE_COLOUR, "One colour"), (BANDS, "Bands up the vase"), (STRIPES, "Stripes"),
                  (GRADIENT, "Gradient spool")]
 LOOKS = [(MATTE, "Matte"), (SILK, "Silk"), (GLOSSY, "Glossy"), (TRANSLUCENT, "Translucent")]
-VASE_MODES = [(REAL_VASE, "Real spiral vase - one colour"), (FAKE_VASE, "Fake spiral vase - colours")]
+VASE_MODES = [(FAKE_VASE, "Normal print - walls, any colours"),
+              (REAL_VASE, "Seamless - spiral vase mode, one colour")]
 REAL_COLOUR_STYLES = [(ONE_COLOUR, "One colour"), (GRADIENT, "Gradient spool")]
 USED = [(2, "Two"), (3, "Three"), (4, "Four")]
 
@@ -173,13 +175,6 @@ SPEC = [
          "Anything after a # is a note."),
     ]),
     ("Colours", [
-        ("vase_mode", "Vase mode", "choice", VASE_MODES, None, None, "",
-         "Real spiral vase: the slicer's spiral vase mode - one continuous line, fast and clean.\n"
-         "It prints one filament: Flash Studio won't change filament in spiral vase mode. A\n"
-         "gradient spool still works, being one filament.\n"
-         "Fake spiral vase: an ordinary print of a hollow vase - a few walls, no infill, no top.\n"
-         "Slower, with a seam on every layer, but sturdier, and the colour bands come in the\n"
-         "3MF as parts of their own filaments, so they print in colour by themselves."),
         ("palette", "Palette", "palette", None, None, None, "", "Set all four filament colours from a palette."),
         ("color1", "Filament 1", "color", None, None, None, "",
          "Colour of filament 1. Load the same colour in slot 1 of the slicer."),
@@ -190,7 +185,7 @@ SPEC = [
          "One colour; bands of colour up the vase; thin stripes; or a gradient spool (one\n"
          "filament that changes colour along its length - shown as it will come out, by\n"
          "how much filament each height uses).\n"
-         "Bands and stripes need a fake spiral vase: each band is its own part in the 3MF."),
+         "Bands and stripes need a normal print: each band is its own part in the 3MF."),
         ("colours_used", "Filaments", "choice", USED, None, None, "", "How many filaments the colours go through, from 1."),
         ("band_count", "Bands", "int", 2, 64, 1, "", "How many bands of colour, bottom to top."),
         ("band_spacing", "Band sizes", "slider", -1.0, 1.0, 0.01, "",
@@ -203,8 +198,14 @@ SPEC = [
         ("look", "Looks like", "choice", LOOKS, None, None, "", "How the filament looks in the 3D view."),
     ]),
     ("Printing", [
+        ("vase_mode", "Print as", "choice", VASE_MODES, None, None, "",
+         "Normal print: printed with walls, like any other print - sturdy, watertight, and in any\n"
+         "colours (each band of colour is its own part in the 3MF).\n"
+         "Seamless: the slicer's spiral vase mode - one line climbing round and round, so there is\n"
+         "no seam, and a single wall that glows when lit. Hardly quicker, and one filament only:\n"
+         "Flash Studio won't change filament in it (a gradient spool still works)."),
         ("walls", "Walls", "int", 1, 10, 1, "",
-         "Fake spiral vase: how many walls round the vase (the slicer's wall loops). Two make a\n"
+         "Normal print: how many walls round the vase (the slicer's wall loops). Two make a\n"
          "sturdy, watertight vase."),
         ("max_overhang", "Steepest overhang", "float", 10.0, 70.0, 1.0, "°",
          "How far the wall may lean from upright, out or in. A spiral wall is one line wide,\n"
@@ -234,14 +235,6 @@ SPEC = [
     ]),
 ]
 
-SIMPLE_KEYS = {"height", "widest", "profile", "shape1", "drawn1", "repeat1", "count1", "depth1", "sharp1",
-               "expression",
-               "shape2", "drawn2", "repeat2", "count2",
-               "morph", "morph_swings", "twist",
-               "twist_style", "lattice", "rib_count", "rib_depth", "ring_count", "ring_depth", "bump_around",
-               "organic_depth", "facets", "vase_mode", "palette", "color1", "color2", "color3", "color4",
-               "colour_style", "colours_used", "band_count", "look", "walls", "max_overhang", "soften",
-               "line_width", "layer_height"}
 REMEMBERED = ("line_width", "layer_height", "bottom", "printer_height", "bed_x", "bed_y", "speed", "max_flow",
               "filament_d", "density", "max_overhang")
 LIVE_KEYS = {"band_spacing"}            # sliders: follow the hand with quick draft builds
@@ -279,7 +272,9 @@ def glyph_icon(kind: str) -> QIcon:
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
-    pen = QPen(QColor(225, 230, 236), 5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+    app = QApplication.instance()
+    ink = app.palette().color(QPalette.WindowText) if app is not None else QColor(225, 230, 236)
+    pen = QPen(ink, 5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
     p.setPen(pen)
     if kind == "export":
         p.drawLine(QPointF(32, 8), QPointF(32, 40))
@@ -374,10 +369,61 @@ class FunctionHelp(QDialog):
         box.addWidget(buttons)
 
 
+class PrintSteps(QDialog):
+    """After Save for printing: where the file is, and plain steps to print it."""
+    open_slicer = Signal()
+
+    def __init__(self, parent, d, path, parts: int, slicer):
+        super().__init__(parent)
+        self.setWindowTitle("How to print it")
+        p = d.p
+        if p.vase_mode == REAL_VASE:
+            settings = (f"turn on <b>Spiral vase</b> (Spiralize), with <b>{d.bottom_layers} bottom layers</b> "
+                        f"and the outer wall <b>{p.line_width:g} mm</b> wide")
+        else:
+            settings = (f"<b>{p.walls} walls</b>, <b>0% infill</b>, <b>0 top layers</b> and "
+                        f"<b>{d.bottom_layers} bottom layers</b> (leave Spiral vase off)")
+        colours = ("Load the filament you want and print." if parts == 1 else
+                   f"It comes as <b>{parts} parts</b>, one for each band of colour, already set to filaments "
+                   f"{', '.join(str(k) for k in sorted({f for _, f in d.bands}))}: load those colours in those "
+                   "slots, or change them in the slicer.")
+        where = slicers.slicer_name(slicer) if slicer else "your slicer"
+        text = QLabel(
+            f"<p>Saved <b>{os.path.basename(path)}</b><br>in {os.path.dirname(path)}</p>"
+            f"<ol><li>Open it in {where} (the button below, or File ▸ Import).</li>"
+            f"<li>In the print settings: {settings}.</li>"
+            f"<li><b>No supports</b> - none are needed: nothing leans more than {d.worst:.0f}°.</li>"
+            f"<li>{colours}</li>"
+            f"<li>Slice it and print. It takes about <b>{duration(d.seconds)}</b> and "
+            f"<b>{d.grams:.0f} g</b> of filament.</li></ol>")
+        text.setWordWrap(True)
+        text.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        box = QVBoxLayout(self)
+        box.addWidget(text)
+        row = QHBoxLayout()
+        if slicer:
+            go = QPushButton(f"Open in {where}")
+            go.setObjectName("saveButton")
+            go.setMinimumHeight(36)
+            go.clicked.connect(lambda: (self.open_slicer.emit(), self.accept()))
+            row.addWidget(go)
+        show = QPushButton("Show the file")
+        show.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path))))
+        row.addWidget(show)
+        done = QPushButton("Close")
+        done.clicked.connect(self.accept)
+        row.addWidget(done)
+        box.addLayout(row)
+        self.resize(560, 320)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, settings: QSettings | None = None):
         super().__init__()
         self.settings = settings or QSettings("Vaseinator", "Vaseinator")
+        if self.settings.value("big_text", False, type=bool) or self.settings.value("light_theme", False, type=bool):
+            apply_theme(QApplication.instance(), light=self.settings.value("light_theme", False, type=bool),
+                        scale=1.3 if self.settings.value("big_text", False, type=bool) else 1.0)
         self.simple_mode = self.settings.value("simple_mode", True, type=bool)
         self.params = self._fresh_params()
         self.design: VaseDesign | None = None
@@ -431,8 +477,8 @@ class MainWindow(QMainWindow):
         mode_row = QHBoxLayout()
         mode_row.setSpacing(0)
         self.simple_btn = QPushButton("Simple")
-        self.detail_btn = QPushButton("Detailed")
-        self.simple_btn.setToolTip("The essentials: size, shape, spin, patterns and colours.")
+        self.detail_btn = QPushButton("Advanced")
+        self.simple_btn.setToolTip("A few choices made from pictures: size, shape, twist, pattern and colour.")
         self.detail_btn.setToolTip("Every setting, with curves to draw how things change up the vase.")
         for b in (self.simple_btn, self.detail_btn):
             b.setCheckable(True)
@@ -443,7 +489,6 @@ class MainWindow(QMainWindow):
         (self.simple_btn if self.simple_mode else self.detail_btn).setChecked(True)
         self.simple_btn.clicked.connect(lambda: self.set_simple_mode(True))
         self.detail_btn.clicked.connect(lambda: self.set_simple_mode(False))
-        pl.addLayout(mode_row)
 
         name_row = QHBoxLayout()
         name_row.addWidget(QLabel("Name"))
@@ -451,7 +496,7 @@ class MainWindow(QMainWindow):
         self.name_edit.setToolTip("Design name - used for exported file names.")
         self.name_edit.textChanged.connect(self._on_name)
         name_row.addWidget(self.name_edit)
-        dice = QToolButton()
+        dice = self.dice_btn = QToolButton()
         dice.setIcon(glyph_icon("dice"))
         dice.setToolTip("Surprise me: a new random vase that still prints (Ctrl+R)")
         dice.clicked.connect(self.surprise_me)
@@ -488,8 +533,32 @@ class MainWindow(QMainWindow):
         scroll.setWidget(panel)
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(350)
-        scroll.setMaximumWidth(460)
+        # Simple: a few choices made from pictures; Advanced: every setting
+        self.simple = SimplePanel()
+        self.simple.param.connect(lambda k, v: self._on_param(k, v))
+        self.simple.live.connect(lambda k, v: self._on_param(k, v, live=True))
+        self.simple.changes.connect(self.apply_changes)
+        self.simple.choose_design.connect(self.choose_design)
+        self.simple.surprise.connect(lambda: self.surprise_me())
+        self.simple.draw_own.connect(self.draw_own_shape)
+        self.simple.save.connect(self.save_for_printing)
+        self.simple.advanced.connect(lambda: self.set_simple_mode(False))
+        simple_scroll = QScrollArea()
+        simple_scroll.setWidget(self.simple)
+        simple_scroll.setWidgetResizable(True)
+        simple_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.panels = QStackedWidget()
+        self.panels.addWidget(simple_scroll)
+        self.panels.addWidget(scroll)
+        self.panels.setCurrentIndex(0 if self.simple_mode else 1)
+        left = QWidget()
+        lv = QVBoxLayout(left)
+        lv.setContentsMargins(8, 8, 0, 0)
+        lv.setSpacing(6)
+        lv.addLayout(mode_row)
+        lv.addWidget(self.panels, 1)
+        left.setMinimumWidth(370)
+        left.setMaximumWidth(480)
 
         self.viewer = Viewer3D()
         self.viewer.dragged.connect(self._on_dragged)
@@ -518,7 +587,7 @@ class MainWindow(QMainWindow):
         right.handle(1).setEnabled(False)
 
         main = QSplitter(Qt.Horizontal)
-        main.addWidget(scroll)
+        main.addWidget(left)
         main.addWidget(right)
         main.setStretchFactor(1, 1)
         main.setSizes([380, 1100])
@@ -872,6 +941,10 @@ class MainWindow(QMainWindow):
         for k, win in self.outline_windows.items():          # a shape no longer drawn has nothing to draw
             if win.isVisible() and getattr(p, f"shape{k}") != DRAWN:
                 win.close()
+        if hasattr(self, "simple"):
+            titles = {slug(t): t for t, _, _ in GALLERY}
+            titles["plain_cylinder"] = "Plain cylinder"
+            self.simple.refresh(p, self._widest(), titles.get(p.name, ""))
         self._apply_mode()
 
     def _wanted(self, key) -> bool:
@@ -933,11 +1006,7 @@ class MainWindow(QMainWindow):
             show = int(key[-1]) <= (1 if colour_style_of(p) == ONE_COLOUR else p.colours_used)
         elif key == "walls":
             show = p.vase_mode == FAKE_VASE
-        if not show:
-            return False
-        if key in ("silhouette",):
-            return not self.simple_mode
-        return not self.simple_mode or key in SIMPLE_KEYS
+        return show
 
     def _apply_mode(self):
         for key, (form, field) in self._rows.items():
@@ -948,6 +1017,7 @@ class MainWindow(QMainWindow):
     def set_simple_mode(self, simple: bool, remember: bool = True):
         self.simple_mode = simple
         (self.simple_btn if simple else self.detail_btn).setChecked(True)
+        self.panels.setCurrentIndex(0 if simple else 1)
         if remember:
             self.settings.setValue("simple_mode", simple)
         self._apply_mode()
@@ -1002,6 +1072,21 @@ class MainWindow(QMainWindow):
                              "The vase as a 3MF, in the middle of the bed, set to its first filament")
         self.a_snap = act("Save picture…", self.save_snapshot, glyph_icon("picture"), "Ctrl+P",
                           "Save the 3D view as a PNG image")
+        self.a_print = act("Save for printing…", self.save_for_printing, glyph_icon("export"), "Ctrl+Shift+P",
+                           "Save the vase for your printer's slicer, with how to print it")
+        self.a_slicer = act("Open in slicer", lambda: self.open_in_slicer(), None, "Ctrl+L",
+                            "Open the vase saved for printing in your slicer")
+        self.a_pick_slicer = act("Choose slicer program…", lambda: self.choose_slicer(), None, None,
+                                 "Which program Open in slicer uses")
+        self.a_gallery = act("Choose a design…", self.choose_design, glyph_icon("gallery"), "Ctrl+G",
+                             "Pictures of every ready-made vase, and a plain cylinder to start from")
+        self.a_big = act("Bigger text", lambda on: self._set_look(big=on), None, "Ctrl+=",
+                         "Make all the writing bigger")
+        self.a_light = act("Light theme", lambda on: self._set_look(light=on), None, None,
+                           "Dark writing on a light background")
+        for a, key in ((self.a_big, "big_text"), (self.a_light, "light_theme")):
+            a.setCheckable(True)
+            a.setChecked(self.settings.value(key, False, type=bool))
         self.a_quit = act("Exit", self.close, None, "Ctrl+Q")
         self.a_undo = act("Undo", self.undo, glyph_icon("undo"), "Ctrl+Z", "Undo the last change")
         self.a_redo = act("Redo", self.redo, glyph_icon("redo"), "Ctrl+Y", "Redo")
@@ -1019,6 +1104,7 @@ class MainWindow(QMainWindow):
         tb.addAction(self.a_open)
         tb.addAction(self.a_save)
         tb.addSeparator()
+        tb.addAction(self.a_print)
         exp_btn = QToolButton()
         exp_btn.setDefaultAction(self.a_exp_stl)
         exp_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -1031,13 +1117,15 @@ class MainWindow(QMainWindow):
         tb.addAction(self.a_snap)
         tb.addSeparator()
         tb.addAction(self.a_surprise)
-        gal_btn = QToolButton()
+        gal_btn = self.gal_btn = QToolButton()
         gal_btn.setText("Gallery")
         gal_btn.setIcon(glyph_icon("gallery"))
         gal_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        gal_btn.setPopupMode(QToolButton.InstantPopup)
-        gal_btn.setToolTip("Ready-made vases to start from")
-        self.gallery_menu = QMenu(gal_btn)
+        gal_btn.setToolTip("Pictures of every ready-made vase to start from (Ctrl+G)")
+        gal_btn.clicked.connect(self.choose_design)
+        self.gallery_menu = QMenu(self)
+        self.gallery_menu.addAction(self.a_gallery)
+        self.gallery_menu.addSeparator()
         self.gallery_menu.addAction(self.a_plain)
         self.gallery_menu.addSeparator()
         for title, about, _ in GALLERY:
@@ -1046,7 +1134,6 @@ class MainWindow(QMainWindow):
             a.setStatusTip(about)
             a.triggered.connect(lambda _=False, t=title: self.use_gallery(t))
         self.gallery_menu.setToolTipsVisible(True)
-        gal_btn.setMenu(self.gallery_menu)
         tb.addWidget(gal_btn)
         tb.addSeparator()
         tb.addAction(self.a_undo)
@@ -1054,8 +1141,9 @@ class MainWindow(QMainWindow):
 
         mb = self.menuBar()
         fm = mb.addMenu("&File")
-        for a in (self.a_new, self.a_plain, self.a_open, self.a_save, self.a_save_as, None, self.a_exp_stl,
-                  self.a_exp_3mf, self.a_snap, None, self.a_quit):
+        for a in (self.a_new, self.a_plain, self.a_open, self.a_save, self.a_save_as, None, self.a_print,
+                  self.a_slicer, self.a_pick_slicer, None, self.a_exp_stl, self.a_exp_3mf, self.a_snap, None,
+                  self.a_quit):
             fm.addAction(a) if a is not None else fm.addSeparator()
         em = mb.addMenu("&Edit")
         for a in (self.a_undo, self.a_redo, None, self.a_surprise, None, self.a_copy_plan):
@@ -1083,6 +1171,9 @@ class MainWindow(QMainWindow):
         a.setShortcut(QKeySequence("Ctrl+0"))
         a.triggered.connect(lambda: self.show_view(self.view))
         vm.addAction(a)
+        vm.addSeparator()
+        vm.addAction(self.a_big)
+        vm.addAction(self.a_light)
         hm = mb.addMenu("&Help")
         hm.addAction(self.a_printing)
         hm.addAction(self.a_function)
@@ -1333,6 +1424,55 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Surprise #{seed}: {self.params.name.replace('_', ' ')} — Ctrl+Z to go "
                                      "back", 8000)
 
+    def apply_changes(self, changes: dict, live=False):
+        """Several settings at once - a picture picked in Simple mode."""
+        p = self.params
+        for key, value in changes.items():
+            setattr(p, key, value)
+        if "profile" in changes and p.profile != OWN_PROFILE:
+            p.silhouette = outline(p.profile, self._widest())
+        self._dirty = True
+        self._refresh_widgets()
+        self._schedule(live=live)
+
+    def choose_design(self):
+        """Every ready-made vase as a picture to click."""
+        def entry(title, about, p, picture):
+            pts = np.asarray(p.silhouette, dtype=float)
+            return title, about, asset("gallery", picture), profile_icon(pts, QColor(p.color1))
+        entries = [entry("Plain cylinder", "200 mm across and 200 mm tall, with everything else off: a blank "
+                         "start for your own shape or function", plain_design(), "plain_cylinder.png")]
+        entries += [entry(t, about, gallery_design(t), slug(t) + ".png") for t, about, _ in GALLERY]
+        dlg = GalleryDialog(self, entries)
+        if dlg.exec() == QDialog.Accepted and dlg.chosen:
+            if dlg.chosen == "Plain cylinder":
+                self.use_plain()
+            else:
+                self.use_gallery(dlg.chosen)
+
+    def draw_own_shape(self):
+        """Draw the shape from above, in a window of its own, starting from the shape it is."""
+        if self.params.shape1 != DRAWN:
+            self._on_param("shape1", DRAWN)
+            self._flush()
+        self._open_outline_window(1)
+
+    def _set_look(self, big=None, light=None):
+        """Bigger text, and the light or dark theme - remembered for next time."""
+        if big is not None:
+            self.settings.setValue("big_text", bool(big))
+        if light is not None:
+            self.settings.setValue("light_theme", bool(light))
+        apply_theme(QApplication.instance(), light=self.settings.value("light_theme", False, type=bool),
+                    scale=1.3 if self.settings.value("big_text", False, type=bool) else 1.0)
+        # the line icons are drawn in the theme's ink: draw them again
+        for a, kind in ((self.a_exp_stl, "export"), (self.a_print, "export"), (self.a_snap, "picture"),
+                        (self.a_surprise, "dice"), (self.a_undo, "undo"), (self.a_redo, "redo"),
+                        (self.a_gallery, "gallery"), (self.a_kofi, "coffee")):
+            a.setIcon(glyph_icon(kind))
+        self.gal_btn.setIcon(glyph_icon("gallery"))
+        self.dice_btn.setIcon(glyph_icon("dice"))
+
     def use_plain(self):
         """A blank start: the plain cylinder, keeping the printer settings."""
         self._flush()
@@ -1424,9 +1564,9 @@ class MainWindow(QMainWindow):
                 f0 = d.bands[0][1]
                 html.append(f"<p>{self._chip(d, f0)} filament {f0}</p>")
                 if real:
-                    html.append("<p class='k'>A real spiral vase prints one filament: Flash Studio won't change "
-                                "filament in spiral vase mode. For bands or stripes of colour, choose a fake "
-                                "spiral vase.</p>")
+                    html.append("<p class='k'>A seamless (spiral vase mode) print is one filament: Flash Studio "
+                                "won't change filament in spiral vase mode. For bands or stripes of colour, "
+                                "print it normally (Advanced ▸ Printing ▸ Print as).</p>")
             else:
                 html.append("<table>")
                 tops = [z for z, _ in d.bands[1:]] + [d.H]
@@ -1438,7 +1578,7 @@ class MainWindow(QMainWindow):
                             "The slicer prints each band with its own filament.</p>")
             if real:
                 html.append(
-                    "<h3>Slicing it: real spiral vase</h3>"
+                    "<h3>Slicing it: seamless, in spiral vase mode</h3>"
                     "<p class='k'>Turn on <b>spiral vase</b> (Spiralize). "
                     f"<b>{d.bottom_layers} bottom layers</b> at <b>{p.layer_height:g} mm</b>, 0 top layers, "
                     f"0% infill, 1 wall, outer wall line width <b>{p.line_width:g} mm</b>. Supports off - "
@@ -1447,13 +1587,13 @@ class MainWindow(QMainWindow):
                     "strong layer bonds, and a wide line. A brim helps a narrow foot stay put.</p>")
             else:
                 html.append(
-                    "<h3>Slicing it: fake spiral vase</h3>"
+                    "<h3>Slicing it: a normal print</h3>"
                     "<p class='k'>Leave spiral vase <b>off</b> - the slicer won't spiral an object of several "
                     f"filaments. <b>{p.walls} walls</b> (wall loops), <b>0% sparse infill</b>, <b>0 top "
                     f"layers</b>, <b>{d.bottom_layers} bottom layers</b> at <b>{p.layer_height:g} mm</b>, line "
                     f"width <b>{p.line_width:g} mm</b>. Supports off - none are needed: nothing leans more than "
-                    f"{d.worst:.0f}°. It prints a layer at a time, so it is slower than a spiral and has a seam, "
-                    "but the walls make it sturdy and watertight. A brim helps a narrow foot stay put.</p>")
+                    f"{d.worst:.0f}°. It prints a layer at a time, with a seam, and the walls make it sturdy "
+                    "and watertight. A brim helps a narrow foot stay put.</p>")
         self.info.setHtml("".join(html))
 
     @staticmethod
@@ -1718,6 +1858,71 @@ class MainWindow(QMainWindow):
             f"Exported {os.path.basename(path)}: {what} — in Flash Studio use File ▸ Import (Ctrl+I), then {how}",
             15000)
 
+    def save_for_printing(self):
+        """The one button Simple mode needs: the vase as a 3MF for the slicer, and plain steps to print it."""
+        d = self._current_design()
+        if d is None:
+            return
+        base = self._safe_name()
+        path, _ = QFileDialog.getSaveFileName(self, "Save for printing", os.path.join(self._last_dir(), base + ".3mf"),
+                                              "3MF files, for the slicer (*.3mf)")
+        if not path:
+            return
+        if not path.lower().endswith(".3mf"):
+            path += ".3mf"
+        parts = self.band_parts(d)
+        try:
+            write_3mf(path, base, parts, (d.p.bed_x / 2.0, d.p.bed_y / 2.0, 0.0))
+        except OSError as exc:
+            QMessageBox.critical(self, "Couldn't save it", str(exc))
+            return
+        self._remember_dir(path)
+        self.print_file = path
+        self.statusBar().showMessage(f"Saved {os.path.basename(path)} for printing, in {os.path.dirname(path)}",
+                                     12000)
+        self.steps = PrintSteps(self, d, path, len(parts), self._slicer(ask=False))
+        self.steps.open_slicer.connect(lambda: self.open_in_slicer(path))
+        self.steps.show()
+
+    def _slicer(self, ask=True):
+        """The slicer program to open a vase in: the one chosen before, else the first one installed."""
+        path = self.settings.value("slicer", "", type=str)
+        if path and os.path.exists(path):
+            return path
+        found = slicers.find_slicers()
+        if found:
+            self.settings.setValue("slicer", found[0][1])
+            return found[0][1]
+        return self.choose_slicer() if ask else None
+
+    def choose_slicer(self):
+        found = slicers.find_slicers()
+        start = os.path.dirname(found[0][1]) if found else os.environ.get("ProgramFiles", os.path.expanduser("~"))
+        path, _ = QFileDialog.getOpenFileName(QApplication.activeWindow() or self, "Choose your slicer program",
+                                              start, "Programs (*.exe);;All files (*)")
+        if not path:
+            return None
+        self.settings.setValue("slicer", path)
+        self.statusBar().showMessage(f"Open in slicer will use {slicers.slicer_name(path)}", 8000)
+        return path
+
+    def open_in_slicer(self, path=None):
+        """Open the vase saved for printing in the slicer (saving it first if it hasn't been)."""
+        path = path or getattr(self, "print_file", None)
+        if not path or not os.path.exists(path):
+            self.save_for_printing()
+            return
+        program = self._slicer()
+        if not program:
+            return
+        if slicers.open_in(program, path):
+            self.statusBar().showMessage(f"Opening {os.path.basename(path)} in {slicers.slicer_name(program)}…",
+                                         10000)
+        else:
+            QMessageBox.warning(self, "Couldn't open the slicer",
+                                f"{program} didn't start. Choose your slicer program in the File menu, or open "
+                                f"{path} in it yourself.")
+
     def save_snapshot(self):
         default = os.path.join(self._last_dir(), self._safe_name() + "_3d.png")
         path, _ = QFileDialog.getSaveFileName(self, "Save picture", default, "PNG image (*.png)")
@@ -1739,15 +1944,15 @@ class MainWindow(QMainWindow):
     def printing_help(self):
         QMessageBox.information(
             self, "Printing it watertight",
-            "<p>Choose the <b>Vase mode</b> under Colours:</p>"
-            "<ul><li><b>Real spiral vase</b>: the slicer's spiral vase mode - one continuous line, fast and "
-            "clean, in <b>one filament</b> (Flash Studio won't change filament in spiral vase mode; a gradient "
-            "spool still works).</li>"
-            "<li><b>Fake spiral vase</b>: an ordinary print of a hollow vase - a few walls, no infill, no top. "
-            "Slower, with a seam on each layer, but sturdier, and in <b>colour</b>: Export 3MF makes each band "
-            "its own part, set to its filament, like Lenticular Sign Maker. Load it with File ▸ Import and "
-            "change the colours there as you like.</li></ul>"
-            "<h3>Real spiral vase</h3>"
+            "<p><b>Save for printing</b> saves the vase as a 3MF and says how to print it. Advanced ▸ "
+            "Printing ▸ <b>Print as</b> chooses how:</p>"
+            "<ul><li><b>Normal print</b> (the usual): printed with walls, like any other print - a few walls, "
+            "no infill, no top. Sturdy, watertight and in <b>colour</b>: each band is its own part in the 3MF, "
+            "set to its filament. Load it with File ▸ Import and change the colours there as you like.</li>"
+            "<li><b>Seamless</b>: the slicer's spiral vase mode - one continuous line, with no seam and a single "
+            "wall that glows when lit, in <b>one filament</b> (Flash Studio won't change filament in spiral "
+            "vase mode; a gradient spool still works). Hardly quicker than a normal print.</li></ul>"
+            "<h3>Seamless (spiral vase mode)</h3>"
             "<p>The exported model is <b>solid</b>: spiral vase mode (Spiralize) prints only its outside, as one "
             "continuous line climbing round and round, on a solid bottom. Don't slice it normally with infill - "
             "it would print as a solid block.</p>"
@@ -1763,11 +1968,11 @@ class MainWindow(QMainWindow):
             "<li>PETG is more watertight than PLA. Silk PLA looks great but bonds a little less well.</li>"
             "<li>Test it in a sink first. A coat of clear epoxy or varnish inside seals any weep.</li>"
             "</ul>"
-            "<h3>Fake spiral vase</h3>"
+            "<h3>Normal print</h3>"
             "<ul><li><b>Spiral vase off</b>: the slicer won't spiral an object of several filaments.</li>"
             "<li>The <b>walls</b> the app is set to (wall loops); <b>0% sparse infill</b>; <b>0 top layers</b>; "
             "the bottom layers in the panel.</li>"
-            "<li>No supports, just as for a real spiral vase.</li></ul>")
+            "<li>No supports, just as for a seamless one.</li></ul>")
 
     def drawing_help(self):
         QMessageBox.information(
@@ -1805,9 +2010,9 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self, f"About {APP_NAME}",
             f"<h3>{APP_NAME} {__version__}</h3>"
-            "<p>Designs vases for a 3D printer's spiral vase mode: one continuous wall, watertight, with no "
-            "supports. Shape the outline, the cross-section and how it changes on the way up, spin it, cover "
-            "it in patterns or your own formula, and colour it in bands, stripes or a gradient.</p>"
+            "<p>Designs vases that print without supports - normally with walls, or seamless in spiral vase "
+            "mode. Shape the outline, the cross-section and how it changes on the way up, spin it, cover it in "
+            "patterns or your own formula, and colour it in bands, stripes or a gradient.</p>"
             "<p><b>3D view:</b> left-drag turn · right-drag / shift-drag pan · wheel zoom · double-click or F to "
             "go back to the chosen view · S spin · F5 watch it print.</p>"
             "<p>Exports are in millimetres, standing on the bed, ready to slice.</p>"
@@ -1824,7 +2029,24 @@ class MainWindow(QMainWindow):
 
 # ============================================================== bootstrap
 def apply_dark_theme(app: QApplication):
+    apply_theme(app, light=False)
+
+
+def apply_theme(app: QApplication, light: bool = False, scale: float = 1.0):
+    """The look: dark (the usual) or light, and the writing at its own size or bigger."""
     app.setStyle("Fusion")
+    base = app.property("vaseinator_base_pt")
+    if base is None:
+        base = app.font().pointSizeF()
+        app.setProperty("vaseinator_base_pt", base)
+    font = app.font()
+    font.setPointSizeF(base * scale)
+    app.setFont(font)
+    title = f"QLabel#simpleTitle {{ font-weight: 700; font-size: {base * scale * 1.25:.1f}pt; }}"
+    if light:
+        _light_theme(app)
+        app.setStyleSheet(app.styleSheet() + title)
+        return
     pal = QPalette()
     c = QColor
     pal.setColor(QPalette.Window, c(36, 39, 45))
@@ -1853,6 +2075,56 @@ def apply_dark_theme(app: QApplication):
         QSplitter::handle { background: #2b2e34; }
         QPushButton#modeButton { border: 1px solid #3b4049; padding: 4px 12px; background: #2a2d33; }
         QPushButton#modeButton:checked { background: #3884d6; color: white; border-color: #3884d6; }
+        QToolButton#pictureButton { border: 1px solid #3b4049; border-radius: 6px; padding: 4px;
+                                    background: #2a2d33; }
+        QToolButton#pictureButton:hover { border-color: #6b7380; }
+        QToolButton#pictureButton:checked { border: 2px solid #f0a356; background: #3a332b; }
+        QPushButton#bigButton { padding: 8px 10px; font-weight: 600; }
+        QPushButton#saveButton { background: #f0a356; color: #1a1c21; font-weight: 700; border-radius: 6px;
+                                 border: 1px solid #f0a356; }
+        QPushButton#saveButton:hover { background: #f5b878; }
+        QLabel#simpleTitle { color: #f0a356; }
+    """ + title)
+
+
+def _light_theme(app: QApplication):
+    pal = QPalette()
+    c = QColor
+    pal.setColor(QPalette.Window, c(238, 240, 243))
+    pal.setColor(QPalette.WindowText, c(28, 30, 34))
+    pal.setColor(QPalette.Base, c(255, 255, 255))
+    pal.setColor(QPalette.AlternateBase, c(232, 235, 239))
+    pal.setColor(QPalette.ToolTipBase, c(255, 255, 238))
+    pal.setColor(QPalette.ToolTipText, c(20, 20, 20))
+    pal.setColor(QPalette.Text, c(28, 30, 34))
+    pal.setColor(QPalette.Button, c(226, 229, 234))
+    pal.setColor(QPalette.ButtonText, c(28, 30, 34))
+    pal.setColor(QPalette.BrightText, c(200, 30, 30))
+    pal.setColor(QPalette.Highlight, c(56, 132, 214))
+    pal.setColor(QPalette.HighlightedText, c(255, 255, 255))
+    pal.setColor(QPalette.Link, c(20, 100, 200))
+    pal.setColor(QPalette.PlaceholderText, c(120, 125, 135))
+    for role in (QPalette.Text, QPalette.ButtonText, QPalette.WindowText):
+        pal.setColor(QPalette.Disabled, role, c(150, 154, 162))
+    app.setPalette(pal)
+    app.setStyleSheet("""
+        QGroupBox { font-weight: 600; border: 1px solid #c4c9d1; border-radius: 6px;
+                    margin-top: 12px; padding-top: 4px; }
+        QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #b45f12; }
+        QTextBrowser { border: none; }
+        QToolBar { border: none; spacing: 4px; padding: 3px; }
+        QSplitter::handle { background: #d5d9df; }
+        QPushButton#modeButton { border: 1px solid #c4c9d1; padding: 4px 12px; background: #e6e8ec; }
+        QPushButton#modeButton:checked { background: #3884d6; color: white; border-color: #3884d6; }
+        QToolButton#pictureButton { border: 1px solid #c4c9d1; border-radius: 6px; padding: 4px;
+                                    background: #f6f7f9; }
+        QToolButton#pictureButton:hover { border-color: #8c939e; }
+        QToolButton#pictureButton:checked { border: 2px solid #e08a2c; background: #fcefe0; }
+        QPushButton#bigButton { padding: 8px 10px; font-weight: 600; }
+        QPushButton#saveButton { background: #e08a2c; color: white; font-weight: 700; border-radius: 6px;
+                                 border: 1px solid #e08a2c; }
+        QPushButton#saveButton:hover { background: #ea9b44; }
+        QLabel#simpleTitle { color: #b45f12; }
     """)
 
 

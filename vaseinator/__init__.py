@@ -1,3 +1,3 @@
-"""Vaseinator - spiral vase designs for 3D printing, watertight and support-free."""
+"""Vaseinator - vases for 3D printing that need no supports: printed normally, or seamless in spiral vase mode."""
 
-__version__ = "1.6.3"
+__version__ = "1.7.0"
