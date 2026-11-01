@@ -105,6 +105,9 @@ def print_steps(d, path: str, parts: int, where: str = "your slicer") -> str:
                                                                    else "") + ".</li>")
     if p.straps:
         edge += "<li>When it is done, thread an <b>elastic strap</b> through the slots at the sides.</li>"
+    if p.box:
+        edge += ("<li>It prints <b>upside down</b>, just as it is in the file: the hole for the tissues on the bed, "
+                 "the open end at the top. When it is done, turn it over and put it on the box of tissues.</li>")
     return (f"<p>Saved <b>{os.path.basename(path)}</b><br>in {os.path.dirname(path)}</p>"
             f"<ol><li>Open it in {where} (the button below, or File ▸ Import).</li>"
             f"<li>In the print settings: {settings}.</li>"

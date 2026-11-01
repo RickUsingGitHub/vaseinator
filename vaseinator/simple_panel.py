@@ -4,7 +4,7 @@ How big, the shape from above, the shape from the side, the twist, a pattern
 and a colour - then one big button to save the vase for printing. Everything
 else lives in Advanced. Each picture sets a few settings at once; whichever
 picture matches the vase as it is now is lit. A mask or helmet is sized by the
-head it fits instead.
+head it fits instead, and a tissue box cover by the box of tissues it goes over.
 """
 
 from __future__ import annotations
@@ -19,9 +19,9 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QGridLayout, QHBoxLayo
                                QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
 from .choices import (COLOURS, MANY_COLOURS, NO_PATTERN, PATTERNS, SHAPES_FROM_ABOVE,  # noqa: F401
-                      pattern_of, twist_words)
-from .params import CIRCLE, EVENLY, ONE_COLOUR, OWN, POLYGON, SAME
-from .shapes import PALETTES, PROFILES, pchip, shape_table
+                      TISSUE_HOLES, pattern_of, twist_words)
+from .params import CIRCLE, EVENLY, ONE_COLOUR, OWN, POLYGON, SAME, TISSUE_OVAL, TISSUE_ROUND
+from .shapes import PALETTES, PROFILES, pchip, rounded_rectangle, shape_table
 from .spinbox import DoubleSpinBox, Slider
 
 ACCENT = QColor(240, 163, 86)
@@ -138,6 +138,28 @@ def pattern_icon(name: str) -> QIcon:
         for k, y in enumerate(np.linspace(t, b, 5)[:-1]):
             for x in np.linspace(l - 8 + 4 * (k % 2), r, 4):
                 p.drawLine(QPointF(x, y), QPointF(x + 8, y + (b - t) / 4))
+    p.end()
+    return QIcon(pm)
+
+
+def tissue_icon(kind: int) -> QIcon:
+    """A tissue box cover from above, with its hole for the tissues cut out."""
+    pm, p = _canvas()
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(3, 12, TILE - 6, TILE - 24), 5, 5)
+    p.setPen(QPen(ACCENT.darker(160), 1.5))
+    p.setBrush(ACCENT)
+    p.drawPath(path)
+    p.setCompositionMode(QPainter.CompositionMode_Clear)
+    p.setPen(Qt.NoPen)
+    p.setBrush(Qt.black)
+    if kind == TISSUE_ROUND:
+        p.drawEllipse(QPointF(TILE / 2, TILE / 2), 9, 9)
+    elif kind == TISSUE_OVAL:
+        p.drawEllipse(QPointF(TILE / 2, TILE / 2), 15, 8)
+    else:
+        xs, ys = rounded_rectangle(16.0, 4.0, 4.0, per=64)
+        p.drawPolygon(QPolygonF([QPointF(TILE / 2 + x, TILE / 2 + y) for x, y in zip(xs, ys)]))
     p.end()
     return QIcon(pm)
 
@@ -275,17 +297,46 @@ class SimplePanel(QWidget):
         head.addWidget(QLabel("Head size"))
         head.addWidget(self.head, 1)
         v.addWidget(self.head_row)
+        # ... or, for a tissue box cover, the box of tissues it goes over
+        self.box_row = QWidget()
+        box = QGridLayout(self.box_row)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(QLabel("The box of tissues it goes over:"), 0, 0, 1, 6)
+        self.box_sizes = {}
+        for col, (key, word, tip) in enumerate((("box_length", "Long", "How long the box of tissues is"),
+                                                 ("box_width", "Wide", "How wide the box of tissues is"),
+                                                 ("box_height", "Tall", "How tall the box of tissues is"))):
+            spin = DoubleSpinBox()
+            spin.setDecimals(1)
+            spin.setRange(1.0 if key == "box_height" else 2.0, 100.0)
+            spin.setSingleStep(0.5)
+            spin.setSuffix(" cm")
+            spin.setKeyboardTracking(False)
+            spin.setMinimumHeight(30)
+            spin.setToolTip(tip + ". Measure it: the cover is made to fit over it with a little room to spare.")
+            spin.valueChanged.connect(lambda val, k=key: self.param.emit(k, round(float(val) * 10.0, 1)))
+            box.addWidget(QLabel(word), 1, 2 * col)
+            box.addWidget(spin, 1, 2 * col + 1)
+            box.setColumnStretch(2 * col + 1, 1)
+            self.box_sizes[key] = spin
+        v.addWidget(self.box_row)
+        self.tissue_title = _title("Hole for the tissues")
+        v.addWidget(self.tissue_title)
+        self.tissue = PictureChoice([(n, tissue_icon(k), None) for n, k in TISSUE_HOLES], 4)
+        self.tissue.picked.connect(lambda k: self.param.emit("tissue_hole", TISSUE_HOLES[k][1]))
+        v.addWidget(self.tissue)
 
         # the shape from above, and your own
-        v.addWidget(_title("Shape from above"))
+        self.above_title = _title("Shape from above")
+        v.addWidget(self.above_title)
         self.above = PictureChoice([(n, shape_icon(s), None) for n, s in SHAPES_FROM_ABOVE], 4)
         self.above.picked.connect(lambda k: self.changes.emit(
             {"shape2": SAME, "turn1": 0.0, **SHAPES_FROM_ABOVE[k][1]}))
         v.addWidget(self.above)
-        own = QPushButton("Draw my own shape…")
-        own.setToolTip("Draw the shape from above yourself, in a big window")
-        own.clicked.connect(self.draw_own)
-        v.addWidget(own)
+        self.own = QPushButton("Draw my own shape…")
+        self.own.setToolTip("Draw the shape from above yourself, in a big window")
+        self.own.clicked.connect(self.draw_own)
+        v.addWidget(self.own)
 
         # the shape from the side
         self.side_title = _title("Shape from the side")
@@ -296,8 +347,11 @@ class SimplePanel(QWidget):
         v.addWidget(self.side)
 
         # the twist
-        v.addWidget(_title("Twist"))
-        trow = QHBoxLayout()
+        self.twist_title = _title("Twist")
+        v.addWidget(self.twist_title)
+        self.twist_row = QWidget()
+        trow = QHBoxLayout(self.twist_row)
+        trow.setContentsMargins(0, 0, 0, 0)
         self.twist = Slider(Qt.Horizontal)
         self.twist.setRange(0, 24)                 # 15 degrees a step, up to two whole turns
         self.twist.setPageStep(6)
@@ -308,7 +362,7 @@ class SimplePanel(QWidget):
         self.twist.sliderReleased.connect(lambda: self._twist_done())
         trow.addWidget(self.twist, 1)
         trow.addWidget(self.twist_label)
-        v.addLayout(trow)
+        v.addWidget(self.twist_row)
 
         # a pattern
         v.addWidget(_title("Pattern"))
@@ -376,10 +430,20 @@ class SimplePanel(QWidget):
         """Show the settings of ``p``: its title, the numbers, and light the pictures that match it."""
         name = p.name.replace("_", " ").strip()
         self.name.setText(title or (name[:1].upper() + name[1:]) or "Your vase")
-        # a mask or helmet: sized by the head, its shape from the side its own
-        self.head_row.setVisible(p.worn)
+        # a mask or helmet: sized by the head, its shape from the side its own; a tissue box cover: sized by the
+        # box of tissues, a box from every side, with a hole in its top
+        self.head_row.setVisible(p.worn and not p.box)
         for w in (self.size_row, self.side_title, self.side):
-            w.setVisible(not p.worn)
+            w.setVisible(not p.worn and not p.box)
+        for w in (self.above_title, self.above, self.own, self.twist_title, self.twist_row):
+            w.setVisible(not p.box)
+        for w in (self.box_row, self.tissue_title, self.tissue):
+            w.setVisible(p.box)
+        for key, spin in self.box_sizes.items():
+            spin.blockSignals(True)
+            spin.setValue(round(getattr(p, key) / 10.0, 1))
+            spin.blockSignals(False)
+        self.tissue.light(next((i for i, (_, k) in enumerate(TISSUE_HOLES) if k == p.tissue_hole), None))
         for box, mm in ((self.tall, p.height), (self.wide, widest)):
             box.blockSignals(True)
             box.setValue(round(mm / 10.0, 1))

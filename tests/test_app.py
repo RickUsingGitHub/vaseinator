@@ -23,7 +23,7 @@ from vaseinator.simple_panel import PATTERNS, SHAPES_FROM_ABOVE, asset  # noqa: 
 from vaseinator.geometry import edge_check  # noqa: E402
 from vaseinator.params import (BANDS, CIRCLE, DRAWN, FAKE_VASE, FLOWER, GRADIENT, NO_HOLES, ONE_COLOUR, OWN,  # noqa: E402
                                VORONOI, ALMOND_EYES, CHIN_MOUTH,
-                               OWN_PROFILE, POLYGON, REAL_VASE, SAME, STAR, SWING, VaseParams, load_design)
+                               OWN_PROFILE, POLYGON, REAL_VASE, SAME, STAR, SWING, TISSUE_ROUND, VaseParams, load_design)
 from vaseinator.stl import read_stl  # noqa: E402
 from vaseinator.threemf import read_3mf  # noqa: E402
 
@@ -463,10 +463,30 @@ def main():
     settle()
     check("... and a wall part way round leaves the back open", "200° of the way round" in win.info.toPlainText()
           and win.design.closed)
+    # a tissue box cover: sized by the box of tissues, with a hole to pick, in Simple mode
+    win.use_gallery("Lace Tissue Cube")
+    win.set_simple_mode(True, remember=False)
+    settle()
+    check("a tissue box cover shows the box it fits and its hole in Simple mode, not the shape or twist",
+          sp.box_row.isVisibleTo(sp) and sp.tissue.isVisibleTo(sp) and not sp.size_row.isVisibleTo(sp)
+          and not sp.above.isVisibleTo(sp) and not sp.twist_row.isVisibleTo(sp)
+          and "Fits over" in win.info.toPlainText() and win.design.closed)
+    sp.box_sizes["box_height"].setValue(20.0)
+    settle()
+    check("... a taller box of tissues makes it taller", win.params.box_height == 200.0 and win.design.H > 200.0)
+    sp.tissue.buttons[2].click()
+    settle()
+    check("... and the round hole picks a size that suits the box", win.params.tissue_hole == TISSUE_ROUND
+          and win.params.tissue_width == win.params.tissue_length > 50.0
+          and win.widgets["tissue_width"].value() == win.params.tissue_width and "a round hole" in win.info.toPlainText())
+    win.set_simple_mode(False, remember=False)
+    check("Advanced shows the box's settings, not the ones it sets itself", win._wanted("box_corner")
+          and not win._wanted("height") and not win._wanted("twist") and not win._wanted("tissue_length"))
     win.use_plain()
     win.set_simple_mode(True, remember=False)
     settle()
-    check("a vase shows Tall and Wide again", sp.size_row.isVisibleTo(sp) and not sp.head_row.isVisibleTo(sp))
+    check("a vase shows Tall and Wide again", sp.size_row.isVisibleTo(sp) and not sp.head_row.isVisibleTo(sp)
+          and not sp.box_row.isVisibleTo(sp) and sp.above.isVisibleTo(sp))
     pt = QApplication.font().pointSizeF()
     win.a_big.trigger()
     qapp.processEvents()

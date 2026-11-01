@@ -7,7 +7,7 @@ picture a vase is, so that one can be lit.
 from __future__ import annotations
 
 from .params import (BANDS, CIRCLE, DRAWN, ELLIPSE, FAKE_VASE, FLOWER, GEAR, NO_HOLES, PEBBLE, POLYGON, ROUND, STAR,
-                     STRIPES, VORONOI)
+                     STRIPES, TISSUE_OVAL, TISSUE_ROUND, TISSUE_SLOT, VORONOI)
 
 # the shape from above: (name, the settings it sets)
 SHAPES_FROM_ABOVE = [
@@ -37,6 +37,9 @@ PATTERNS = [
                            vase_mode=FAKE_VASE)),
     ("Round holes", dict(holes=ROUND, hole_size=12.0, hole_strut=3.0, vase_mode=FAKE_VASE)),
 ]
+
+# a tissue box cover's hole for the tissues: (name, its tissue_hole)
+TISSUE_HOLES = [("Slot", TISSUE_SLOT), ("Oval", TISSUE_OVAL), ("Round", TISSUE_ROUND)]
 
 COLOURS = [("White", "#F5F5F5"), ("Black", "#1A1A1A"), ("Grey", "#8D99AE"), ("Red", "#D62828"),
            ("Orange", "#F77F00"), ("Yellow", "#FCBF49"), ("Green", "#2A9D8F"), ("Lime", "#80B918"),

@@ -15,7 +15,8 @@ the views and the exports – built by the app's own Python running right in the
 Shape the outline, pick a cross-section and what it turns into on the way up, **spin** it, cover it in
 ribs, rings, bumps, organic lumps or **your own formula**, and colour it in bands, stripes or a
 gradient spool. Cut **holes** through it, open it at the bottom, close it over at the top – or give it a
-**face** and make a **mask or a helmet**, sized for the head it fits. The app shows the vase in 3D as it will print, cuts it in half to show the wall, colours
+**face** and make a **mask or a helmet**, sized for the head it fits, or a **tissue box cover** sized for
+the box of tissues it goes over. The app shows the vase in 3D as it will print, cuts it in half to show the wall, colours
 every face by how far it leans, plays the print back in real print time, and exports an STL or 3MF
 ready to slice.
 
@@ -35,7 +36,8 @@ ready to slice.
 
 * **Outline** from twelve presets (classic, bulb, tulip, amphora, bottle, gourd, trumpet, …) or drawn
   by hand: drag points on the outline curve; the curve through them never overshoots.
-* **Cross-section**: circle, polygon (with rounded corners), star, flower, gear, ellipse or pebble – and
+* **Cross-section**: circle, polygon (with rounded corners), rectangle, star, flower, gear, ellipse or
+  pebble – and
   a second shape it **turns into** on the way up – evenly, early, late, **back and forth** as many times
   as you like (circle → pentagon → circle → pentagon), or along your own curve.
 * **Draw any cross-section**: a spline editor with smooth points and sharp **cusps**, for shapes no
@@ -78,6 +80,11 @@ ready to slice.
   support. **Head size** fits one to a head: measure round it above the eyebrows and ears, as for a hat,
   and the whole design – height, outline and face – is scaled so the inside fits with a centimetre to
   spare. Stylised, not anatomical.
+* **Tissue box covers**: measure the box of tissues – long, wide, tall – and the cover is made to go over
+  it, with a little room to spare (more inside rounded corners, so a square-cornered box still fits). Pick
+  the hole the tissues come out of – a long **slot**, an **oval** or a **round** hole – and any pattern,
+  holes or colours. It is made the way it prints: **upside down**, the hole through its first layers on the
+  bed and the open end at the top, so nothing needs supports. Turn it over to put it on.
 * **Colours**: one colour or a **gradient spool** – shown where its colours will really land, worked out
   from the filament each height uses – and, printed normally, up to four filaments in **bands**
   (even, or thicker at the top or the bottom) or **stripes**, with palettes.
@@ -138,7 +145,8 @@ Sign Maker, if you have used them. Printer settings are remembered for new desig
 
 In **Simple** mode, click **Choose a design…** (every ready-made vase as a picture) or **Surprise me**,
 then click the pictures to change it: the shape from above, the shape from the side, a pattern, a colour;
-**Tall** and **Wide** size it – for a mask or helmet, **Head size** – and the slider twists it. **Draw my own shape…** opens a big window to draw
+**Tall** and **Wide** size it – for a mask or helmet, **Head size**; for a tissue box cover, the box of
+tissues it goes over, and the hole for the tissues – and the slider twists it. **Draw my own shape…** opens a big window to draw
 the shape from above yourself. When it looks right, **Save for printing…** saves it for the slicer and
 says, in plain steps, how to print it – with a button to open it in your slicer (File ▸ Choose slicer
 program picks a different one).
@@ -162,6 +170,7 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |
 | **Holes and openings** | The **holes** – none, Voronoi, round, diamonds or slots – their size, the wall between them, how irregular the Voronoi cells are and their pattern, how much plain wall to keep at the foot and the rim, and **rounded edges** round them; **open at the bottom**; **closed at the top**; and how far the wall **goes round**. Holes, an open bottom and a wall part way round are printed normally. |
 | **Masks and helmets** | **For a head** and its **head size**; the **eyes** – almond or round, their size, how far apart, how high and tilted; a raised **nose** – its width, length, how far it sticks out and how high its tip is; the **mouth** – open, a grille of slots (how many, and how much they smile) or open down to the chin; and **strap slots**. Sizes and heights are in millimetres along the face, from the bottom. |
+| **Tissue box** | **Tissue box cover**; the **box** of tissues it goes over – its length, width and height; how **rounded** the cover's corners are; and the **tissue hole** – a long slot, an oval, a round hole or none – and its length and width. |
 | **Your own function** | A formula added to the radius. **Examples** has eight to try; **Help…** lists the variables and functions. |
 | **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go up the vase: one colour, bands, stripes or a gradient spool. How it looks: matte, silk, glossy, translucent. |
 | **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail. |
@@ -316,6 +325,15 @@ the span the printer bridges). **Head size** measures round the inner face where
 narrowest place below the widest, or for a mask the widest – less a centimetre to spare, and scales the
 whole design until that is the head asked for.
 
+A **tissue box cover** is a vase too, upside down: a **rectangle** cross-section – its corners quarter
+circles – straight up, sized from the box of tissues: as wide and long inside as the box with room to spare
+each side (more where a rounded corner has to clear a square one, and more for patterns that reach in),
+and as tall as the box with a little over it plus the solid bottom, which is the cover's top. The hole
+for the tissues – a slot with round ends, an oval or a circle, kept clear of the walls – is cut through
+that bottom: the floor is filled between the wall and the hole, row by row round the middle, on the bed
+and on its top, with the hole's side between them, so the mesh stays closed. Everything else – holes in
+the wall, rounded edges, colour bands – works as on any vase.
+
 A **drawn** cross-section needn't have one radius in each direction – a lobe can swell past its neck – so
 it is built another way: as rows of points up the vase, each row the outline (blended into the second
 one, sized by the outline curve and turned by the twist) cut into the same number of points at even
@@ -350,7 +368,9 @@ ovals that leave every wall between them as thick as set, and rounded edges that
 within the limit; and that a
 closed top comes to a point over a small ceiling (drawn and banded too), a wall part way round stops where
 it should, a face's holes and nose are where they should be and print without support, and a design sized
-for a head fits it – the masks and helmet a head 57 cm round; and that the web version's Python, put
+for a head fits it – the masks and helmet a head 57 cm round; that a tissue box cover clears its box of
+tissues by the room to spare everywhere inside, with its hole through the bottom layers alone, holes and
+bands and all; and that the web version's Python, put
 together as the site has it, runs with no Qt at all – it starts, builds a mask, fits it to a head and makes
 the slicer's file.
 `.venv\Scripts\python -m tests.test_app` drives the window itself: edits, curves, undo, the gallery,

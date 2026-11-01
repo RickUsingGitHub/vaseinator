@@ -6,11 +6,12 @@ Shared by the desktop app and the web version, so both behave alike. Nothing her
 from __future__ import annotations
 
 from . import sections
+from .geometry import box_shape
 from .params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, GLOSSY,
-                     GRADIENT, GRILLE_MOUTH, MATTE, NO_EYES, NO_HOLES, NO_MOUTH, NO_NOSE, ONE_COLOUR, OPEN_MOUTH, OWN,
-                     OWN_PROFILE, PEBBLE, RAISED_NOSE, REAL_VASE, ROUND, ROUND_EYES, SAME, SHAPES, SILK, SLOTS,
-                     SLOW_DOWN, SPEED_UP, STRIPES, SWING, TRANSLUCENT, VORONOI, VaseParams, colour_style_of,
-                     face_holes, needs_normal)
+                     GRADIENT, GRILLE_MOUTH, MATTE, NO_EYES, NO_HOLES, NO_MOUTH, NO_NOSE, NO_TISSUE, ONE_COLOUR,
+                     OPEN_MOUTH, OWN, OWN_PROFILE, PEBBLE, RAISED_NOSE, REAL_VASE, ROUND, ROUND_EYES, SAME, SHAPES,
+                     SILK, SLOTS, SLOW_DOWN, SPEED_UP, STRIPES, SWING, TISSUE_OVAL, TISSUE_ROUND, TISSUE_SLOT,
+                     TRANSLUCENT, VORONOI, VaseParams, colour_style_of, face_holes, needs_normal)
 from .presets import outline
 from .shapes import (PROFILES, SHAPE_LABELS, SHAPE_NAMES, change as change_of, progress, sample_points, shape_table,
                      strength, strength_names, style_names)
@@ -34,6 +35,12 @@ EYE_CHOICES = [(NO_EYES, "None"), (ALMOND_EYES, "Almond"), (ROUND_EYES, "Round")
 NOSE_CHOICES = [(NO_NOSE, "None"), (RAISED_NOSE, "Raised")]
 MOUTH_CHOICES = [(NO_MOUTH, "None"), (OPEN_MOUTH, "Open"), (GRILLE_MOUTH, "A grille of slots"),
                  (CHIN_MOUTH, "Open down to the chin")]
+TISSUE_CHOICES = [(TISSUE_SLOT, "A long slot"), (TISSUE_OVAL, "An oval"), (TISSUE_ROUND, "A round hole"),
+                  (NO_TISSUE, "None")]
+# what a tissue box cover sets for itself, from the box it fits: not shown while it is one
+BOX_SETS = {"height", "widest", "profile", "silhouette", "morph", "morph_swings", "morph_curve", "twist", "twist_style",
+            "swings", "twist_curve", "lattice", "facets", "facets_around", "facets_up", "facet_rough", "facet_seed",
+            "open_bottom", "closed_top", "around", "worn", "head", "eyes", "nose", "mouth", "straps"}
 
 
 def _shape(k: int) -> tuple:
@@ -209,6 +216,25 @@ SPEC = [
          "A slot each side for an elastic strap: near the edges of a mask, or at the sides of a helmet."),
         ("strap_up", "Strap slots at", "float", 0.0, 1000.0, 1.0, " mm", "How high the strap slots are."),
     ]),
+    ("Tissue box", [
+        ("box", "Tissue box cover", "bool", None, None, None, "",
+         "A cover to go over a box of tissues: a box open at the bottom, with a hole in its top for the\n"
+         "tissues. It is made the way it prints - upside down, the hole in its first layers on the bed and\n"
+         "the open end at the top - so nothing needs supports. Turn it over to put it on."),
+        ("box_length", "Box length", "float", 20.0, 1000.0, 1.0, " mm",
+         "The box of tissues it goes over: how long it is. Measure the box; the cover is made to fit over it\n"
+         "with a little room to spare."),
+        ("box_width", "Box width", "float", 20.0, 1000.0, 1.0, " mm", "How wide the box of tissues is."),
+        ("box_height", "Box height", "float", 10.0, 1000.0, 1.0, " mm", "How tall the box of tissues is."),
+        ("box_corner", "Rounded corners", "float", 0.0, 200.0, 1.0, " mm",
+         "How round the cover's corners are seen from above: the radius of each, outside. The rounder they\n"
+         "are, the more room is left inside them, so a square-cornered box of tissues still fits."),
+        ("tissue_hole", "Tissue hole", "choice", TISSUE_CHOICES, None, None, "",
+         "The hole in the top the tissues come out of: a long slot, an oval or a round hole - or none."),
+        ("tissue_length", "Hole length", "float", 5.0, 600.0, 1.0, " mm", "How long the hole is, along the box."),
+        ("tissue_width", "Hole width", "float", 5.0, 600.0, 1.0, " mm",
+         "How wide the hole is, across the box - a round hole, from side to side."),
+    ]),
     ("Your own function", [
         ("expression", "", "expr", None, None, None, "",
          "A formula added to the radius, in mm. Variables: theta (angle round, radians),\n"
@@ -294,7 +320,16 @@ def wanted(p, key) -> bool:
     twisting = p.twist_style == OWN or abs(p.twist) > 1e-9
     patterns = p.rib_count > 0 or p.ring_count > 0 or p.bump_around > 0 or p.organic_depth > 0
     show = True
-    if key[:-1] in ("count", "depth", "sharp") and key[-1] in "12":
+    if p.box and (key in BOX_SETS or key.startswith(("eye_", "nose_", "mouth_", "strap_"))
+                  or (key[:-1] in ("shape", "drawn", "repeat", "count", "depth", "sharp", "turn") and key[-1] in "12")):
+        show = False
+    elif key in ("box_length", "box_width", "box_height", "box_corner", "tissue_hole"):
+        show = p.box
+    elif key == "tissue_length":
+        show = p.box and p.tissue_hole in (TISSUE_SLOT, TISSUE_OVAL)
+    elif key == "tissue_width":
+        show = p.box and p.tissue_hole != NO_TISSUE
+    elif key[:-1] in ("count", "depth", "sharp") and key[-1] in "12":
         k = int(key[-1])
         kind = getattr(p, f"shape{k}")
         idx = ("count", "depth", "sharp").index(key[:-1])
@@ -389,6 +424,17 @@ def outline_from_shape(p: VaseParams, k: int):
     setattr(p, f"repeat{k}", int(repeat))
 
 
+def tissue_size(p: VaseParams, kind: int) -> tuple[float, float]:
+    """A tissue hole of this kind that suits the box: (length, width) in mm."""
+    long_, short = max(p.box_length, p.box_width), min(p.box_length, p.box_width)
+    if kind == TISSUE_SLOT:
+        return float(round(min(0.6 * long_, 160.0))), 36.0
+    if kind == TISSUE_OVAL:
+        return float(round(min(0.75 * long_, 0.75 * short + 10.0, 140.0))), float(round(min(0.45 * short, 60.0)))
+    d = float(round(min(0.55 * short, 80.0)))
+    return d, d
+
+
 def change(p: VaseParams, key: str, value) -> tuple[list, str]:
     """Make one change to the settings as the panel makes it, with what follows from it: Widest scales the
     outline, an outline preset draws it, an own curve starts from the curve as it was, a drawn outline from the
@@ -438,10 +484,27 @@ def change(p: VaseParams, key: str, value) -> tuple[list, str]:
         # a drawn outline starts as the shape it was: one petal of it, repeated, to edit
         outline_from_shape(p, int(key[-1]))
         touched += [f"repeat{key[-1]}", f"drawn{key[-1]}"]
+    elif key == "tissue_hole" and value != p.tissue_hole and value != NO_TISSUE:
+        p.tissue_length, p.tissue_width = tissue_size(p, value)          # a hole of that kind that suits the box
+        touched += ["tissue_length", "tissue_width"]
+    elif key == "box" and value and p.worn:
+        p.worn = False                                                   # a cover, not a mask
+        touched.append("worn")
+    elif key == "worn" and value and p.box:
+        p.box = False
+        touched.append("box")
+    elif key == "box" and not value and p.box:
+        # no longer a tissue box: it keeps the cover's shape, to go on from
+        q = box_shape(p)
+        for k in ("height", "profile", "silhouette", "shape1", "depth1", "sharp1", "turn1", "shape2", "twist",
+                  "twist_style", "lattice", "facets"):
+            setattr(p, k, getattr(q, k))
+        touched += ["height", "profile", "silhouette", "widest", "shape1", "depth1", "sharp1", "turn1", "shape2",
+                    "twist", "twist_style", "lattice", "facets"]
     setattr(p, key, value)
     if key != "vase_mode" and p.vase_mode == REAL_VASE and needs_normal(p):
         p.vase_mode = FAKE_VASE                       # spiral vase mode prints one closed line a layer
         touched.append("vase_mode")
-        message = ("Holes, a face, an open bottom and a wall part way round need a normal print: Print as is now "
-                   "Normal print")
+        message = ("Holes, a face, a tissue box cover, an open bottom and a wall part way round need a normal "
+                   "print: Print as is now Normal print")
     return touched, message

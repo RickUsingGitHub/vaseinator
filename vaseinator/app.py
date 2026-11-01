@@ -960,6 +960,11 @@ class MainWindow(QMainWindow):
             w.setValue(int(getattr(self.params, key)))
             if key in ("repeat1", "repeat2"):
                 self._push_outline(int(key[-1]))
+        elif isinstance(w, QDoubleSpinBox):
+            v = getattr(self.params, key)
+            w.setValue(100.0 * v if w.suffix() == " %" else v)
+        elif isinstance(w, QCheckBox):
+            w.setChecked(bool(getattr(self.params, key)))
         w.blockSignals(False)
 
     # ----------------------------------------------------- drawn outlines

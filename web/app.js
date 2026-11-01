@@ -83,7 +83,7 @@ function status(text) {
 
 function needsNormal(p) {
   // holes, a face, an open bottom or a wall part way round: spiral vase mode prints one closed line a layer
-  return p.holes !== 0 || p.open_bottom || p.around < 360 || p.eyes !== 0 || p.mouth !== 0 || p.straps;
+  return p.holes !== 0 || p.open_bottom || p.around < 360 || p.eyes !== 0 || p.mouth !== 0 || p.straps || p.box;
 }
 
 function change(updates) {
@@ -312,6 +312,15 @@ function patternIcon(name) {
     `stroke-linecap="round" fill="#A06D39">${lines.join("")}${dots.join("")}</g>`);
 }
 
+function tissueIcon(kind) {
+  // a tissue box cover from above, with its hole for the tissues cut out, as the desktop app draws them
+  const hole = kind === C.constants.TISSUE_ROUND ? `<circle cx="26" cy="26" r="9"/>`
+    : kind === C.constants.TISSUE_OVAL ? `<ellipse cx="26" cy="26" rx="15" ry="8"/>`
+      : `<rect x="10" y="22" width="32" height="8" rx="4"/>`;
+  return svg(`<defs><mask id="t${kind}"><rect width="52" height="52" fill="white"/><g fill="black">${hole}</g></mask></defs>` +
+    `<rect x="3" y="12" width="46" height="28" rx="5" fill="${ACCENT}" stroke="${EDGE}" stroke-width="1.5" mask="url(#t${kind})"/>`);
+}
+
 function swatch(colours) {
   const n = colours.length;
   const id = "s" + colours.join("").replace(/#/g, "");
@@ -372,10 +381,15 @@ function refreshSimple() {
   document.title = `${titleOf(p)} – Vaseinator`;
   setNumber($("tall"), Math.round(p.height) / 10);
   setNumber($("wide"), Math.round(widest()) / 10);
-  $("size").hidden = p.worn;
-  $("headrow").hidden = !p.worn;
-  $("sidetitle").hidden = p.worn;
-  $("side").hidden = p.worn;
+  // a mask or helmet is sized by the head; a tissue box cover by the box of tissues, and is a box from every side
+  $("size").hidden = p.worn || p.box;
+  $("headrow").hidden = !p.worn || p.box;
+  $("sidetitle").hidden = p.worn || p.box;
+  $("side").hidden = p.worn || p.box;
+  for (const id of ["abovetitle", "above", "drawown", "twisttitle", "twistrow"]) $(id).hidden = p.box;
+  $("boxrow").hidden = !p.box;
+  for (const input of document.querySelectorAll("#boxrow input")) setNumber(input, Math.round(p[input.dataset.key]) / 10);
+  lightTile($("tissue"), C.tissue_holes.findIndex((t) => t.value === p.tissue_hole));
   lightTile($("above"), C.shapes.findIndex(({ settings: s }) =>
     p.shape2 === K.SAME && p.shape1 === s.shape1 && (p.shape1 !== K.POLYGON || p.count1 === s.count1)));
   lightTile($("side"), p.profile >= 0 && p.profile < C.profiles.length ? p.profile : -1);
@@ -423,6 +437,14 @@ function buildSimple() {
     const cm = parseFloat(e.target.value);
     if (cm > 0) fitHead(cm);
   });
+  tiles($("tissue"), C.tissue_holes.map((t) => ({ label: t.name, icon: tissueIcon(t.value) })),
+    (k) => commit("tissue_hole", C.tissue_holes[k].value));
+  for (const input of document.querySelectorAll("#boxrow input")) {
+    input.addEventListener("change", () => {
+      const cm = parseFloat(input.value);
+      if (cm > 0) commit(input.dataset.key, Math.round(cm * 100) / 10);
+    });
+  }
   $("twist").addEventListener("input", (e) => {
     $("twistwords").textContent = twistWords(15 * e.target.value);
   });

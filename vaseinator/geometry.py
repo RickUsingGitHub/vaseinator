@@ -23,17 +23,22 @@ import numpy as np
 
 from .expr import ExprError, compile_expression
 from . import hollow, sections
-from .params import (ALMOND_EYES, BANDS, CHIN_MOUTH, DIAMOND, DRAWN, FAKE_VASE, GRADIENT, GRILLE_MOUTH, MAX_BANDS,
-                     NO_EYES, NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN, RAISED_NOSE, REAL_VASE, ROUND, SAME,
-                     SLOTS, STRIPES, VORONOI, VaseParams, colour_style_of, face_holes, needs_normal)
-from .shapes import (TABLE, TAU, blur, change, lobes_needed, organic, pchip, progress, sample, shape_table,
-                     smooth_max, smoothstep, strength)
+from .params import (ALMOND_EYES, BANDS, CHIN_MOUTH, DIAMOND, DRAWN, EVENLY, FAKE_VASE, GRADIENT, GRILLE_MOUTH,
+                     MAX_BANDS, NO_EYES, NO_HOLES, NO_MOUTH, NO_NOSE, NO_TISSUE, ONE_COLOUR, OPEN_MOUTH, OWN,
+                     RAISED_NOSE, REAL_VASE, RECTANGLE, ROUND, SAME, SLOTS, STRIPES, TISSUE_OVAL, TISSUE_ROUND,
+                     VORONOI, VaseParams, colour_style_of, face_holes, needs_normal)
+from .shapes import (TABLE, TAU, blur, change, lobes_needed, organic, pchip, progress, rounded_rectangle, sample,
+                     shape_table, smooth_max, smoothstep, strength)
 
 TOLERANCE = 0.3          # degrees over the overhang limit still counted as within it
 HOLE_WORDS = {VORONOI: "Voronoi", ROUND: "round holes", DIAMOND: "diamonds", SLOTS: "slots"}
 VORONOI_BRIDGE = 0.7     # a Voronoi oval's round top is bridged once it is this share of the cells' size across
 VORONOI_LONGEST = 14.0   # ... and never more than this (mm): a round top that size bridges on most printers
 HEAD_ROOM = 10.0         # mm more round the inside of a mask or helmet than round the head it fits
+BOX_ROOM = 2.0           # mm to spare each side between a tissue box cover and the box of tissues inside it
+BOX_TOP_ROOM = 3.0       # ... and over the box's top
+TISSUE_MARGIN = 8.0      # the tissue hole keeps at least this much of the cover's top round it (mm)
+TISSUE_WORDS = {1: "a slot", 2: "an oval", 3: "a round hole"}
 # what grows with a design sized for a head: its height and the face, in mm
 HEAD_SCALED = ("height", "eye_width", "eye_height", "eye_apart", "eye_up", "nose_width", "nose_length",
                "nose_depth", "nose_up", "mouth_width", "mouth_height", "mouth_up", "mouth_smile", "strap_up")
@@ -302,11 +307,16 @@ class VaseDesign:
         self.errors: list[str] = []
         self.warnings: list[str] = []
         self.notes: list[str] = []
+        self.box_room = 0.0
+        if p.box:                                 # a tissue box cover: its shape comes from the box it fits
+            self.box_room = box_room(p)
+            p = box_shape(p)
         if p.vase_mode == REAL_VASE and needs_normal(p):
             p = p.copy()
             p.vase_mode = FAKE_VASE
-            self.notes.append("Holes, a face, an open bottom and a wall part way round need a normal print, with "
-                              "walls (spiral vase mode prints one closed line a layer): it is printed normally.")
+            self.notes.append("Holes, a face, a tissue box cover, an open bottom and a wall part way round need a "
+                              "normal print, with walls (spiral vase mode prints one closed line a layer): it is "
+                              "printed normally.")
         if p.closed_top and p.around < 360.0:
             p = p.copy()
             p.closed_top = False
@@ -321,6 +331,8 @@ class VaseDesign:
         self.hole_share = 0.0
         self.head_fit = 0.0
         self.ceiling = 0.0
+        self.floor_hole = None                    # a tissue box cover's hole through its top, on the bed
+        self.tissue = None                        # ... its length and width (mm)
         self.fn = None
         self.closed = None
         self.free = DRAWN in (self.p.shape1, self.p.shape2)    # a drawn outline: built point by point
@@ -676,7 +688,10 @@ class VaseDesign:
             far = max(6.0, 0.5 * p.hole_size) if p.holes != NO_HOLES else 6.0
             b = hollow.swell(fs, zs, p.hole_swell, far, 0.6 * math.tan(math.radians(p.max_overhang)))
         kr = self._roof(zs, Os, kb) if p.closed_top else None
-        verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb, roof_row=kr, swell=b)
+        if p.box and p.tissue_hole != NO_TISSUE and kb is not None:
+            self.floor_hole = self._tissue_hole(Is[kb])
+        verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb, roof_row=kr, swell=b,
+                                         floor_hole=self.floor_hole)
         kinds, self.bridge, side_worst = hollow.bridges(verts, faces, kinds, p.max_overhang,
                                                         longest=max(8.0, self.bridge_allowed + 1.0))
         self.pot_rows = (zs, Os, Is, fs, kb, kr, np.zeros_like(fs) if b is None else b)
@@ -701,6 +716,33 @@ class VaseDesign:
                 self.closed = bool(self.closed) and edge_check(faces)[0]
         self.inner_rows = [(zz, np.arctan2(r[:, 1], r[:, 0]), np.hypot(r[:, 0], r[:, 1]))
                            for zz, r in zip(zs[lo:hi + 1], Is[lo:hi + 1])]
+
+    def _tissue_hole(self, inside):
+        """The hole in a tissue box cover's top for the tissues to come out of, as a loop round the middle,
+        anticlockwise - kept TISSUE_MARGIN clear of the walls inside. None if there is no room for it."""
+        p = self.p
+        along_y = p.turn1 % 180.0 > 45.0                         # the box's length runs along y
+        half = np.abs(np.asarray(inside, dtype=float)).max(axis=0) - TISSUE_MARGIN
+        long_room, short_room = (half[1], half[0]) if along_y else (half[0], half[1])
+        w = min(0.5 * p.tissue_width, short_room)
+        length = w if p.tissue_hole == TISSUE_ROUND else max(min(0.5 * p.tissue_length, long_room), w)
+        if p.tissue_hole == TISSUE_ROUND:
+            w = length = min(w, long_room)
+        if w < 3.0:
+            self.notes.append("There is no room in the top for the tissue hole.")
+            return None
+        if w < 0.5 * p.tissue_width - 0.05 or (p.tissue_hole != TISSUE_ROUND and length < 0.5 * p.tissue_length - 0.05):
+            self.notes.append(f"The tissue hole was made smaller, to keep {TISSUE_MARGIN:g} mm of the top round it.")
+        step = max(p.facet_size, 0.3) * (2.6 if self.draft else 1.0)
+        if p.tissue_hole == TISSUE_OVAL:
+            n = max(int(2.0 * math.pi * max(length, w) / step), 48)
+            t = np.arange(n) * (TAU / n)
+            xs, ys = length * np.cos(t), w * np.sin(t)
+        else:                                                    # a slot: round ends; a circle
+            n = max(int((4.0 * length + 2.3 * w) / step), 48)
+            xs, ys = rounded_rectangle(length, w, w, per=n)
+        self.tissue = (2.0 * length, 2.0 * w)
+        return np.stack([-ys, xs] if along_y else [xs, ys], axis=1)
 
     def _roof(self, zs, Os, kb):
         """The row a closed top's ceiling is on: as high as leaves the point above it as thick as the floor,
@@ -812,7 +854,7 @@ class VaseDesign:
             verts, faces, _ = hollow.pot(z2[rows], O2[rows], I2[rows], f2[rows],
                                          floor_row=kb2 if (floor and a == 0) else None,
                                          roof_row=kr2 - a if (kr2 is not None and b == len(z2) - 1) else None,
-                                         swell=s2[rows])
+                                         swell=s2[rows], floor_hole=self.floor_hole if a == 0 else None)
             parts.append((fil, verts, faces))
         return parts
 
@@ -1080,7 +1122,7 @@ class VaseDesign:
         wall_area = float(np.sum(0.5 * (ps[1:] + ps[:-1]) * np.diff(zs)))     # mm² of wall, unrolled
         bottom_vol = float(np.interp(0.0, oz, o_area)) * zb
         self.capacity = float(np.sum(0.5 * (i_area[1:] + i_area[:-1]) * np.diff(iz))) / 1000.0  # ml
-        if self.holes_open or p.open_bottom or p.closed_top:
+        if self.holes_open or p.open_bottom or p.closed_top or p.box:
             self.capacity = 0.0
         fil_area = math.pi * (p.filament_d / 2.0) ** 2
         vol = mesh_volume(self.shell_verts, self.shell_faces)               # the plastic, holes and all
@@ -1261,13 +1303,13 @@ class VaseDesign:
             self.warnings.append(f"The vase is {self.H:.0f} mm tall: taller than the printer ({p.printer_height:.0f} mm).")
         sx, sy = self.size[0], self.size[1]
         if sx > p.bed_x or sy > p.bed_y:
-            self.warnings.append(f"The vase is {sx:.0f} × {sy:.0f} mm across: bigger than the bed "
+            self.warnings.append(f"It is {sx:.0f} × {sy:.0f} mm across: bigger than the bed "
                                  f"({p.bed_x:.0f} × {p.bed_y:.0f} mm).")
         if self.H > 3.2 * self.base_d[1] and self.H > 60:
             self.warnings.append(f"The base is narrow for the height (Ø {self.base_d[1]:.0f} mm under a "
                                  f"{self.H:.0f} mm vase): it may topple, on the bed or with flowers in. "
                                  "A brim helps it print.")
-        if self.top_d[0] < 8.0 and not p.closed_top:
+        if self.top_d[0] < 8.0 and not p.closed_top and not p.box:
             self.notes.append(f"The opening at the top is only {self.top_d[0]:.0f} mm across: a bud vase.")
         changes = len(self.bands) - 1
         if changes > 20:
@@ -1302,6 +1344,14 @@ class VaseDesign:
             **({"Goes round": f"{p.around:g}° of the way round"} if p.around < 360.0 else {}),
             **({"Fits a head": f"up to {self.head_fit / 10.0:.1f} cm round (round the forehead, above the ears)"}
                if p.worn and self.head_fit > 0 else {}),
+            **({"Fits over": f"a box of tissues {p.box_length / 10.0:g} × {p.box_width / 10.0:g} × "
+                             f"{p.box_height / 10.0:g} cm, with {self.box_room:.1f} mm to spare each side and "
+                             f"{BOX_TOP_ROOM:g} mm over it",
+                "Tissues come out of": (f"{TISSUE_WORDS[p.tissue_hole]} {self.tissue[0]:.0f}"
+                                        + ("" if p.tissue_hole == TISSUE_ROUND else f" × {self.tissue[1]:.0f}")
+                                        + " mm, through its bottom layers") if self.tissue else "nowhere: no hole",
+                "Printed": "upside down, as it is shown - the hole on the bed, the open top for the box to go "
+                           "in: nothing needs supports. Turn it over to put it on."} if p.box else {}),
             "Holds": ("nothing: it goes only part way round" if p.around < 360.0 else
                       "nothing: it is open at the bottom" if p.open_bottom else
                       "nothing: it has holes" if self.holes_open else
@@ -1321,6 +1371,10 @@ class VaseDesign:
         if p.around < 360.0:                  # widths round the whole oval it is cut from would mislead
             for key in ("Widest", "Base", "Opening at the top"):
                 d.pop(key, None)
+        if p.box:                             # a box isn't round, and holds tissues, not water
+            for key in ("Widest", "Base", "Opening at the top", "Holds"):
+                d.pop(key, None)
+            d["Wall"] = d["Wall"].replace("solid bottom", "solid top")
         return d
 
     def _hole_words(self) -> str:
@@ -1353,7 +1407,7 @@ class VaseDesign:
     def contour(self, zc: float):
         """Where the wall crosses height zc: line segments (K, 2, 3), for the print animation."""
         if not hasattr(self, "_tri"):
-            if self.holes_open:                       # the pot's wall: each piece between the holes a loop
+            if self.holes_open or self.floor_hole is not None:    # the pot's wall: each piece between holes a loop
                 keep = np.isin(self.shell_kind, (hollow.OUTER, hollow.INNER, hollow.SIDE, hollow.TIP))
                 tri = self.shell_verts[self.shell_faces[keep]]
             else:
@@ -1375,6 +1429,41 @@ class VaseDesign:
         first_two = np.argsort(~C, axis=1, kind="stable")[:, :2]     # the two edges each face crosses
         seg = np.take_along_axis(P, first_two[:, :, None], axis=1)
         return seg[C.sum(1) >= 2]
+
+
+# ================================================================ a tissue box cover
+def box_room(p: VaseParams) -> float:
+    """How much bigger a tissue box cover is inside than the box of tissues, each side (mm): BOX_ROOM, more where
+    rounded corners need it to clear a square-cornered box, and more for patterns and rounded hole edges that
+    reach in."""
+    wall = p.line_width * max(int(p.walls), 1)
+    inward = ((max(-p.rib_depth, 0.0) if p.rib_count > 0 else 0.0) + (max(-p.ring_depth, 0.0) if p.ring_count > 0
+              else 0.0) + (max(-p.bump_depth, 0.0) if p.bump_around > 0 else 0.0) + 1.2 * max(p.organic_depth, 0.0)
+              + (p.hole_swell if p.holes != NO_HOLES else 0.0))
+    corner = max(p.box_corner - wall, 1.0)                    # inside
+    return max(BOX_ROOM, corner - (corner - BOX_ROOM) / math.sqrt(2.0)) + inward
+
+
+def box_shape(p: VaseParams) -> VaseParams:
+    """A tissue box cover's own shape, from the box of tissues it goes over: a rectangle seen from above with
+    rounded corners, straight up. It is made upside down, as it prints - the top, with the hole for the tissues,
+    is the floor on the bed, and the rim is the open bottom the box goes in by - so nothing needs supports."""
+    q = p.copy()
+    wall = q.line_width * max(int(q.walls), 1)
+    room = box_room(q)
+    a = 0.5 * max(q.box_length, q.box_width) + room + wall   # half its length and width, outside
+    b = 0.5 * min(q.box_length, q.box_width) + room + wall
+    c = min(max(q.box_corner, wall + 1.0), b)
+    reach = math.hypot(a - c, b - c) + c                    # to the furthest point, round a corner
+    q.shape1, q.depth1, q.sharp1, q.shape2 = RECTANGLE, min(1.0 - b / a, 0.9), c / b, SAME
+    q.turn1 = 90.0 if q.box_width > q.box_length else 0.0
+    q.height = round(q.box_height + BOX_TOP_ROOM + max(q.bottom, q.layer_height), 3)
+    q.profile, q.silhouette = 1, [[0.0, round(2.0 * reach, 3)], [1.0, round(2.0 * reach, 3)]]
+    q.twist, q.twist_style, q.lattice, q.facets = 0.0, EVENLY, False, False
+    q.open_bottom, q.closed_top, q.around, q.worn = False, False, 360.0, False
+    q.eyes, q.nose, q.mouth, q.straps = NO_EYES, NO_NOSE, NO_MOUTH, False
+    q.vase_mode = FAKE_VASE
+    return q
 
 
 # ================================================================ sizing for a head

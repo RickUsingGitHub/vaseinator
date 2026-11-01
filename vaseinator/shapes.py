@@ -11,7 +11,7 @@ import math
 import numpy as np
 
 from .params import (CIRCLE, DRAWN, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES, FLOWER, GEAR, GROWS, MIDDLE,
-                     OWN, PEBBLE, POLYGON, SLOW_DOWN, SPEED_UP, STAR, SWING)
+                     OWN, PEBBLE, POLYGON, RECTANGLE, SLOW_DOWN, SPEED_UP, STAR, SWING)
 
 TAU = 2.0 * math.pi
 TABLE = 4096                    # samples round one turn of a cross-section
@@ -32,12 +32,13 @@ PROFILES = [
     ("Trumpet", [(0.0, 0.5), (0.4, 0.42), (0.75, 0.55), (1.0, 1.0)]),
 ]
 
-SHAPE_NAMES = {CIRCLE: "Circle", POLYGON: "Polygon", STAR: "Star", FLOWER: "Flower", GEAR: "Gear",
-               ELLIPSE: "Ellipse", PEBBLE: "Pebble", DRAWN: "Drawn - any outline"}
+SHAPE_NAMES = {CIRCLE: "Circle", POLYGON: "Polygon", RECTANGLE: "Rectangle", STAR: "Star", FLOWER: "Flower",
+               GEAR: "Gear", ELLIPSE: "Ellipse", PEBBLE: "Pebble", DRAWN: "Drawn - any outline"}
 # what each shape's count, depth and sharpness are called (None: the shape has no such setting)
 SHAPE_LABELS = {
     CIRCLE: (None, None, None),
     POLYGON: ("Sides", None, "Corner rounding"),
+    RECTANGLE: (None, "Squash", "Corner rounding"),
     STAR: ("Points", "Depth", "Sharpness"),
     FLOWER: ("Petals", "Depth", "Petal shape"),
     GEAR: ("Teeth", "Depth", "Tooth width"),
@@ -192,6 +193,9 @@ def shape_table(kind: int, count: int, depth: float, sharp: float) -> np.ndarray
             pts = np.concatenate([arcs.reshape(-1, 2), sides])
             xs, ys = pts[:, 0], pts[:, 1]
         r = _polar(xs, ys)
+    elif kind == RECTANGLE:
+        b = 1.0 - d                                      # half as wide as it is long: 1 less the squash
+        r = _polar(*rounded_rectangle(1.0, b, s * b))
     elif kind == STAR:
         n = max(n, 2)
         pts = []
@@ -225,6 +229,37 @@ def shape_table(kind: int, count: int, depth: float, sharp: float) -> np.ndarray
         r = np.ones_like(u)
     r = np.maximum(r, 0.05)
     return r / r.max()
+
+
+def rounded_rectangle(a: float, b: float, corner: float, per: int = 2048):
+    """A rectangle 2a long (along x) and 2b wide with its corners rounded to radius ``corner``: its outline as
+    points (xs, ys), anticlockwise from the middle of its +x end - straight sides and quarter circles."""
+    q = min(max(corner, 0.0), min(a, b))
+    cx, cy = a - q, b - q
+    # the length of each piece, going round: half the +x end, a corner, the +y side, ... back to the start
+    pieces = [(cy, None), (0.5 * math.pi * q, 0), (2 * cx, None), (0.5 * math.pi * q, 1), (2 * cy, None),
+              (0.5 * math.pi * q, 2), (2 * cx, None), (0.5 * math.pi * q, 3), (cy, None)]
+    total = sum(length for length, _ in pieces)
+    s = np.arange(per) * (total / per)
+    xs, ys = np.empty(per), np.empty(per)
+    start = 0.0
+    sides = [((a, 0.0), (0.0, 1.0)), ((cx, b), (-1.0, 0.0)), ((-a, cy), (0.0, -1.0)), ((-cx, -b), (1.0, 0.0)),
+             ((a, -cy), (0.0, 1.0))]
+    side = 0
+    for length, corner_k in pieces:
+        here = (s >= start) & (s < start + length) if length > 0 else np.zeros(per, dtype=bool)
+        u = s[here] - start
+        if corner_k is None:
+            (x0, y0), (dx, dy) = sides[side]
+            xs[here], ys[here] = x0 + dx * u, y0 + dy * u
+            side += 1
+        else:
+            ox, oy = (cx, cy) if corner_k == 0 else (-cx, cy) if corner_k == 1 else (-cx, -cy) if corner_k == 2 \
+                else (cx, -cy)
+            t = 0.5 * math.pi * corner_k + u / max(q, 1e-12)
+            xs[here], ys[here] = ox + q * np.cos(t), oy + q * np.sin(t)
+        start += length
+    return xs, ys
 
 
 def blur(table: np.ndarray, sigma: float) -> np.ndarray:
@@ -282,6 +317,8 @@ def lobes_needed(kind: int, count: int) -> int:
         return 1
     if kind == ELLIPSE:
         return 2
+    if kind == RECTANGLE:
+        return 4
     if kind == PEBBLE:
         return 6
     return max(int(count), 1)

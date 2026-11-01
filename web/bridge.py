@@ -18,11 +18,12 @@ import tempfile
 import numpy as np
 
 from vaseinator import __version__, sections
-from vaseinator.choices import COLOURS, MANY_COLOURS, NO_PATTERN, PATTERNS, SHAPES_FROM_ABOVE, pattern_of, twist_words
+from vaseinator.choices import (COLOURS, MANY_COLOURS, NO_PATTERN, PATTERNS, SHAPES_FROM_ABOVE, TISSUE_HOLES, pattern_of,
+                                twist_words)
 from vaseinator.expr import EXAMPLES
 from vaseinator.geometry import TOLERANCE, VaseDesign, fit_head
 from vaseinator.params import (CIRCLE, DRAWN, EVENLY, FAKE_VASE, FILE_FORMAT, FILE_VERSION, ONE_COLOUR, OWN,
-                               OWN_PROFILE, POLYGON, REAL_VASE, SAME, VaseParams)
+                               OWN_PROFILE, POLYGON, REAL_VASE, SAME, TISSUE_OVAL, TISSUE_ROUND, VaseParams)
 from vaseinator.presets import GALLERY, PRINTER_KEYS, gallery_design, plain_design, slug, surprise
 from vaseinator.report import ABOUT, DRAWING_HELP, PRINTING_HELP, function_help, info_html, print_steps
 from vaseinator.settings import COLOUR_STYLES, LIVE_KEYS, REAL_COLOUR_STYLES, SPEC, TEXT_KEYS, change, wanted
@@ -94,6 +95,7 @@ def start() -> str:
         profiles=[dict(name=full.split(" (")[0], full=full, widths=side(pts), points=[list(q) for q in pts])
                   for full, pts in PROFILES],
         patterns=[dict(name=n, settings=s) for n, s in PATTERNS],
+        tissue_holes=[dict(name=n, value=v) for n, v in TISSUE_HOLES],
         no_pattern=NO_PATTERN,
         colours=[dict(name=n, colour=c) for n, c in COLOURS],
         many_colours=[dict(name=n, palette=pal, settings=s, colours=list(palettes[pal]))
@@ -108,7 +110,8 @@ def start() -> str:
         shape_labels={str(k): list(v) for k, v in SHAPE_LABELS.items()},
         help=dict(printing=PRINTING_HELP, drawing=DRAWING_HELP, about=ABOUT, function=function_help()),
         constants=dict(SAME=SAME, CIRCLE=CIRCLE, POLYGON=POLYGON, DRAWN=DRAWN, OWN=OWN, OWN_PROFILE=OWN_PROFILE,
-                       EVENLY=EVENLY, REAL_VASE=REAL_VASE, FAKE_VASE=FAKE_VASE, ONE_COLOUR=ONE_COLOUR),
+                       EVENLY=EVENLY, REAL_VASE=REAL_VASE, FAKE_VASE=FAKE_VASE, ONE_COLOUR=ONE_COLOUR,
+                       TISSUE_OVAL=TISSUE_OVAL, TISSUE_ROUND=TISSUE_ROUND),
         defaults=VaseParams().to_dict(),
         plain=plain_design().to_dict(),
     ))

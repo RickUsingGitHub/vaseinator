@@ -10,7 +10,7 @@ from .geometry import fit_head
 from .params import (ALMOND_EYES, BANDS, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, EVERYWHERE, FADES,
                      FAKE_VASE, FLOWER, GEAR, GLOSSY, GRADIENT, GRILLE_MOUTH, GROWS, MATTE, MIDDLE, ONE_COLOUR,
                      OWN_PROFILE, PEBBLE, POLYGON, RAISED_NOSE, REAL_VASE, ROUND, ROUND_EYES, SAME, SILK, SLOW_DOWN,
-                     SPEED_UP, STAR, STRIPES, SWING, TRANSLUCENT, VORONOI, VaseParams)
+                     SPEED_UP, STAR, STRIPES, SWING, TISSUE_OVAL, TISSUE_SLOT, TRANSLUCENT, VORONOI, VaseParams)
 from .shapes import PALETTES, PROFILES
 
 # the settings that belong to the printer, not the design: kept when a design is swapped
@@ -44,6 +44,9 @@ def _profile(i, widest):
 STANDARD_HEAD = 570.0
 HEAD = dict(profile=OWN_PROFILE, shape1=ELLIPSE, depth1=0.2, turn1=90.0, twist=0.0, open_bottom=True, worn=True,
             vase_mode=FAKE_VASE, colour_style=ONE_COLOUR, look=SILK)
+
+# tissue box covers: sized by the box of tissues they go over, printed upside down
+BOX = dict(box=True, twist=0.0, shape2=SAME, vase_mode=FAKE_VASE, colour_style=ONE_COLOUR)
 
 
 def _drawn(name: str, k: int = 1) -> dict:
@@ -153,6 +156,15 @@ GALLERY = [
     ("Norman Helmet", "A pointed helmet with four ridges meeting at the top: it closes over without supports.",
      dict(HEAD, height=196.0, silhouette=[[0.0, 207.0], [0.4, 209.0], [1.0, 60.0]], closed_top=True, rib_count=4,
           rib_depth=3.5, rib_sharp=0.9, straps=True, strap_up=15.0, color1="#8D99AE")),
+    ("Tissue Box Cover", "A cover for a long box of tissues, with a slot in its top. It prints upside down, the slot "
+     "on the bed and the open end at the top, so it needs no supports.",
+     dict(BOX, box_length=220.0, box_width=120.0, box_height=90.0, box_corner=10.0, tissue_hole=TISSUE_SLOT,
+          tissue_length=130.0, tissue_width=36.0, ring_count=5, ring_depth=1.0, ring_sharp=0.5, fade_foot=8.0,
+          fade_rim=8.0, color1="#F4E9C1", look=SILK)),
+    ("Lace Tissue Cube", "A cube of Voronoi lace for a cube of tissues, with an oval hole in its top.",
+     dict(BOX, box_length=115.0, box_width=115.0, box_height=130.0, box_corner=12.0, tissue_hole=TISSUE_OVAL,
+          tissue_length=90.0, tissue_width=50.0, holes=VORONOI, hole_size=18.0, hole_strut=3.0, hole_jitter=0.7,
+          hole_seed=4, hole_foot=12.0, hole_rim=10.0, hole_swell=1.4, color1="#2A9D8F", look=SILK)),
 ]
 
 

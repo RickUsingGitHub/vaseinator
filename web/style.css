@@ -199,6 +199,9 @@ main {
 .wide { width: 100%; margin-top: 0.4rem; }
 .numbers label { display: flex; align-items: center; gap: 0.35rem; flex: 1; }
 .numbers input { width: 4.6rem; padding: 0.4rem; }
+#boxrow .numbers { flex-wrap: wrap; row-gap: 0.4rem; }
+#boxrow .numbers label { flex: 0 1 auto; }
+#boxrow .numbers input { width: 3.6rem; }
 .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; }
 .tile {
   display: flex;

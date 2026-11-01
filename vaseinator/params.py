@@ -10,8 +10,8 @@ FILE_VERSION = 1
 FILAMENTS = (1, 2, 3, 4)
 
 # cross-section shapes; SAME (for the top shape) keeps the bottom one all the way up
-SAME, CIRCLE, POLYGON, STAR, FLOWER, GEAR, ELLIPSE, PEBBLE, DRAWN = -1, 0, 1, 2, 3, 4, 5, 6, 7
-SHAPES = (CIRCLE, POLYGON, STAR, FLOWER, GEAR, ELLIPSE, PEBBLE, DRAWN)   # DRAWN: any outline, from points
+SAME, CIRCLE, POLYGON, STAR, FLOWER, GEAR, ELLIPSE, PEBBLE, DRAWN, RECTANGLE = -1, 0, 1, 2, 3, 4, 5, 6, 7, 8
+SHAPES = (CIRCLE, POLYGON, RECTANGLE, STAR, FLOWER, GEAR, ELLIPSE, PEBBLE, DRAWN)   # DRAWN: any outline, from points
 
 # how something changes on the way up (the twist, the change of shape, the texture strength)
 EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN = 0, 1, 2, 3, 4, 5
@@ -24,6 +24,7 @@ NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS = 0, 1, 2, 3, 4  # holes right through 
 NO_EYES, ALMOND_EYES, ROUND_EYES = 0, 1, 2                # a face: its eyes ...
 NO_NOSE, RAISED_NOSE = 0, 1                               # ... its nose ...
 NO_MOUTH, OPEN_MOUTH, GRILLE_MOUTH, CHIN_MOUTH = 0, 1, 2, 3   # ... and its mouth (CHIN: open down to the chin)
+NO_TISSUE, TISSUE_SLOT, TISSUE_OVAL, TISSUE_ROUND = 0, 1, 2, 3   # the hole in a tissue box cover's top
 MATTE, SILK, GLOSSY, TRANSLUCENT = 0, 1, 2, 3             # how the filament looks in the 3D view
 
 MAX_REPEAT = 100                                          # most copies of a drawn piece round the axis
@@ -155,6 +156,16 @@ class VaseParams:
     straps: bool = False          # a slot each side for an elastic strap
     strap_up: float = 112.0
 
+    # --- a tissue box cover: sized by the box of tissues it goes over, printed upside down, on its top ---
+    box: bool = False             # a box open at the bottom with a hole in its top, to go over a box of tissues
+    box_length: float = 220.0     # the box of tissues it goes over (mm)
+    box_width: float = 120.0
+    box_height: float = 90.0
+    box_corner: float = 10.0      # how round the cover's corners are seen from above: their radius outside (mm)
+    tissue_hole: int = TISSUE_SLOT    # the hole in its top the tissues come out of
+    tissue_length: float = 130.0  # ... along the box
+    tissue_width: float = 36.0    # ... and across it (a round hole: its diameter)
+
     # --- printing -----------------------------------------------------------
     vase_mode: int = FAKE_VASE    # real: spiral vase mode, one solid, one colour (slicers won't change
     #                               filament in it); fake: an ordinary print with walls, the colour
@@ -217,7 +228,8 @@ class VaseParams:
                    "look": (MATTE, SILK, GLOSSY, TRANSLUCENT), "vase_mode": (REAL_VASE, FAKE_VASE),
                    "holes": (NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS),
                    "eyes": (NO_EYES, ALMOND_EYES, ROUND_EYES), "nose": (NO_NOSE, RAISED_NOSE),
-                   "mouth": (NO_MOUTH, OPEN_MOUTH, GRILLE_MOUTH, CHIN_MOUTH)}
+                   "mouth": (NO_MOUTH, OPEN_MOUTH, GRILLE_MOUTH, CHIN_MOUTH),
+                   "tissue_hole": (NO_TISSUE, TISSUE_SLOT, TISSUE_OVAL, TISSUE_ROUND)}
         for key, values in allowed.items():
             if getattr(p, key) not in values:
                 setattr(p, key, getattr(fresh, key))
@@ -234,7 +246,9 @@ class VaseParams:
                             ("eye_height", 2.0, 400.0), ("eye_apart", 0.0, 2000.0), ("eye_tilt", -80.0, 80.0),
                             ("nose_width", 2.0, 400.0), ("nose_length", 2.0, 1000.0), ("nose_depth", 0.0, 100.0),
                             ("mouth_width", 2.0, 1000.0), ("mouth_height", 2.0, 400.0),
-                            ("mouth_smile", -400.0, 400.0)):
+                            ("mouth_smile", -400.0, 400.0), ("box_length", 20.0, 1000.0),
+                            ("box_width", 20.0, 1000.0), ("box_height", 10.0, 1000.0), ("box_corner", 0.0, 500.0),
+                            ("tissue_length", 5.0, 1000.0), ("tissue_width", 5.0, 1000.0)):
             setattr(p, key, min(max(getattr(p, key), lo), hi))
         for k in FILAMENTS:
             try:
@@ -250,9 +264,9 @@ def face_holes(p: VaseParams) -> bool:
 
 
 def needs_normal(p: VaseParams) -> bool:
-    """Whether the wall is cut open - holes, an open bottom, part way round - so it must be printed normally:
-    spiral vase mode prints one closed line a layer."""
-    return p.holes != NO_HOLES or p.open_bottom or p.around < 360.0 or face_holes(p)
+    """Whether the wall is cut open - holes, an open bottom, part way round, a tissue box cover - so it must be
+    printed normally: spiral vase mode prints one closed line a layer."""
+    return p.holes != NO_HOLES or p.open_bottom or p.around < 360.0 or face_holes(p) or p.box
 
 
 def colour_style_of(p: VaseParams) -> int:

@@ -18,14 +18,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vaseinator import sections  # noqa: E402
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
-from vaseinator.geometry import (TOLERANCE, VORONOI_LONGEST, VaseDesign, edge_check, face_normals, fit_head,  # noqa: E402
-                                 lean_angles, mesh_volume)
+from vaseinator.geometry import (BOX_ROOM, BOX_TOP_ROOM, TOLERANCE, VORONOI_LONGEST, VaseDesign,  # noqa: E402
+                                 edge_check, face_normals, fit_head, lean_angles, mesh_volume)
 from vaseinator import hollow  # noqa: E402
 from vaseinator.params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, ELLIPSE, EVENLY,  # noqa: E402
                                FAKE_VASE, FLOWER, GEAR, GRADIENT, GRILLE_MOUTH, NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN,
-                               POLYGON, RAISED_NOSE, REAL_VASE, ROUND, ROUND_EYES, SAME, SLOTS, STAR, STRIPES, SWING,
-                               VORONOI, VaseParams, load_design, save_design)
+                               NO_TISSUE, POLYGON, RAISED_NOSE, REAL_VASE, RECTANGLE, ROUND, ROUND_EYES, SAME, SLOTS,
+                               STAR, STRIPES, SWING, TISSUE_OVAL, TISSUE_ROUND, TISSUE_SLOT, VORONOI, VaseParams,
+                               load_design, save_design)
 from vaseinator.presets import GALLERY, PRINTER_KEYS, gallery_design, plain_design, surprise  # noqa: E402
+from vaseinator.settings import change, wanted  # noqa: E402
 from vaseinator.shapes import PROFILES, pchip, shape_table  # noqa: E402
 from vaseinator.stl import read_stl, write_stl  # noqa: E402
 from vaseinator.threemf import read_3mf, write_3mf  # noqa: E402
@@ -123,7 +125,7 @@ def test_every_design_is_closed_and_printable():
         assert np.allclose(d.verts[down][:, :, 2], 0.0), f"{name}: the base is not flat"
         for z in np.linspace(0.3, d.H - 0.3, 9) + 0.0123:
             loops = layer_loops(d, z)
-            if d.holes_open:                          # holes cut a layer into pieces: each one still closed
+            if d.holes_open or d.floor_hole is not None:   # holes cut a layer into pieces: each one still closed
                 assert loops >= 1, f"{name}: the layer at {z:.1f} mm is not closed"
             else:
                 assert loops == 1, f"{name}: the layer at {z:.1f} mm is not one closed loop"
@@ -345,6 +347,63 @@ def test_masks_and_helmets():
         assert abs(d.head_fit - 570.0) < 3.0 and d.p.worn and d.H < 220.0, (title, d.head_fit, d.H)
 
 
+def test_tissue_box_covers():
+    """A tissue box cover is made upside down, as it prints: a round-cornered box with the hole for the tissues
+    through its solid bottom layers and the top open, big enough inside to go over the box of tissues with room to
+    spare - patterns, holes and colour bands and all. Closed, and printable without supports."""
+    limit = 45.0 + TOLERANCE
+    box = dict(box=True, colour_style=ONE_COLOUR)
+    flat = VaseDesign(plain(**box, tissue_hole=NO_TISSUE))
+    for extra in ({}, dict(box_length=120.0, box_width=250.0, tissue_hole=TISSUE_ROUND, tissue_width=60.0),
+                  dict(tissue_hole=TISSUE_OVAL, box_corner=40.0, vase_mode=REAL_VASE),
+                  dict(holes=VORONOI, hole_size=18.0, hole_swell=1.4, ring_count=4, ring_depth=-1.0,
+                       colour_style=BANDS, band_count=3, colours_used=3)):
+        p = plain(**{**box, **extra})
+        d = VaseDesign(p)
+        verts, faces = d.print_mesh()
+        assert not d.errors and d.normal and edge_check(faces)[0] and d.worst <= limit, (extra, d.errors, d.worst)
+        assert d.p.shape1 == RECTANGLE and d.p.twist == 0.0 and not d.p.open_bottom and d.capacity == 0.0
+        assert abs(d.H - (p.box_height + BOX_TOP_ROOM + p.bottom)) < 1e-6
+        # inside, every point of the wall is at least the room to spare clear of the box of tissues
+        L, W = p.box_length, p.box_width
+        for zz, a, r in d.inner_rows:
+            x, y = np.abs(r * np.cos(a)) - L / 2, np.abs(r * np.sin(a)) - W / 2
+            clear = np.hypot(np.maximum(x, 0), np.maximum(y, 0))
+            clear = np.where((x > 0) | (y > 0), clear, -np.minimum(-x, -y))
+            assert clear.min() > BOX_ROOM - 0.15, (extra, zz, clear.min())
+        # the hole goes through the bottom layers, on the bed, and nowhere else
+        long_side = max(L, W)
+        hx, hy = np.abs(d.floor_hole).max(axis=0)
+        assert (hx > hy) == (L > W) and d.tissue is not None and d.info()["Tissues come out of"].endswith("bottom layers")
+        bed = verts[np.abs(verts[:, 2]) < 1e-9]
+        assert np.hypot(bed[:, 0], bed[:, 1]).min() < 0.6 * long_side / 2
+        assert "Holds" not in d.info() and d.info()["Fits over"].startswith(f"a box of tissues {L / 10:g} × {W / 10:g}")
+        parts = d.print_parts()
+        whole = mesh_volume(verts, faces)
+        assert all(edge_check(f)[0] for _, _, f in parts)
+        assert abs(sum(mesh_volume(v, f) for _, v, f in parts) - whole) < 1e-6 * whole
+    # a slot 130 x 36 mm takes its area out of the 1.2 mm bottom
+    d = VaseDesign(plain(**box))
+    slot = (130.0 - 36.0) * 36.0 + math.pi * 18.0 ** 2
+    cut = mesh_volume(*flat.print_mesh()) - mesh_volume(*d.print_mesh())
+    assert abs(cut - slot * d.zb) < 0.02 * slot * d.zb, (cut, slot * d.zb)
+    assert d.tissue == (130.0, 36.0) and layer_loops(d, 0.5 * d.zb) == 2
+    # a hole bigger than the top leaves a margin round it; the hole picked brings a size that suits the box
+    d = VaseDesign(plain(**box, tissue_length=900.0, tissue_width=900.0))
+    assert d.tissue[0] < 220.0 and any("made smaller" in n for n in d.notes)
+    p = plain(**box)
+    assert change(p, "tissue_hole", TISSUE_ROUND)[0] == ["tissue_length", "tissue_width"] and p.tissue_width == 66.0
+    assert not wanted(p, "height") and not wanted(p, "twist") and wanted(p, "box_corner") and not wanted(p, "tissue_length")
+    # no longer a cover: it keeps the cover's shape; a cover isn't a mask
+    change(p, "box", False)
+    assert not p.box and p.shape1 == RECTANGLE and abs(p.height - VaseDesign(plain(**box)).H) < 1e-6
+    p = plain(worn=True)
+    assert change(p, "box", True)[0] == ["worn"] and p.box and not p.worn
+    for title in ("Tissue Box Cover", "Lace Tissue Cube"):
+        d = VaseDesign(gallery_design(title))
+        assert d.p.box and d.closed and d.worst <= limit and d.tissue, title
+
+
 def test_the_web_version():
     """The web page's Python - the bridge and the package's modules that need no Qt, as tools/build_web.py puts
     them together - runs without Qt: it starts, builds a mask, fits it to a head, and makes the slicer's file."""
@@ -369,6 +428,9 @@ assert json.loads(bridge.fit(mask, 520.0))["eye_up"] < json.loads(mask)["eye_up"
 data, steps = bridge.export_3mf(bridge.design_of("Plain cylinder", keep))
 assert data[:2] == b"PK" and "No supports" in steps
 assert json.loads(bridge.open_vase(bridge.save_vase(mask)))["name"] == "theatre_mask"
+cube = bridge.design_of("Lace Tissue Cube", keep)
+assert not json.loads(bridge.build(cube, True)[0])["errors"] and "box_corner" in json.loads(bridge.shown(cube))
+assert json.loads(bridge.apply(cube, "tissue_hole", "3"))["touched"] == ["tissue_length", "tissue_width"]
 # the Advanced panel: every setting, and the desktop app's own rules for a change
 assert [g["title"] for g in s["spec"]][0] == "Size" and "eye_tilt" in json.loads(bridge.shown(mask))
 r = json.loads(bridge.apply(keep, "twist_style", "5"))

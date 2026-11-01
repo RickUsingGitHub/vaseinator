@@ -97,16 +97,26 @@
           <label title="Measure round the head, above the eyebrows and ears, as for a hat (an adult: about 54 to 60 cm). The whole mask or helmet grows or shrinks to fit, with a centimetre to spare.">
             Head size <input id="head" type="number" min="30" max="90" step="0.5"> cm round</label>
         </div>
+        <div id="boxrow" hidden>
+          <p class="words">The box of tissues it goes over:</p>
+          <div class="row numbers" title="Measure the box of tissues: the cover is made to fit over it with a little room to spare.">
+            <label>Long <input id="boxlong" data-key="box_length" type="number" min="2" max="100" step="0.5"> cm</label>
+            <label>Wide <input id="boxwide" data-key="box_width" type="number" min="2" max="100" step="0.5"> cm</label>
+            <label>Tall <input id="boxtall" data-key="box_height" type="number" min="1" max="100" step="0.5"> cm</label>
+          </div>
+          <h3>Hole for the tissues</h3>
+          <div id="tissue" class="tiles"></div>
+        </div>
 
-        <h3>Shape from above</h3>
+        <h3 id="abovetitle">Shape from above</h3>
         <div id="above" class="tiles"></div>
         <button id="drawown" class="wide" title="Draw the shape from above yourself, in a big window">Draw my own shape…</button>
 
         <h3 id="sidetitle">Shape from the side</h3>
         <div id="side" class="tiles"></div>
 
-        <h3>Twist</h3>
-        <div class="row">
+        <h3 id="twisttitle">Twist</h3>
+        <div id="twistrow" class="row">
           <input id="twist" type="range" min="0" max="24" step="1">
           <span id="twistwords" class="words"></span>
         </div>
