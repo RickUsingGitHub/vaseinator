@@ -245,7 +245,8 @@ def export_3mf(text: str):
     write_3mf(path, base, named, (p.bed_x / 2.0, p.bed_y / 2.0, 0.0))
     with open(path, "rb") as fh:
         data = fh.read()
-    steps = print_steps(d, f"your downloads/{base}.3mf", len(parts))
+    steps = print_steps(d, f"{base}.3mf", len(parts))
+    steps = re.sub(r"^<p>Saved .*?</p>", "", steps, flags=re.S)        # saved by the button above the steps
     return data, steps.replace(" (the button below, or File ▸ Import)", " (File ▸ Import)")
 
 

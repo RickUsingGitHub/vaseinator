@@ -913,6 +913,20 @@ function download(data, name, type) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+function offer(data, name, type, title, steps = "") {
+  // a file that took a while to make: a browser only lets a click save a file straight away, so the file is
+  // offered with a button of its own to click
+  const link = $("stepsfile");
+  if (link.href) URL.revokeObjectURL(link.href);
+  link.href = URL.createObjectURL(new Blob([data], { type }));
+  link.download = name;
+  link.textContent = `Save ${name}`;
+  $("stepstitle").textContent = title;
+  $("steplist").innerHTML = steps;
+  $("steps").showModal();
+  link.focus();
+}
+
 function fileName() {
   return (params.name || "vase").replace(/[^\w\- ]/g, "_").trim() || "vase";
 }
@@ -942,16 +956,15 @@ const actions = {
   savevase: async () => download(await helper.call("save_vase", JSON.stringify(params)), fileName() + ".vase", "application/json"),
   print: () => withBusy("Making the file for your slicer…", async () => {
     const { data, steps } = await builder.call("export_3mf", JSON.stringify(params));
-    download(data, fileName() + ".3mf", "model/3mf");
-    $("steplist").innerHTML = steps;
-    $("steps").showModal();
+    offer(data, fileName() + ".3mf", "model/3mf", "How to print it", steps);
   }).catch(() => {}),
   stl: () => withBusy("Making the STL…", async () =>
-    download(await builder.call("export_stl", JSON.stringify(params)), fileName() + ".stl", "model/stl")).catch(() => {}),
+    offer(await builder.call("export_stl", JSON.stringify(params)), fileName() + ".stl", "model/stl",
+      "Your STL is ready")).catch(() => {}),
   "3mf": () => withBusy("Making the 3MF…", async () => {
     const { data } = await builder.call("export_3mf", JSON.stringify(params));
-    download(data, fileName() + ".3mf", "model/3mf");
-    status(`Saved ${fileName()}.3mf - in your slicer use File ▸ Import`);
+    offer(data, fileName() + ".3mf", "model/3mf", "Your 3MF is ready",
+      "<p>In your slicer, open it with File ▸ Import.</p>");
   }).catch(() => {}),
   picture: async () => download(await view.picture(), fileName() + "_3d.png", "image/png"),
   undo: () => step(undoStack, redoStack),
