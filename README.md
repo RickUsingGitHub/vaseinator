@@ -84,7 +84,12 @@ ready to slice.
   it, with a little room to spare (more inside rounded corners, so a square-cornered box still fits). Pick
   the hole the tissues come out of – a long **slot**, an **oval** or a **round** hole – and any pattern,
   holes or colours. It is made the way it prints: **upside down**, the hole through its first layers on the
-  bed and the open end at the top, so nothing needs supports. Turn it over to put it on.
+  bed and the open end at the top, so nothing needs supports. Turn it over to put it on. Its ribs, bumps
+  and lumps are spread **evenly round the wall**, as close together on the long sides as round the ends.
+* **A fine mesh, a light file**: the surface is built every 0.2 mm, and **saving for the slicer simplifies
+  it** – triangles are merged wherever that moves the surface by no more than a few hundredths of a
+  millimetre – so the file stays small and the slicer opens it quickly. A box's flat sides need only a
+  few rows and columns of points to begin with.
 * **Colours**: one colour or a **gradient spool** – shown where its colours will really land, worked out
   from the filament each height uses – and, printed normally, up to four filaments in **bands**
   (even, or thicker at the top or the bottom) or **stripes**, with palettes.
@@ -166,14 +171,14 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Size** | Height, the widest diameter (scales the whole outline), and the outline: a preset, or your own curve – diameter at each height, drawn as the vase seen from the side. |
 | **Shape** | The cross-section at the bottom, and what it turns into at the top. Each shape has its own settings: sides, points, petals or teeth; how deep it cuts in; how sharp it is; how far it is turned. **Drawn – any outline** gives you the cross-section editor instead (below). **Change happens** says how the first shape becomes the second on the way up – including back and forth, as many **Changes** as you like, and your own curve. |
 | **Spin** | How far the shape turns from bottom to top, and how the turning is spread up the vase – including back and forth, and your own curve. **Both ways** twists it both ways at once. |
-| **Surface** | Ribs, rings, bumps and organic lumps; whether they turn with the twist; how strong they are up the vase; and a plain foot and rim. |
+| **Surface** | Ribs, rings, bumps and organic lumps; whether they turn with the twist; whether they are spread **evenly round the wall** (by distance along it, not by angle – for boxes, rectangles and ovals); how strong they are up the vase; and a plain foot and rim. |
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |
 | **Holes and openings** | The **holes** – none, Voronoi, round, diamonds or slots – their size, the wall between them, how irregular the Voronoi cells are and their pattern, how much plain wall to keep at the foot and the rim, and **rounded edges** round them; **open at the bottom**; **closed at the top**; and how far the wall **goes round**. Holes, an open bottom and a wall part way round are printed normally. |
 | **Masks and helmets** | **For a head** and its **head size**; the **eyes** – almond or round, their size, how far apart, how high and tilted; a raised **nose** – its width, length, how far it sticks out and how high its tip is; the **mouth** – open, a grille of slots (how many, and how much they smile) or open down to the chin; and **strap slots**. Sizes and heights are in millimetres along the face, from the bottom. |
 | **Tissue box** | **Tissue box cover**; the **box** of tissues it goes over – its length, width and height; how **rounded** the cover's corners are; and the **tissue hole** – a long slot, an oval, a round hole or none – and its length and width. |
 | **Your own function** | A formula added to the radius. **Examples** has eight to try; **Help…** lists the variables and functions. |
 | **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go up the vase: one colour, bands, stripes or a gradient spool. How it looks: matte, silk, glossy, translucent. |
-| **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail. |
+| **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail (0.2 mm; saving simplifies the mesh, so the file stays small). |
 
 The mouse wheel scrolls the panel: a drop-down list only changes with it once it is dropped down, a number
 box only over its arrows, and a slider never.
@@ -332,7 +337,14 @@ and as tall as the box with a little over it plus the solid bottom, which is the
 for the tissues – a slot with round ends, an oval or a circle, kept clear of the walls – is cut through
 that bottom: the floor is filled between the wall and the hole, row by row round the middle, on the bed
 and on its top, with the hole's side between them, so the mesh stays closed. Everything else – holes in
-the wall, rounded edges, colour bands – works as on any vase.
+the wall, rounded edges, colour bands – works as on any vase. **Evenly round the wall** lays the patterns
+out by how far along the wall each point is, as a share of the way round, rather than by its angle from the
+middle – which on a box would crowd them along the middles of the long sides.
+
+The **pot** is built on the grid, then the rows and columns that lie within 0.02 mm of the straight line
+between their neighbours are left out – on a box most of them, on a twisting vase few – and **saving**
+simplifies the mesh once more, merging triangles wherever the surface moves by no more than a few hundredths
+of a millimetre (pyfqmr in the app, meshoptimizer in the web version), keeping it closed.
 
 A **drawn** cross-section needn't have one radius in each direction – a lobe can swell past its neck – so
 it is built another way: as rows of points up the vase, each row the outline (blended into the second

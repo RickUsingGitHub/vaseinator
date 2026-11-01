@@ -5,6 +5,8 @@
 // Messages out: {id, ok, result} or {id, ok: false, error}; a mesh or a file comes as transferable buffers.
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js");
+// meshoptimizer: the web version's Simplify model, before saving (the desktop app uses pyfqmr)
+importScripts("https://cdn.jsdelivr.net/npm/meshoptimizer@0.22.0/meshopt_simplifier.js");
 
 let bridge = null;
 const VERSION = self.location.search;          // the site's version, so its Python comes fresh with it
@@ -12,6 +14,18 @@ const VERSION = self.location.search;          // the site's version, so its Pyt
 async function start() {
   const py = await loadPyodide();
   await py.loadPackage("numpy");
+  await MeshoptSimplifier.ready;
+  py.registerJsModule("meshopt", {
+    // positions (float32) and triangles (uint32) as bytes; the triangles kept, as bytes, merged wherever that moves
+    // the surface by no more than ``error`` mm
+    simplify(positions, triangles, error) {
+      const pos = positions.toJs();
+      const tri = triangles.toJs();
+      const [kept] = MeshoptSimplifier.simplify(new Uint32Array(tri.buffer, tri.byteOffset, tri.byteLength / 4),
+        new Float32Array(pos.buffer, pos.byteOffset, pos.byteLength / 4), 3, 0, error, ["ErrorAbsolute"]);
+      return new Uint8Array(kept.buffer, kept.byteOffset, kept.byteLength);
+    },
+  });
   const files = await (await fetch("py/files.json" + VERSION)).json();
   py.FS.mkdirTree("/home/pyodide/vaseinator");
   for (const name of files) {

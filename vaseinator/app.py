@@ -1428,7 +1428,12 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".stl"):
             path += ".stl"
         try:
-            write_stl(path, *d.print_mesh(), base)
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                verts, faces = d.export_mesh()
+            finally:
+                QApplication.restoreOverrideCursor()
+            write_stl(path, verts, faces, base)
         except OSError as exc:
             QMessageBox.critical(self, "Export failed", str(exc))
             return
@@ -1439,13 +1444,17 @@ class MainWindow(QMainWindow):
             how = ("the hollow pot: slice it with your usual settings (an STL has no colours: Export 3MF has the "
                    "bands as parts)")
         self.statusBar().showMessage(
-            f"Exported {os.path.basename(path)} ({d.triangles:,} triangles, watertight) to "
+            f"Exported {os.path.basename(path)} ({len(faces):,} triangles, watertight) to "
             f"{os.path.dirname(path)} — {how}", 12000)
 
     def band_parts(self, d):
         """The vase for write_3mf: a part per colour band, set to its filament."""
         colors = d.p.colors()
-        parts = d.print_parts()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            parts = d.export_parts()
+        finally:
+            QApplication.restoreOverrideCursor()
         many = len(parts) > 1
         return [(f"{self._safe_name()} band {k + 1}" if many else self._safe_name(), verts, faces, fil, colors[fil])
                 for k, (fil, verts, faces) in enumerate(parts)]

@@ -133,6 +133,10 @@ SPEC = [
         ("organic_seed", "Lump pattern", "seed", 0, 99999, 1, "", "Another number, another pattern of lumps."),
         ("texture_twist", "Turn with the twist", "bool", None, None, None, "",
          "The patterns turn with the shape's twist. Off: they stay square to the bed."),
+        ("even_spacing", "Evenly round the wall", "bool", None, None, None, "",
+         "Space the patterns by how far round the wall they are, not by the angle from the middle: on a box,\n"
+         "a rectangle or an oval, the ribs and bumps are as close together along the long sides as round\n"
+         "the ends. A tissue box cover starts with it on."),
         ("strength", "Strength", "choice", STRENGTHS, None, None, "", "How strong the patterns are on the way up."),
         ("strength_curve", "", "curve", dict(lo=0.0, hi=1.5, unit="×", height=100, decimals=2), None, None, "",
          "How strong the patterns are at each height (1 = as set)."),
@@ -299,8 +303,9 @@ SPEC = [
         ("filament_d", "Filament", "float", 1.0, 3.5, 0.05, " mm", "Filament diameter."),
         ("density", "Density", "float", 0.5, 3.0, 0.01, " g/cm³", "PLA 1.24, PETG 1.27, ABS 1.04, TPU 1.21."),
         ("facet_size", "Mesh detail", "float", 0.15, 5.0, 0.05, " mm",
-         "Spacing of the points on the surface: smaller is smoother but slower, and a bigger\n"
-         "file. Shapes and patterns get enough points of their own."),
+         "Spacing of the points on the surface: smaller is smoother but slower to build. Saving for the\n"
+         "slicer merges the triangles wherever they add nothing, so the file stays small.\n"
+         "Shapes and patterns get enough points of their own."),
     ]),
 ]
 
@@ -362,6 +367,10 @@ def wanted(p, key) -> bool:
         show = p.organic_depth > 0
     elif key == "texture_twist":
         show = patterns and twisting
+    elif key == "even_spacing":
+        # a round vase is as far round the wall as it is round the middle; a drawn one is laid out along it
+        show = (p.rib_count > 0 or p.bump_around > 0 or p.organic_depth > 0) and DRAWN not in (p.shape1, p.shape2) \
+            and (p.box or p.shape1 != CIRCLE or p.shape2 not in (SAME, CIRCLE))
     elif key in ("strength", "fade_foot", "fade_rim"):
         show = patterns
     elif key == "strength_curve":
@@ -487,9 +496,12 @@ def change(p: VaseParams, key: str, value) -> tuple[list, str]:
     elif key == "tissue_hole" and value != p.tissue_hole and value != NO_TISSUE:
         p.tissue_length, p.tissue_width = tissue_size(p, value)          # a hole of that kind that suits the box
         touched += ["tissue_length", "tissue_width"]
-    elif key == "box" and value and p.worn:
-        p.worn = False                                                   # a cover, not a mask
-        touched.append("worn")
+    elif key == "box" and value:
+        p.even_spacing = True                                            # its patterns even along the sides
+        touched.append("even_spacing")
+        if p.worn:
+            p.worn = False                                               # a cover, not a mask
+            touched.append("worn")
     elif key == "worn" and value and p.box:
         p.box = False
         touched.append("box")

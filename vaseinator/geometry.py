@@ -35,6 +35,8 @@ HOLE_WORDS = {VORONOI: "Voronoi", ROUND: "round holes", DIAMOND: "diamonds", SLO
 VORONOI_BRIDGE = 0.7     # a Voronoi oval's round top is bridged once it is this share of the cells' size across
 VORONOI_LONGEST = 14.0   # ... and never more than this (mm): a round top that size bridges on most printers
 HEAD_ROOM = 10.0         # mm more round the inside of a mask or helmet than round the head it fits
+SIMPLIFY_ERROR = 1e-3    # how far saving may simplify the mesh: pyfqmr's lossless error, a few hundredths of a mm
+SIMPLIFY_MM = 0.02       # ... and in the web version, meshoptimizer's (mm)
 BOX_ROOM = 2.0           # mm to spare each side between a tissue box cover and the box of tissues inside it
 BOX_TOP_ROOM = 3.0       # ... and over the box's top
 TISSUE_MARGIN = 8.0      # the tissue hole keeps at least this much of the cover's top round it (mm)
@@ -162,6 +164,40 @@ def annulus(outer, inner):
     o, i = np.asarray(outer), np.asarray(inner)
     o1, i1 = np.roll(o, -1), np.roll(i, -1)
     return np.concatenate([np.stack([o, o1, i1], 1), np.stack([o, i1, i], 1)])
+
+
+def lighter(verts, faces):
+    """The mesh with its triangles merged wherever that moves the surface by no more than a few hundredths of a
+    millimetre - the slicer's Simplify model, done before saving, so a fine mesh makes a file the slicer opens
+    quickly: with pyfqmr in the desktop app, meshoptimizer in the web version. As it was if neither is there, or
+    if the result wouldn't be closed."""
+    try:
+        import pyfqmr
+    except ImportError:
+        pyfqmr = None
+    for k in range(3):                          # each time a little more careful, if it didn't stay closed
+        if pyfqmr is not None:
+            s = pyfqmr.Simplify()
+            s.setMesh(np.asarray(verts, dtype=np.float64), np.asarray(faces, dtype=np.int32))
+            s.simplify_mesh_lossless(epsilon=SIMPLIFY_ERROR / 4 ** k, verbose=False)
+            v, f, _ = s.getMesh()
+        else:
+            try:
+                import meshopt                  # the web version: given to its Python by the page
+            except ImportError:
+                return verts, faces
+            kept = meshopt.simplify(np.asarray(verts, dtype=np.float32).tobytes(),
+                                    np.asarray(faces, dtype=np.uint32).tobytes(), SIMPLIFY_MM / 2 ** k)
+            f = np.frombuffer(bytes(kept.to_py()), dtype=np.uint32).reshape(-1, 3).astype(np.int64)
+            used = np.unique(f)                 # only the corners still in use
+            v, f = np.asarray(verts)[used], np.searchsorted(used, f)
+        # a triangle and its twin facing the other way are a fin with nothing inside: neither is needed
+        f = np.asarray(f, dtype=np.int64)
+        _, which, count = np.unique(np.sort(f, axis=1), axis=0, return_inverse=True, return_counts=True)
+        f = f[count[which.ravel()] == 1]
+        if len(f) and edge_check(f)[0]:
+            return np.asarray(v, dtype=np.float64), f
+    return verts, faces
 
 
 def face_normals(verts, faces):
@@ -414,8 +450,10 @@ class VaseDesign:
         if N * M > limit:
             f = math.sqrt(limit / (N * M))
             N, M = max(int(N * f), 64), max(int(M * f), 16)
-            if not self.draft:
-                self.notes.append("The surface detail was capped to keep the mesh a manageable size.")
+            spacing = step / f
+            if not self.draft and spacing > 0.4:          # finer than that, nobody would see it
+                self.notes.append(f"The surface detail was capped at about {spacing:.1f} mm to keep the mesh a "
+                                  "manageable size.")
         self.N = (N + 3) // 4 * 4
         self.M = M
 
@@ -493,6 +531,8 @@ class VaseDesign:
         r = R0[:, None] * s
 
         frame = TH - TA if p.texture_twist else np.broadcast_to(TH, r.shape)
+        if p.even_spacing:
+            frame = self._round_the_wall(r, tau if p.texture_twist else np.zeros_like(tau))
         r = r + (q * self._envelope(z))[:, None] * self._texture(frame, z, float(R0.mean()))
         if p.nose == RAISED_NOSE:
             # along the surface from the front (-y: the column a quarter turn before the start)
@@ -522,6 +562,23 @@ class VaseDesign:
         if near.any():
             self.notes.append(f"Where the shape came near the middle it is kept {floor_r:.1f} mm out from it.")
         self.R_design = np.maximum(r, floor_r)
+
+    def _round_the_wall(self, r, start):
+        """How far round the wall each grid point is, as an angle - 2 pi all the way round - measured along the
+        wall from the direction ``start`` (each row's), rather than as the angle from the middle: patterns laid
+        out by it are as close together on a box's long sides as round its ends."""
+        N = self.N
+        c, s = np.cos(self.theta), np.sin(self.theta)
+        x, y = r * c, r * s
+        step = np.hypot(np.roll(x, -1, axis=1) - x, np.roll(y, -1, axis=1) - y)
+        along = np.concatenate([np.zeros((len(r), 1)), np.cumsum(step, axis=1)], axis=1)   # (rows, N + 1)
+        share = along / along[:, -1:] * TAU
+        f = np.mod(start, TAU) / self.dth                     # where each row starts, between two columns
+        i0 = np.floor(f).astype(np.intp) % N
+        t = f - np.floor(f)
+        rows = np.arange(len(r))
+        first = share[rows, i0] * (1.0 - t) + share[rows, i0 + 1] * t
+        return share[:, :N] - first[:, None]
 
     def _cone(self, z):
         """A closed top's point: the widest the vase may be at each height, leaning in at a little under the
@@ -690,6 +747,13 @@ class VaseDesign:
         kr = self._roof(zs, Os, kb) if p.closed_top else None
         if p.box and p.tissue_hole != NO_TISSUE and kb is not None:
             self.floor_hole = self._tissue_hole(Is[kb])
+        if not self.draft:
+            # leave out the rows and columns that lie in line with their neighbours: far fewer triangles where the
+            # wall is flat or straight, every one kept where a pattern, a hole or a curve needs it
+            b = np.zeros_like(fs) if b is None else b
+            zs, Os, Is, fs, b, rk = hollow.simplify(zs, Os, Is, fs, b, [k for k in (kb, kr) if k is not None])
+            kb = None if kb is None else int(np.searchsorted(rk, kb))
+            kr = None if kr is None else int(np.searchsorted(rk, kr))
         verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb, roof_row=kr, swell=b,
                                          floor_hole=self.floor_hole)
         kinds, self.bridge, side_worst = hollow.bridges(verts, faces, kinds, p.max_overhang,
@@ -829,6 +893,14 @@ class VaseDesign:
         if self.normal:
             return self.shell_verts, self.shell_faces
         return self.verts, self.faces
+
+    def export_mesh(self):
+        """The mesh to save for the slicer: print_mesh, simplified (see ``lighter``)."""
+        return lighter(*self.print_mesh())
+
+    def export_parts(self):
+        """The parts to save for the slicer: print_parts, each simplified (see ``lighter``)."""
+        return [(fil, *lighter(v, f)) for fil, v, f in self.print_parts()]
 
     def print_parts(self):
         """The vase for the slicer as [(filament, verts, faces)]: printed normally, the hollow pot, a part for
@@ -1046,7 +1118,7 @@ class VaseDesign:
         # patterns fade in and out over a few layers: a sudden change of depth would lean the wall itself
         fade = 0.1 * aim * self.dz / max(self.tex_depth, 1e-6)
         P = self.P_design
-        for attempt in range(12 if p.soften else 1):
+        for attempt in range(24 if p.soften else 1):
             if attempt:
                 P = self._free_points(R0, tau, mix, env)
             verts, faces, band, side = self._free_solid(P)

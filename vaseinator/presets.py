@@ -46,7 +46,7 @@ HEAD = dict(profile=OWN_PROFILE, shape1=ELLIPSE, depth1=0.2, turn1=90.0, twist=0
             vase_mode=FAKE_VASE, colour_style=ONE_COLOUR, look=SILK)
 
 # tissue box covers: sized by the box of tissues they go over, printed upside down
-BOX = dict(box=True, twist=0.0, shape2=SAME, vase_mode=FAKE_VASE, colour_style=ONE_COLOUR)
+BOX = dict(box=True, even_spacing=True, twist=0.0, shape2=SAME, vase_mode=FAKE_VASE, colour_style=ONE_COLOUR)
 
 
 def _drawn(name: str, k: int = 1) -> dict:

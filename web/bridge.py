@@ -237,7 +237,7 @@ def export_3mf(text: str):
     if d.errors:
         raise ValueError("; ".join(d.errors))
     colors = d.p.colors()
-    parts = d.print_parts()
+    parts = d.export_parts()
     base = _name(p)
     many = len(parts) > 1
     named = [(f"{base} band {k + 1}" if many else base, v, f, fil, colors[fil]) for k, (fil, v, f) in enumerate(parts)]
@@ -256,7 +256,7 @@ def export_stl(text: str) -> bytes:
     if d.errors:
         raise ValueError("; ".join(d.errors))
     path = os.path.join(tempfile.gettempdir(), "vase.stl")
-    write_stl(path, *d.print_mesh(), _name(p))
+    write_stl(path, *d.export_mesh(), _name(p))
     with open(path, "rb") as fh:
         return fh.read()
 

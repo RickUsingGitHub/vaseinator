@@ -3,6 +3,7 @@
 Run:  .venv\\Scripts\\python -m tests.test_vase
 """
 
+import dataclasses
 import json
 import math
 import os
@@ -33,6 +34,14 @@ from vaseinator.stl import read_stl, write_stl  # noqa: E402
 from vaseinator.threemf import read_3mf, write_3mf  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# the tests build hundreds of vases: they do it on a coarser mesh than the app's 0.2 mm, to stay quick
+# (test_fine_meshes_stay_light builds at the app's own)
+APP_DETAIL = VaseParams().facet_size
+TEST_DETAIL = 0.6
+_names = [f.name for f in dataclasses.fields(VaseParams)]
+VaseParams.__init__.__defaults__ = tuple(TEST_DETAIL if n == "facet_size" else v
+                                         for n, v in zip(_names, VaseParams.__init__.__defaults__))
 
 
 def plain(**changes) -> VaseParams:
@@ -398,10 +407,40 @@ def test_tissue_box_covers():
     change(p, "box", False)
     assert not p.box and p.shape1 == RECTANGLE and abs(p.height - VaseDesign(plain(**box)).H) < 1e-6
     p = plain(worn=True)
-    assert change(p, "box", True)[0] == ["worn"] and p.box and not p.worn
+    assert change(p, "box", True)[0] == ["even_spacing", "worn"] and p.box and not p.worn and p.even_spacing
+    # patterns laid out evenly round the wall: ribs as far apart on a box's long sides as round its ends
+    def rib_gaps(**more):
+        ribbed = VaseDesign(plain(**box, **more, rib_count=40, rib_depth=1.5))
+        smooth = VaseDesign(plain(**box, **more, rib_count=40, rib_depth=1.5, strength=OWN,     # the same grid
+                                  strength_curve=[[0.0, 0.0], [1.0, 0.0]]))
+        j = ribbed.M // 2
+        rib, base = ribbed.R_design[j] - smooth.R_design[j], smooth.R_design[j]
+        peaks = np.nonzero((rib > np.roll(rib, 1)) & (rib >= np.roll(rib, -1)) & (rib > 0.75))[0]
+        x, y = base * np.cos(smooth.theta), base * np.sin(smooth.theta)
+        along = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(x), np.diff(y)))])[peaks]
+        gaps = np.diff(along)
+        return len(peaks), float(gaps.std() / gaps.mean())
+    assert rib_gaps(even_spacing=True)[0] == 40 and rib_gaps(even_spacing=True)[1] < 0.05
+    assert rib_gaps(even_spacing=False)[1] > 0.3
     for title in ("Tissue Box Cover", "Lace Tissue Cube"):
         d = VaseDesign(gallery_design(title))
         assert d.p.box and d.closed and d.worst <= limit and d.tissue, title
+
+
+def test_fine_meshes_stay_light():
+    """A fine mesh (0.2 mm, the default) leaves out the rows and columns that lie in line - a box needs few - and
+    is simplified again for saving, closed, holding the same plastic."""
+    assert APP_DETAIL == 0.2
+    d = VaseDesign(gallery_design("Tissue Box Cover", keep=VaseParams(facet_size=APP_DETAIL)))
+    assert d.p.facet_size == 0.2 and d.closed and d.triangles < 150_000, d.triangles
+    for title in ("Lagoon Twist", "Lace Tissue Cube"):
+        d = VaseDesign(gallery_design(title, keep=VaseParams(facet_size=APP_DETAIL)))
+        verts, faces = d.print_mesh()
+        v, f = d.export_mesh()
+        assert edge_check(f)[0] and len(f) < 0.4 * len(faces), (title, len(f), len(faces))
+        assert abs(mesh_volume(v, f) / mesh_volume(verts, faces) - 1.0) < 0.002
+        parts = d.export_parts()
+        assert all(edge_check(pf)[0] for _, _, pf in parts) and sum(len(pf) for _, _, pf in parts) < 0.5 * len(faces)
 
 
 def test_the_web_version():

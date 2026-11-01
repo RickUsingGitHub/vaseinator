@@ -93,6 +93,7 @@ class VaseParams:
     organic_scale: float = 22.0   # size of one lump (mm)
     organic_seed: int = 7
     texture_twist: bool = True    # the surface patterns turn with the twist
+    even_spacing: bool = False    # ... spaced by distance round the wall, not by angle from the middle
     strength: int = EVERYWHERE    # how strong the patterns are on the way up
     strength_curve: list = _pts((0.0, 1.0), (1.0, 1.0))
     fade_foot: float = 3.0        # patterns fade out over this much of the bottom (mm)
@@ -183,7 +184,7 @@ class VaseParams:
     max_flow: float = 12.0        # the hot end's flow limit (mm³/s)
     filament_d: float = 1.75
     density: float = 1.24         # g/cm³ (PLA 1.24, PETG 1.27)
-    facet_size: float = 0.7       # mesh detail: spacing of the points on the surface (mm)
+    facet_size: float = 0.2       # mesh detail: spacing of the points on the surface (mm)
 
     # ---------------------------------------------------------------- utils
     def copy(self) -> "VaseParams":

@@ -20,7 +20,7 @@ from vaseinator import app as appmod  # noqa: E402
 from vaseinator import sections  # noqa: E402
 from vaseinator.presets import GALLERY, slug  # noqa: E402
 from vaseinator.simple_panel import PATTERNS, SHAPES_FROM_ABOVE, asset  # noqa: E402
-from vaseinator.geometry import edge_check  # noqa: E402
+from vaseinator.geometry import edge_check, mesh_volume  # noqa: E402
 from vaseinator.params import (BANDS, CIRCLE, DRAWN, FAKE_VASE, FLOWER, GRADIENT, NO_HOLES, ONE_COLOUR, OWN,  # noqa: E402
                                VORONOI, ALMOND_EYES, CHIN_MOUTH,
                                OWN_PROFILE, POLYGON, REAL_VASE, SAME, STAR, SWING, TISSUE_ROUND, VaseParams, load_design)
@@ -72,9 +72,9 @@ def main():
     pts = [list(p) for p in win.params.silhouette]
     pts[1][1] += 10.0
     ed.changed.emit(pts)
-    win.draft_timer.timeout.emit()
-    qapp.processEvents()
+    win.draft_timer.timeout.emit()                 # the draft is built there and then
     check("dragging the outline builds a quick draft", win.design.draft)
+    qapp.processEvents()
     ed.finished.emit(pts)
     settle()
     check("... then the full vase, and the outline is now your own",
@@ -189,12 +189,14 @@ def main():
     check("save writes a design that opens the same", load_design(out["vase"]).to_dict() == win.params.to_dict())
     win.export_stl()
     verts, faces = read_stl(out["stl"])
-    check("the exported STL is watertight", edge_check(faces)[0] and len(faces) == win.design.triangles
-          and len(faces) == len(win.design.print_mesh()[1]))
+    whole = mesh_volume(*win.design.print_mesh())
+    check("the exported STL is watertight, simplified, the same plastic", edge_check(faces)[0]
+          and len(faces) <= win.design.triangles and abs(mesh_volume(verts, faces) / whole - 1.0) < 0.002)
     win.export_3mf()
     [(name, v3, f3, fil, pos)] = read_3mf(out["3mf"])
     check("a one-colour 3MF is the whole vase, in the middle of the bed, asking nothing",
-          pos == (win.params.bed_x / 2, win.params.bed_y / 2, 0.0) and len(f3) == win.design.triangles)
+          pos == (win.params.bed_x / 2, win.params.bed_y / 2, 0.0) and edge_check(f3)[0]
+          and abs(mesh_volume(v3, f3) / whole - 1.0) < 0.002)
     # Real / Fake: a real spiral vase offers one colour; a fake one bands, walls and colour parts
     choose("vase_mode", REAL_VASE)
     styles = [win.widgets["colour_style"].itemData(i) for i in range(win.widgets["colour_style"].count())]
@@ -333,7 +335,7 @@ def main():
     check("a drawn outline saves and opens the same", load_design(out["vase"]).drawn1 == win.params.drawn1)
     win.export_stl()
     verts, faces = read_stl(out["stl"])
-    check("... and its STL is watertight", edge_check(faces)[0] and len(faces) == win.design.triangles)
+    check("... and its STL is watertight", edge_check(faces)[0] and len(faces) <= win.design.triangles)
     win._open_outline_window(1)
     qapp.processEvents()
     choose("shape1", CIRCLE)

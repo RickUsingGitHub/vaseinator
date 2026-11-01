@@ -432,6 +432,59 @@ def swell(f, z, amount, far, slope):
 
 
 # ================================================================== the pot
+FINE = 0.02             # mm a row or column of the grid may be off the straight line between its neighbours and
+                         # still be left out of the mesh
+
+
+def _in_line(F, a, b, tol):
+    """Whether rows a+1 .. b-1 of F (rows, values) are each within tol of the straight line from row a to b."""
+    if b - a < 2:
+        return True
+    t = ((np.arange(a + 1, b) - a) / (b - a))[:, None]
+    return float(np.abs(F[a + 1:b] - (F[a] + t * (F[b] - F[a]))).max()) <= tol
+
+
+def _keep(F, must, tol):
+    """The rows of F (rows, values) to keep so that every row left out is within tol of the straight line between
+    the kept rows either side of it - always the first, the last and those in ``must``. Each kept row reaches as
+    far on as it can: doubling the reach until a row is off the line, then halving back to the furthest."""
+    n = len(F)
+    stops = sorted(set(int(k) for k in must) | {0, n - 1})
+    keep = [0]
+    a = 0
+    for stop in stops[1:]:
+        while a < stop:
+            reach = 1
+            while a + 2 * reach <= stop and _in_line(F, a, a + 2 * reach, tol):
+                reach *= 2
+            lo, hi = a + reach, min(a + 2 * reach, stop + 1)    # lo fits; hi doesn't (or is past the stop)
+            while hi - lo > 1:
+                mid = (lo + hi) // 2
+                if _in_line(F, a, mid, tol):
+                    lo = mid
+                else:
+                    hi = mid
+            a = lo
+            keep.append(a)
+    return np.array(keep)
+
+
+def simplify(z, O, I, f, swell, must=(), tol=FINE):
+    """The pot's grid with the rows and columns left out that add nothing: each one within ``tol`` mm of the
+    straight line between its kept neighbours - the outer and inner faces, how far they swell, and the hole field
+    wherever a hole's edge could be near. A box's flat sides and straight walls need only a few rows and columns;
+    a pattern or a hole keeps every one it needs. Returns (z, O, I, f, swell, the kept rows), ``must`` among them."""
+    K, N = f.shape
+    near = np.maximum(f, -3.0)                    # far inside the wall, no hole edge is anywhere near
+    rows = np.concatenate([O.reshape(K, -1), I.reshape(K, -1), swell, near], axis=1)
+    rk = _keep(rows, must, tol)
+    O, I, f, swell, near = O[rk], I[rk], f[rk], swell[rk], near[rk]
+    cols = np.concatenate([O.transpose(1, 0, 2).reshape(N, -1), I.transpose(1, 0, 2).reshape(N, -1), swell.T,
+                           near.T], axis=1)
+    ck = _keep(np.concatenate([cols, cols[:1]]), (), tol)[:-1]   # round the back to the first column again
+    return z[rk], O[:, ck], I[:, ck], f[:, ck], swell[:, ck], rk
+
+
 def insert_rows(z, arrays, zs):
     """The rows with more rows put in at heights zs, each part of ``arrays`` (K, ...) straight between its
     neighbours. Returns (z, arrays, the index of each new row)."""
