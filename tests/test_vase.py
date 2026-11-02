@@ -22,7 +22,7 @@ from vaseinator.expr import ExprError, compile_expression  # noqa: E402
 from vaseinator.geometry import (BOX_ROOM, BOX_TOP_ROOM, TOLERANCE, VORONOI_LONGEST, VaseDesign,  # noqa: E402
                                  edge_check, face_normals, fit_head, lean_angles, mesh_volume)
 from vaseinator import hollow  # noqa: E402
-from vaseinator.lid import LID_GAP, LID_GRIP, LID_PLATE, Lid  # noqa: E402
+from vaseinator.lid import LID_PLATE, Lid  # noqa: E402
 from vaseinator.params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, ELLIPSE, EVENLY,  # noqa: E402
                                FAKE_VASE, FLOWER, GEAR, GRADIENT, GRILLE_MOUTH, LID_FIRM, LID_GENTLE, LID_SNUG,
                                NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN,
@@ -392,7 +392,8 @@ def test_tissue_box_covers():
         parts = d.print_parts()
         whole = mesh_volume(verts, faces)
         assert all(edge_check(f)[0] for _, _, f in parts)
-        assert abs(sum(mesh_volume(v, f) for _, v, f in parts) - whole) < 1e-6 * whole
+        # (a band's edge through a hole cuts the hole's edge a hair differently: a few millionths)
+        assert abs(sum(mesh_volume(v, f) for _, v, f in parts) - whole) < 1e-5 * whole
     # a slot 130 x 36 mm takes its area out of the 1.2 mm bottom
     d = VaseDesign(plain(**box))
     slot = (130.0 - 36.0) * 36.0 + math.pi * 18.0 ** 2
@@ -431,24 +432,26 @@ def test_tissue_box_covers():
 
 def test_tissue_box_lids():
     """A lid for a cover's open end, made from its design: closed, flat on the bed, the rim's shape with a pull tab,
-    and springy tabs standing in it - each clear of the cover's real wall all the way up but for its bump, which
-    presses into the wall by the grip chosen. A frame or a solid plate; holes too near the rim leave no room."""
+    hooks at one end and latches at the other. On, every part of it is clear of the cover's real wall; pulled
+    down a millimetre, each tab's bump runs into the ledge inside the cover's end. A frame or a solid plate."""
     for title, open_, grip in (("Tissue Box Cover", True, LID_SNUG), ("Tissue Box Cover", False, LID_FIRM),
                                ("Lace Tissue Cube", True, LID_GENTLE)):
         p = gallery_design(title)
         p.lid_open, p.lid_grip = open_, grip
         d = VaseDesign(p)
         lid = Lid(d)
-        assert not lid.errors and lid.closed and edge_check(lid.faces)[0] and lid.tabs == 8, (title, lid.errors)
-        assert abs(lid.verts[:, 2].min()) < 1e-9 and lid.size[2] < 20.0 and lid.grams > 5.0
+        assert not lid.errors and lid.closed and edge_check(lid.faces)[0], (title, lid.errors)
+        assert lid.hooks == lid.latches == 2 and lid.tabs == 4
+        assert abs(lid.verts[:, 2].min()) < 1e-9 and lid.size[2] < 14.0 and lid.grams > 5.0
         rim = d.pot_rows[1][-1]
         span = np.abs(rim).max(axis=0)
         assert np.allclose(np.sort(lid.size[:2]), np.sort(2 * span + [9.0, 0.0]), atol=0.5), (lid.size, span)
         # the cover, turned over and stood on the plate: where its wall crosses the height of each tab point
         H = float(d.pot_rows[0][-1])
         tabs = lid.verts[lid.verts[:, 2] > LID_PLATE + 0.1]
-        g, inside = LID_GRIP[grip], 0
-        for x, y, z in tabs:
+
+        def in_wall(x, y, z):
+            """Whether a point of the lid is in the cover's plastic, and how far it is from the wall's face."""
             seg = d.contour(H - (z - LID_PLATE))[:, :, :2] * [1.0, -1.0]
             a, b = seg[:, 0], seg[:, 1]
             q = np.array([x, y])
@@ -457,18 +460,20 @@ def test_tissue_box_lids():
             ya, yb = a[:, 1] - y, b[:, 1] - y                     # in the plastic: an odd number of crossings
             cross = (ya > 0) != (yb > 0)
             xc = a[:, 0] + (b[:, 0] - a[:, 0]) * ya / np.where(cross, ya - yb, 1.0)
-            if np.sum(cross & (xc > x)) % 2:
-                assert gap < g + 0.05, (title, x, y, z, gap)
-                inside += gap > 0.5 * g
-            else:
-                assert gap > LID_GAP - 0.05, (title, x, y, z, gap)
-        assert inside >= 2 * lid.tabs, (title, inside)
+            return bool(np.sum(cross & (xc > x)) % 2), gap
+
+        for x, y, z in tabs:
+            inside, gap = in_wall(x, y, z)
+            assert not inside and gap > 0.05, (title, x, y, z, gap)
+        caught = sum(in_wall(x, y, z - 1.0)[0] for x, y, z in tabs if z - 1.0 > LID_PLATE + 0.1)
+        assert caught >= 2 * lid.tabs, (title, caught)
         info = lid.info()
-        assert ("frame" in info) == open_ and "8 tabs" in info
+        assert ("frame" in info) == open_ and "2 hooks" in info and "2 latches" in info
     assert Lid(VaseDesign(plain())).errors
+    # the cover's holes keep clear of the lid's tabs, however near the rim they are asked for
     p = gallery_design("Lace Tissue Cube")
     p.hole_rim = 0.0
-    assert "too near the rim" in Lid(VaseDesign(p)).errors[0]
+    assert not Lid(VaseDesign(p)).errors
 
 
 def test_fine_meshes_stay_light():
@@ -515,7 +520,7 @@ cube = bridge.design_of("Lace Tissue Cube", keep)
 assert not json.loads(bridge.build(cube, True)[0])["errors"] and "box_corner" in json.loads(bridge.shown(cube))
 assert json.loads(bridge.apply(cube, "tissue_hole", "3"))["touched"] == ["tissue_length", "tissue_width"]
 data, steps = bridge.export_lid(cube)
-assert data[:2] == b"PK" and "pull the lid off" in steps and "Saved" not in steps
+assert data[:2] == b"PK" and "latches click" in steps and "Saved" not in steps
 # the Advanced panel: every setting, and the desktop app's own rules for a change
 assert [g["title"] for g in s["spec"]][0] == "Size" and "eye_tilt" in json.loads(bridge.shown(mask))
 r = json.loads(bridge.apply(keep, "twist_style", "5"))
@@ -807,8 +812,14 @@ def test_surprises_respect_the_printer():
         assert d.worst <= p.max_overhang + TOLERANCE, (seed, d.worst)
 
 
-def main():
-    tests = [(k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)]
+def main(words=()):
+    """Run the tests - only those whose names have one of the words in, if any are given."""
+    tests = [(k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)
+             and (not words or any(w in k for w in words))]
+    if not tests:
+        print("No test's name has " + " or ".join(words) + " in it. The tests:")
+        print("\n".join("  " + k[5:] for k in globals() if k.startswith("test_")))
+        return 1
     failed = 0
     for name, fn in tests:
         t0 = time.perf_counter()
@@ -824,4 +835,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main([w.lower() for w in sys.argv[1:]]))

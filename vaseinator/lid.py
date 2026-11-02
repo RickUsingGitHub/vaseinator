@@ -1,10 +1,12 @@
 """A lid for a tissue box cover's open end, printed on its own - after the cover, if wanted.
 
-It is a flat plate, the shape of the cover's rim, that the cover stands on, with springy tabs standing up from
-it just inside the wall. Each tab has a small bump on its outside: pushed in, the tabs bend in a little and
-press on the wall, so the lid stays on when the cover is picked up, and a pull tab at one end takes it off
-again to change the tissues. It is made from the cover's own design - the wall where each tab presses is
-measured - so it fits a cover already printed. Nothing here needs Qt.
+It is a flat plate, the shape of the cover's rim, that the cover stands on, with tabs standing up from it just
+inside each end. Inside each end of the cover is a ledge (see geometry.ledges); each tab has a bump on its
+outside that sits just behind it. At one end the tabs are stiff hooks: tilted, the lid goes in by that end
+first, and the hooks swing over the ledge. At the other, by the pull tab, they are springy latches: pressed up,
+they bend in over the ramp of the ledge and click in behind it. Pulled by its tab, the latches let go and the lid
+swings out off its hooks again. Loose guides on the long sides keep it from sliding about. It is made from the
+cover's own design - the wall where each tab goes is measured. Nothing here needs Qt.
 """
 
 from __future__ import annotations
@@ -14,21 +16,26 @@ import math
 import numpy as np
 
 from . import hollow, sections
-from .geometry import edge_check, mesh_volume
+from .geometry import edge_check, ledge_heights, ledge_lean, mesh_volume
 from .params import LID_FIRM, LID_GENTLE, LID_SNUG
 
 LID_PLATE = 1.6               # how thick the plate is (mm)
 LID_FRAME = 12.0              # an open lid: how wide its frame is, in from the edge
-LID_TAB_TALL = 11.0           # how far the tabs stand up from the plate, at least
-LID_TAB_WIDE = 10.0           # ... how wide each is, along the wall
-LID_TAB_THICK = 1.0           # ... and how thick: springy, not stiff (the slicer makes it two thin lines)
-LID_BUMP_AT = 8.5             # how high the bump on each tab is, on a plain wall: high enough for the tab to bend
-LID_BUMP_LOW, LID_BUMP_HIGH = 8.0, 13.0     # ... and the heights it may move to, to sit where the wall suits it
+LID_TAB_WIDE = 10.0           # how wide each tab is, along the wall
+LID_LATCH_THICK = 1.0         # ... a latch's thickness: springy (the slicer makes it two thin lines)
+LID_HOOK_THICK = 1.6          # ... and a hook's: stiff
+LID_HOOK = 0.7                # how far a hook's bump reaches out over the ledge
 LID_GAP = 0.3                 # between a tab and the wall where the wall comes nearest it
+LID_PLAY = 0.3                # between a bump and the ledge it sits behind, up and down
+LID_FLAT = 0.6                # the flat on a bump's outside
 LID_SINK = 0.3                # how far the tabs go down into the plate, to be one with it
+LID_GUIDE_TALL = 5.0          # the guides on the long sides: how tall
+LID_GUIDE_WIDE = 20.0         # ... how wide
+LID_GUIDE_THICK = 1.2         # ... how thick
+LID_GUIDE_GAP = 0.6           # ... and how far from the wall: loose, so they need no lining up
 LID_PULL = 9.0                # how far the pull tab sticks out past the rim
 LID_PULL_WIDE = 26.0          # ... and how wide it is
-LID_GRIP = {LID_GENTLE: 0.25, LID_SNUG: 0.35, LID_FIRM: 0.5}    # how far each tab's bump presses into the wall
+LID_GRIP = {LID_GENTLE: 0.5, LID_SNUG: 0.7, LID_FIRM: 0.9}     # how far each latch's bump reaches out over the ledge
 GRIP_WORDS = {LID_GENTLE: "gently", LID_SNUG: "snugly", LID_FIRM: "firmly"}
 
 
@@ -86,7 +93,8 @@ class Lid:
         self.errors: list[str] = []
         self.notes: list[str] = []
         self.verts = self.faces = None
-        self.tabs, self.closed = 0, False
+        self.tabs = self.hooks = self.latches = 0
+        self.closed = False
         if not p.box or d.pot_rows is None or d.errors:
             self.errors.append("A lid is made for a tissue box cover.")
             return
@@ -99,75 +107,80 @@ class Lid:
 
         rim = _dense(used(Os[-1]))
         grip = LID_GRIP.get(p.lid_grip, LID_GRIP[LID_SNUG])
-        t = LID_TAB_THICK
         top = LID_PLATE
-        # the pull tab, on the end of the long way
+        # the pull tab, on the end of the long way: the latches' end
         X, Y = np.abs(rim).max(axis=0)
         U = np.array([1.0, 0.0]) if X >= Y else np.array([0.0, 1.0])
         V = np.array([-U[1], U[0]])
         outline = self._pull_tab(rim, U, V)
         parts = [self._plate(outline, rim if p.lid_open else None)]
-        # the tabs: two a side, a quarter of the way in from each end, where the side is straight
         heights = H - zs                                          # how far above the rim each row is, the cover on
+        h0, h1, h2, h3 = ledge_heights(p)
+        slope = math.tan(math.radians(ledge_lean(p)))            # out, for each mm up the ledge's steep side
+        rows = np.arange(max(int(np.nonzero(heights <= h3 + 8.0)[0].min()) - 1, 0), len(zs))
+        inner = [used(Is[k]) for k in rows]
+        h = heights[rows]
+        order = np.argsort(h)
+        h = h[order]
         holed = heights[(fs > 0).any(axis=1)]
-        high = min(LID_BUMP_HIGH, float(holed.min()) - 3.0) if len(holed) else LID_BUMP_HIGH
-        if high < 4.0:
+        if len(holed) and holed.min() < h3 + 3.0:
             self.errors.append("The holes come too near the rim for a lid's tabs to hold on: make the plain rim "
                                "wider (Advanced ▸ Holes and openings ▸ Plain rim).")
             return
-        low = min(LID_BUMP_LOW, high)
-        near = np.nonzero(heights <= LID_BUMP_HIGH + 8.0)[0]
-        rows = np.arange(max(near.min() - 1, 0), len(zs))         # and the row just beyond the tallest tab
-        inner = [used(Is[k]) for k in rows]
         worst = 0.0
-        for U in (np.array([1.0, 0.0]), np.array([-1.0, 0.0]), np.array([0.0, 1.0]), np.array([0.0, -1.0])):
-            V = np.array([-U[1], U[0]])
-            u, v = rim @ U, rim @ V
+        for side, hook in ((U, False), (-U, True), (V, None), (-V, None)):
+            Vs = np.array([-side[1], side[0]])
+            u, v = rim @ side, rim @ Vs
             flat = v[u >= u.max() - 0.05]
             lo, hi = float(flat.min()), float(flat.max())
-            half = 0.5 * LID_TAB_WIDE
-            if hi - lo >= 4.0 * LID_TAB_WIDE:
+            half = 0.5 * (LID_GUIDE_WIDE if hook is None else LID_TAB_WIDE)
+            if hook is None:
+                places = [0.5 * (lo + hi)]                        # a loose guide in the middle of each long side
+            elif hi - lo >= 4.0 * LID_TAB_WIDE:
                 places = [lo + 0.25 * (hi - lo), lo + 0.75 * (hi - lo)]
-            elif hi - lo >= LID_TAB_WIDE + 2.0:
-                places = [0.5 * (lo + hi)]
             else:
-                continue
+                places = [0.5 * (lo + hi)]
             for c in places:
                 across = np.linspace(c - half, c + half, 9)
                 # how near the wall comes, over the tab's width, at each row's height above the rim
-                wall = np.array([_reach(loop, U, V, across).min() for loop in inner])
-                h = heights[rows]
-                order = np.argsort(h)
-                h, wall = h[order], wall[order]
+                wall = np.array([_reach(loop, side, Vs, across).min() for loop in inner])[order]
 
                 def nearest(a, b):
                     s = np.concatenate([[a, b], h[(h > a) & (h < b)]])
                     return float(np.interp(s, h, wall).min())
 
-                # the bump goes where the wall is straight up, or leans out above it - just past a ring that
-                # comes in, so it clicks in behind it - not where the wall leans in and would push the lid back
-                # out; on a plain wall, at LID_BUMP_AT
-                ss = np.arange(low, high + 1e-9, 0.25)
-                lean = (np.interp(ss + 0.8, h, wall) - np.interp(ss - 1.0, h, wall)) / 1.8
-                bump = float(ss[np.argmax(np.round(np.minimum(lean, 0.1), 2) - 0.002 * np.abs(ss - LID_BUMP_AT))])
-                flat_top = 0.8
-                e, tall = 1.0, LID_TAB_TALL
-                for _ in range(3):                                # out to the wall, and the grip beyond
-                    tall = max(bump + flat_top + max(2.0 * e, 1.5), LID_TAB_TALL)
+                if hook is None:
+                    face = nearest(0.0, LID_GUIDE_TALL) - LID_GUIDE_GAP
+                    t = LID_GUIDE_THICK
+                    profile = np.array([[face - t, -LID_SINK], [face, -LID_SINK], [face, LID_GUIDE_TALL],
+                                        [face - t, LID_GUIDE_TALL]])
+                    parts.append(_prism(profile, side, Vs, c - half, c + half, top))
+                    continue
+                reach = LID_HOOK if hook else grip
+                t = LID_HOOK_THICK if hook else LID_LATCH_THICK
+                tall = h3 + 3.0
+                for _ in range(3):
                     face = nearest(0.0, tall) - LID_GAP           # the tab's outside, clear of the wall all the way up
-                    e = nearest(bump, bump + flat_top) + grip - face    # where it touches
+                    ledge = nearest(h1, h2)                       # the ledge, at its innermost
+                    out = min(ledge + reach, nearest(h3, tall) - LID_GAP)    # the bump, behind it, clear of the wall
+                    e = out - face
+                    # the bump's underside lies along the ledge's steep side, just behind it
+                    bump = h2 + (out - ledge) / slope + LID_PLAY
+                    tall = bump + LID_FLAT + e + 0.5
                 worst = max(worst, e)
-                profile = np.array([[face - t, -LID_SINK], [face, -LID_SINK], [face, bump - e], [face + e, bump],
-                                    [face + e, bump + flat_top], [face, tall], [face - t, tall],
-                                    [face - t, bump]])
-                parts.append(_prism(profile[[7, 0, 1, 2, 3, 4, 5, 6]], U, V, c - half, c + half, top))
+                profile = np.array([[face - t, -LID_SINK], [face, -LID_SINK], [face, bump - e / slope],
+                                    [face + e, bump], [face + e, bump + LID_FLAT], [face, bump + LID_FLAT + e],
+                                    [face, tall], [face - t, tall], [face - t, bump]])
+                parts.append(_prism(profile[[8, 0, 1, 2, 3, 4, 5, 6, 7]], side, Vs, c - half, c + half, top))
                 self.tabs += 1
-        if not self.tabs:
+                self.hooks += bool(hook)
+                self.latches += not hook
+        if not (self.hooks and self.latches):
             self.errors.append("The cover is too small for a lid's tabs.")
             return
         if worst > 2.5:
             self.notes.append("The wall goes in and out near the rim, so the tabs' bumps stand out a long way: "
-                              "the lid may be stiff to push on.")
+                              "the lid may be stiff to put on.")
         verts, faces, n = [], [], 0
         for v_, f_ in parts:
             verts.append(v_)
@@ -242,4 +255,5 @@ class Lid:
     def info(self) -> str:
         """A line about it, for the panel and the steps."""
         return (f"{self.size[0]:.0f} × {self.size[1]:.0f} mm, {'a frame open in the middle' if self.open else 'solid'},"
-                f" with {self.tabs} tabs that hold it on {self.grip}")
+                f" with {self.hooks} hooks at one end and {self.latches} latches by the pull tab, that hold it on "
+                f"{self.grip}")

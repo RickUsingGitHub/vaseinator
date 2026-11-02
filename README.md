@@ -86,11 +86,12 @@ ready to slice.
   holes or colours. It is made the way it prints: **upside down**, the hole through its first layers on the
   bed and the open end at the top, so nothing needs supports. Turn it over to put it on. Its ribs, bumps
   and lumps are spread **evenly round the wall**, as close together on the long sides as round the ends.
-* **A lid for a tissue box cover**, printed on its own – with the cover, or long after: a flat frame (or a
-  solid plate) the shape of the rim, which the cover stands on, with **springy tabs** standing up just
-  inside the wall. Each tab's small bump presses on the wall – **Gentle**, **Snug** or **Firm** – so the
-  lid stays on when the cover is picked up, and a **pull tab** at one end takes it off to change the
-  tissues. It is made from the cover's own design, so it fits a cover already printed.
+* **A lid for a tissue box cover**, printed on its own – with the cover, or later: a flat frame (or a
+  solid plate) the shape of the rim, which the cover stands on. Inside each end of the cover is a small
+  **ledge**. The lid goes on like a battery cover: tilted, its stiff **hooks** go in behind the ledge at
+  one end, and then its springy **latches** click in behind the ledge at the other – **Gentle**, **Snug**
+  or **Firm**. It stays on when the cover is picked up, and its **pull tab** takes it off to change the
+  tissues. It is made from the cover's own design; a cover printed before 1.13 has no ledges.
 * **A fine mesh, a light file**: the surface is built every 0.2 mm, and **saving for the slicer simplifies
   it** – triangles are merged wherever that moves the surface by no more than a few hundredths of a
   millimetre – so the file stays small and the slicer opens it quickly. A box's flat sides need only a
@@ -180,7 +181,7 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |
 | **Holes and openings** | The **holes** – none, Voronoi, round, diamonds or slots – their size, the wall between them, how irregular the Voronoi cells are and their pattern, how much plain wall to keep at the foot and the rim, and **rounded edges** round them; **open at the bottom**; **closed at the top**; and how far the wall **goes round**. Holes, an open bottom and a wall part way round are printed normally. |
 | **Masks and helmets** | **For a head** and its **head size**; the **eyes** – almond or round, their size, how far apart, how high and tilted; a raised **nose** – its width, length, how far it sticks out and how high its tip is; the **mouth** – open, a grille of slots (how many, and how much they smile) or open down to the chin; and **strap slots**. Sizes and heights are in millimetres along the face, from the bottom. |
-| **Tissue box** | **Tissue box cover**; the **box** of tissues it goes over – its length, width and height; how **rounded** the cover's corners are; and the **tissue hole** – a long slot, an oval, a round hole or none – and its length and width; and its **lid** (File ▸ Save the lid for printing): how hard its tabs grip, and whether it is a frame open in the middle or a solid plate. |
+| **Tissue box** | **Tissue box cover**; the **box** of tissues it goes over – its length, width and height; how **rounded** the cover's corners are; and the **tissue hole** – a long slot, an oval, a round hole or none – and its length and width; and its **lid** (File ▸ Save the lid for printing): how far its latches reach in behind the ledge, and whether it is a frame open in the middle or a solid plate. |
 | **Your own function** | A formula added to the radius. **Examples** has eight to try; **Help…** lists the variables and functions. |
 | **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go up the vase: one colour, bands, stripes or a gradient spool. How it looks: matte, silk, glossy, translucent. |
 | **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail (0.2 mm; saving simplifies the mesh, so the file stays small). |
@@ -346,14 +347,19 @@ the wall, rounded edges, colour bands – works as on any vase. **Evenly round t
 out by how far along the wall each point is, as a share of the way round, rather than by its angle from the
 middle – which on a box would crowd them along the middles of the long sides.
 
+Each end of a cover has a **ledge** inside, across the straight part of the end, for its lid: 1.2 mm deep,
+from 4 mm above the rim (the cover on), with a long gentle ramp below and a steep side above. Printed upside
+down, the ramp faces up and the steep side down, leaning 35° from upright, so it needs no supports. The ends
+have 2 mm more room inside for the lid's tabs, and holes keep 13 mm clear of the rim.
+
 Its **lid** is made from the cover as built: the plate is the outline of the rim, turned over as the cover
-is to go on, with a pull tab added at the end of the long way; two tabs stand on each side, a quarter of the
-way in from its ends, where the side is straight. For each tab the inside of the wall is measured across
-the tab's width at every row up from the rim – swollen round any holes – and the tab stands 0.3 mm clear of
-where it comes nearest. Its bump goes where the wall is straight up, or leans out above it (just past a ring
-that comes in, so it clicks in behind it), never where it leans in and would push the lid back out, and
-stands out as far as the wall there and the grip beyond: 0.25, 0.35 or 0.5 mm. Each tab is 1 mm thick and
-10 mm wide, so it bends a little as the lid goes on.
+is to go on, with a pull tab added at the end of the long way. Two tabs stand at each end, a quarter of the
+way in from the corners of its straight part (one in the middle, if the end is short): stiff **hooks**,
+1.6 mm thick, at the far end, and springy **latches**, 1 mm thick, by the pull tab. For each tab the inside
+of the wall is measured across the tab's width at every row up from the rim – swollen round any holes – and
+the tab stands 0.3 mm clear of where it comes nearest. Its bump reaches out behind the ledge – a hook's by
+0.7 mm, a latch's by the grip, 0.5, 0.7 or 0.9 mm – with its underside along the ledge's steep side, 0.3 mm
+above it. A loose guide stands in the middle of each long side, so the lid can't slide about.
 
 The **pot** is built on the grid, then the rows and columns that lie within 0.02 mm of the straight line
 between their neighbours are left out – on a box most of them, on a twisting vase few – and **saving**
@@ -396,8 +402,8 @@ closed top comes to a point over a small ceiling (drawn and banded too), a wall 
 it should, a face's holes and nose are where they should be and print without support, and a design sized
 for a head fits it – the masks and helmet a head 57 cm round; that a tissue box cover clears its box of
 tissues by the room to spare everywhere inside, with its hole through the bottom layers alone, holes and
-bands and all, and that its lid is closed and each tab clear of the cover's printed wall but for its bump,
-which presses in by the grip; and that the web version's Python, put
+bands and all, and that its lid is closed, clear of the cover's printed wall everywhere when it is on, and
+caught by the ledges when it is pulled down a millimetre; and that the web version's Python, put
 together as the site has it, runs with no Qt at all – it starts, builds a mask, fits it to a head and makes
 the slicer's file.
 `.venv\Scripts\python -m tests.test_app` drives the window itself: edits, curves, undo, the gallery,
@@ -406,6 +412,12 @@ up and in a full window, zoomed with the wheel), repeating up to a hundred times
 cross-section, and Simple mode: each kind of picture, the gallery of pictures, Save for printing with its
 steps and Open in slicer, bigger text and the light theme, and a mask sized by the head it fits, its face's
 settings and Undo. Test windows open on the second screen, if there is one.
+
+Either can run just part of itself, for a quick check after a small change: name a word, and only the tests
+(or the window's sections) with it in their names run – `tests.test_vase lid box` runs the tissue box
+cover's and its lid's tests, `tests.test_app box` the window's tissue box section. The window's sections
+are edits, gallery, morph, views, saving, drawn, simple, holes, masks, box, look and function; each starts
+from a design of its own, so any can run alone. A name that matches nothing lists them all.
 
 ### The web version
 

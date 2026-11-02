@@ -126,11 +126,16 @@ def lid_steps(lid, path: str, where: str = "your slicer") -> str:
             "<li>Print it with your <b>usual settings</b>, <b>Spiral vase off</b>, <b>no supports</b>: it lies flat, "
             "the tabs standing up, just as it is in the file.</li>"
             f"<li>It takes about <b>{duration(lid.seconds)}</b> and <b>{lid.grams:.0f} g</b> of filament.</li>"
-            "<li>Put the box of tissues in the cover, turn them over together and push the lid into the open end, "
-            "tabs first, till it sits flat on the rim. To change the tissues, hold the cover and pull the lid off "
-            "by its tab.</li>"
-            "<li>If it falls off, print it again with Advanced ▸ Tissue box ▸ <b>Lid grip</b> a step firmer; if it "
-            f"is hard to take off, a step gentler.</li>{notes}</ol>")
+            "<li>Put the box of tissues in the cover and turn them over together. Tilt the lid, the end with the "
+            "pull tab down, and put the <b>hooks</b> at the other end into the cover first, so they go over the "
+            "ledge inside that end. Then swing the pull tab's end up and press it till the <b>latches click</b> in "
+            "behind the ledge at that end.</li>"
+            "<li>To change the tissues, hold the cover and pull the lid's tab: the latches let go, and the lid "
+            "swings down off its hooks.</li>"
+            "<li>The ledges are inside the cover's ends: a cover printed before Vaseinator 1.13 has none, so print "
+            "the cover again too.</li>"
+            "<li>If it falls off, print the lid again with Advanced ▸ Tissue box ▸ <b>Lid grip</b> a step firmer; "
+            f"if it is hard to take off, a step gentler.</li>{notes}</ol>")
 
 
 PRINTING_HELP = ("<p><b>Save for printing</b> saves the vase as a 3MF and says how to print it. Advanced ▸ "

@@ -167,7 +167,7 @@ class VaseParams:
     tissue_hole: int = TISSUE_SLOT    # the hole in its top the tissues come out of
     tissue_length: float = 130.0  # ... along the box
     tissue_width: float = 36.0    # ... and across it (a round hole: its diameter)
-    lid_grip: int = LID_SNUG      # the lid for its open end, printed on its own: how hard its tabs press
+    lid_grip: int = LID_SNUG      # the lid for its open end, printed on its own: how far its latches reach
     lid_open: bool = True         # ... a frame, open in the middle - or a solid plate
 
     # --- printing -----------------------------------------------------------

@@ -1,6 +1,6 @@
 """Drive the main window without a person: edits, curves, undo, the gallery, the views and the exports.
 
-Run:  .venv\\Scripts\\python -m tests.test_app
+Run:  .venv\\Scripts\\python -m tests.test_app [section ...]   - every section, or only those named, e.g. box
 """
 
 import os
@@ -28,27 +28,9 @@ from vaseinator.stl import read_stl  # noqa: E402
 from vaseinator.threemf import read_3mf  # noqa: E402
 
 
-def main():
-    qapp = QApplication.instance() or QApplication(sys.argv)
-    appmod.apply_dark_theme(qapp)
-    tmp = tempfile.mkdtemp()
-    settings = QSettings(os.path.join(tmp, "test.ini"), QSettings.IniFormat)
-    win = appmod.MainWindow(settings)
-    appmod.place_for_testing(win, sys.argv)          # on the second screen, out of the way
-    qapp.processEvents()
-    checks = []
-
-    def check(what, ok):
-        checks.append((what, bool(ok)))
-        print(("ok    " if ok else "FAIL  ") + what)
-
-    def settle():
-        win._flush()
-        qapp.processEvents()
-
-    d0 = win.design
-    check("the default vase builds, closed", d0 is not None and d0.closed)
-
+def edits(t):
+    """Ordinary edits, a curve dragged, undo and redo."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
     # ordinary edits, as the widgets make them
     win.widgets["height"].setValue(150.0)
     settle()
@@ -89,6 +71,10 @@ def main():
     win.redo()
     check("redo puts them back", win.params.rib_count == 24)
 
+
+def gallery(t):
+    """A plain start, the gallery and Surprise me: they keep the printer."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
     # the gallery and Surprise me keep the printer
     win.widgets["line_width"].setValue(0.8)
     settle()
@@ -124,11 +110,14 @@ def main():
     win.undo()
     check("... and can be undone", win.params.name == "ocean_ripple")
 
+
+def morph(t):
+    """The shape changing back and forth; the wheel; an own curve dragged with the mouse."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
+    win.use_gallery("Ocean Ripple")
+    win.set_simple_mode(False, remember=False)
+    settle()
     # the shape changing back and forth, then an own curve dragged down with the mouse
-    def choose(key, value):
-        w = win.widgets[key]
-        w.setCurrentIndex(w.findData(value))
-        settle()
 
     choose("shape1", CIRCLE)
     choose("shape2", POLYGON)
@@ -164,6 +153,10 @@ def main():
     check("dragging a point of the curve down lessens it, at the same height",
           v2 < 0.3 and abs(h2 - h) < 0.01 and win.design.closed)
 
+
+def views(t):
+    """Every view, spinning, and the print animation."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
     # every view, spinning, and the print animation
     for i in range(4):
         win.show_view(i)
@@ -179,15 +172,14 @@ def main():
     win.print_btn.setChecked(False)
     check("stopping clears the cut", v.cut_z is None and v.lines is None)
 
+
+def saving(t):
+    """Saving and exporting; real and fake spiral vases and their colours."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
+    win.use_gallery("Ocean Ripple")
+    win.set_simple_mode(False, remember=False)
+    settle()
     # saving and exporting, with the file dialogs answered
-    out = {"vase": os.path.join(tmp, "x.vase"), "stl": os.path.join(tmp, "x_vase.stl"),
-           "3mf": os.path.join(tmp, "x.3mf"), "png": os.path.join(tmp, "x.png")}
-    QFileDialog.getSaveFileName = staticmethod(
-        lambda *a, **k: (out[next(e for e in out if a[2].lower().endswith(e) or e in a[1].lower())], ""))
-    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Discard)
-    shown = []                                   # warnings are noted, never left open waiting for a click
-    for kind in ("warning", "critical", "information"):
-        setattr(QMessageBox, kind, staticmethod(lambda *a, **k: shown.append(a[2]) or QMessageBox.Ok))
     win.save_design(as_new=True)
     check("save writes a design that opens the same", load_design(out["vase"]).to_dict() == win.params.to_dict())
     win.export_stl()
@@ -226,6 +218,13 @@ def main():
     win.copy_colour_plan()
     check("the colour plan goes to the clipboard", "Vaseinator" in QApplication.clipboard().text())
 
+
+def drawn(t):
+    """A drawn cross-section: from the shape it was, edited, repeated, traced from a picture."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
+    win.use_gallery("Ocean Ripple")
+    win.set_simple_mode(False, remember=False)
+    settle()
     # a drawn cross-section: from the shape it was, edited, repeated, traced from a picture
     choose("vase_mode", REAL_VASE)
     choose("shape1", FLOWER)
@@ -344,6 +343,10 @@ def main():
     choose("shape1", CIRCLE)
     check("the full window closes when the shape is no longer drawn", not win.outline_windows[1].isVisible())
 
+
+def simple(t):
+    """Simple mode, for anyone: a few pictures, and one button to save it for printing."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
     # Simple mode, for anyone: a few pictures, and one button to save it for printing
     win.use_plain()
     settle()
@@ -400,7 +403,8 @@ def main():
     opened = []
     appmod.slicers.open_in = lambda program, file: opened.append((program, file)) or True
     win.settings.setValue("slicer", sys.executable)               # a program that exists; it isn't started
-    os.remove(out["3mf"])
+    if os.path.exists(out["3mf"]):
+        os.remove(out["3mf"])
     sp.save.emit()
     qapp.processEvents()
     words = " ".join(lab.text() for lab in win.steps.findChildren(QLabel))
@@ -411,7 +415,15 @@ def main():
     go.click()
     qapp.processEvents()
     check("... and Open in opens it in the slicer", opened and opened[-1][1] == out["3mf"])
-    # holes: a picture in Simple mode; their settings in Advanced; never seamless
+
+
+def holes(t):
+    """Holes: a picture in Simple mode; their settings in Advanced; never seamless."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
+    win.use_plain()
+    win.set_simple_mode(True, remember=False)
+    settle()
+    sp = win.simple
     holes = [n for n, _ in PATTERNS].index("Voronoi holes")
     win.params.vase_mode = REAL_VASE
     sp.pattern.buttons[holes].click()
@@ -436,7 +448,12 @@ def main():
     check("... and a vase with holes and bands exports as closed hollow parts", len(parts) == len(win.design.bands)
           and all(edge_check(part[2])[0] for part in parts))
     choose("holes", NO_HOLES)
-    # masks and helmets: sized by the head they fit, in Simple mode; the face's settings in Advanced
+
+
+def masks(t):
+    """Masks and helmets: sized by the head they fit; the face's settings in Advanced."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
+    sp = win.simple
     win.use_gallery("Theatre Mask")
     win.set_simple_mode(True, remember=False)
     settle()
@@ -468,7 +485,12 @@ def main():
     settle()
     check("... and a wall part way round leaves the back open", "200° of the way round" in win.info.toPlainText()
           and win.design.closed)
-    # a tissue box cover: sized by the box of tissues, with a hole to pick, in Simple mode
+
+
+def box(t):
+    """A tissue box cover: sized by the box of tissues, with a hole to pick, and its lid."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
+    sp = win.simple
     win.use_gallery("Lace Tissue Cube")
     win.set_simple_mode(True, remember=False)
     settle()
@@ -499,8 +521,8 @@ def main():
     words = " ".join(lab.text() for lab in win.steps.findChildren(QLabel))
     [(name, v3, f3, fil, pos)] = read_3mf(out["3mf"])
     check("Save a lid writes the lid, closed, and says how to print it and put it on", name.endswith(" lid")
-          and edge_check(f3)[0] and v3[:, 2].max() < 20.0 and win.steps.isVisible() and "pull the lid off" in words
-          and "8 tabs" in words)
+          and edge_check(f3)[0] and v3[:, 2].max() < 20.0 and win.steps.isVisible() and "latches click" in words
+          and "2 hooks" in words)
     win.steps.close()
     win.set_simple_mode(False, remember=False)
     check("Advanced shows the box's settings, not the ones it sets itself", win._wanted("box_corner")
@@ -512,6 +534,12 @@ def main():
     check("... and the lid's settings change the lid, not the cover: it isn't built again",
           win.design is built and not win.regen_timer.isActive() and not built.p.lid_open
           and win._current_design() is built)
+
+
+def look(t):
+    """Bigger text and the light theme, and back."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
+    sp = win.simple
     win.use_plain()
     win.set_simple_mode(True, remember=False)
     settle()
@@ -532,12 +560,65 @@ def main():
           and QApplication.palette().color(QPalette.Window).lightness() < 80)
     win.set_simple_mode(False, remember=False)
 
-    # a broken function is reported, not crashed on
+
+def function(t):
+    """A broken function is reported, not crashed on."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
+    win.set_simple_mode(False, remember=False)
     win.widgets["expression"].setPlainText("sin(theta")
     settle()
     check("a broken function is reported in the panel", "Your own function" in win.info.toPlainText())
     win.widgets["expression"].setPlainText("")
     settle()
+
+SECTIONS = [edits, gallery, morph, views, saving, drawn, simple, holes, masks, box, look, function]
+
+
+def main(argv):
+    words = [a.lower() for i, a in enumerate(argv[1:], 1) if not a.startswith("--") and argv[i - 1] != "--screen"]
+    sections = [s for s in SECTIONS if not words or any(w in s.__name__ for w in words)]
+    if not sections:
+        print("No section's name has " + " or ".join(words) + " in it. The sections: "
+              + ", ".join(s.__name__ for s in SECTIONS))
+        return 1
+    qapp = QApplication.instance() or QApplication(argv)
+    appmod.apply_dark_theme(qapp)
+    tmp = tempfile.mkdtemp()
+    settings = QSettings(os.path.join(tmp, "test.ini"), QSettings.IniFormat)
+    win = appmod.MainWindow(settings)
+    appmod.place_for_testing(win, argv)              # on the second screen, out of the way
+    qapp.processEvents()
+    checks = []
+
+    def check(what, ok):
+        checks.append((what, bool(ok)))
+        print(("ok    " if ok else "FAIL  ") + what)
+
+    def settle():
+        win._flush()
+        qapp.processEvents()
+
+    def choose(key, value):
+        w = win.widgets[key]
+        w.setCurrentIndex(w.findData(value))
+        settle()
+
+    # the file dialogs answered, and warnings noted, never left open waiting for a click
+    out = {"vase": os.path.join(tmp, "x.vase"), "stl": os.path.join(tmp, "x_vase.stl"),
+           "3mf": os.path.join(tmp, "x.3mf"), "png": os.path.join(tmp, "x.png")}
+    QFileDialog.getSaveFileName = staticmethod(
+        lambda *a, **k: (out[next(e for e in out if a[2].lower().endswith(e) or e in a[1].lower())], ""))
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Discard)
+    shown = []
+    for kind in ("warning", "critical", "information"):
+        setattr(QMessageBox, kind, staticmethod(lambda *a, **k: shown.append(a[2]) or QMessageBox.Ok))
+
+    d0 = win.design
+    check("the default vase builds, closed", d0 is not None and d0.closed)
+    t = (qapp, win, tmp, out, shown, check, settle, choose)
+    for section in sections:
+        print(f"--- {section.__name__}")
+        section(t)
     win._dirty = False
     win.close()
     failed = [w for w, ok in checks if not ok]
@@ -547,4 +628,4 @@ def main():
 
 if __name__ == "__main__":
     np.seterr(all="ignore")
-    sys.exit(main())
+    sys.exit(main(sys.argv))

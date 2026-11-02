@@ -39,6 +39,14 @@ SIMPLIFY_ERROR = 1e-3    # how far saving may simplify the mesh: pyfqmr's lossle
 SIMPLIFY_MM = 0.02       # ... and in the web version, meshoptimizer's (mm)
 BOX_ROOM = 2.0           # mm to spare each side between a tissue box cover and the box of tissues inside it
 BOX_TOP_ROOM = 3.0       # ... and over the box's top
+BOX_END_ROOM = 2.0       # ... and more inside each end, for the lid's tabs
+LEDGE_DEPTH = 1.2        # a cover's ledges, inside each end at the rim, that its lid clicks in behind (mm)
+LEDGE_FROM = 4.0         # ... how far in from the rim each starts, the cover on
+LEDGE_RAMP = 3.5         # ... the gentle slope the lid's tabs ride over, going on
+LEDGE_FLAT = 0.4         # ... its flat
+LEDGE_LEAN = 35.0        # ... and the steep side they catch on, from upright: an overhang as the cover prints,
+                         # with room for a pattern's own lean
+LEDGE_CLEAR = 13.0       # a cover's holes keep this far from its rim, clear of the lid's tabs (mm)
 TISSUE_MARGIN = 8.0      # the tissue hole keeps at least this much of the cover's top round it (mm)
 TISSUE_WORDS = {1: "a slot", 2: "an oval", 3: "a round hole"}
 # what grows with a design sized for a head: its height and the face, in mm
@@ -740,6 +748,10 @@ class VaseDesign:
         else:
             zs, (Os, Is, fs), at = hollow.insert_rows(self.z, [O, I, f], [zb])
             kb = at[zb]
+        if p.box:                                 # the ledges a lid clicks in behind
+            heights = ledge_heights(p)
+            zs, (Os, Is, fs), _ = hollow.insert_rows(zs, [Os, Is, fs], [self.H - h for h in heights])
+            Is = ledges(zs, Is, self.H, heights)
         b = None
         if p.hole_swell > 0 and (fs > 0).any():
             # rounded edges: the wall swells out and in round every hole, curving from outside to in
@@ -879,7 +891,7 @@ class VaseDesign:
         start = along[np.arange(K), c0]
         t = np.mod((along - start[:, None]) / L[:, None], 1.0)
         z_lo = zb + max(p.hole_foot, 0.0)
-        z_hi = (self.dome_from if p.closed_top else self.H) - max(p.hole_rim, 0.0)    # not up a closed top
+        z_hi = (self.dome_from if p.closed_top else self.H) - max(p.hole_rim, LEDGE_CLEAR if p.box else 0.0)
         f, spans = hollow.hole_field(p.holes, t, self.z, L, p.hole_size, p.hole_strut, p.hole_jitter, p.hole_seed,
                                      z_lo, z_hi, room, 0.85 * math.tan(math.radians(p.max_overhang)),
                                      min(VORONOI_BRIDGE * p.hole_size, VORONOI_LONGEST))
@@ -1524,7 +1536,7 @@ def box_shape(p: VaseParams) -> VaseParams:
     q = p.copy()
     wall = q.line_width * max(int(q.walls), 1)
     room = box_room(q)
-    a = 0.5 * max(q.box_length, q.box_width) + room + wall   # half its length and width, outside
+    a = 0.5 * max(q.box_length, q.box_width) + room + BOX_END_ROOM + wall   # half its length and width, outside
     b = 0.5 * min(q.box_length, q.box_width) + room + wall
     c = min(max(q.box_corner, wall + 1.0), b)
     reach = math.hypot(a - c, b - c) + c                    # to the furthest point, round a corner
@@ -1537,6 +1549,41 @@ def box_shape(p: VaseParams) -> VaseParams:
     q.eyes, q.nose, q.mouth, q.straps = NO_EYES, NO_NOSE, NO_MOUTH, False
     q.vase_mode = FAKE_VASE
     return q
+
+
+def ledge_lean(p: VaseParams) -> float:
+    """How far a cover's ledges' steep sides lean from upright (degrees): LEDGE_LEAN, or less, as the wall may."""
+    return max(min(LEDGE_LEAN, p.max_overhang - 10.0), 10.0)
+
+
+def ledge_heights(p: VaseParams):
+    """Where a cover's ledges change, measured up from the rim with the cover on: the foot of the ramp, the top
+    of the ramp and the end of the flat, both LEDGE_DEPTH in, and the top of the steep side."""
+    h0 = LEDGE_FROM
+    h1 = h0 + LEDGE_RAMP
+    h2 = h1 + LEDGE_FLAT
+    return h0, h1, h2, h2 + LEDGE_DEPTH / math.tan(math.radians(ledge_lean(p)))
+
+
+def ledges(z, I, H: float, heights):
+    """The inside of a cover's wall I (K, N, 2) at heights z, with a ledge across each end - the straight part of
+    the end, on the long way - standing in from the wall near the rim at H, for its lid's tabs to click in
+    behind. As the cover prints, upside down, the ramp faces up and the steep side down, no steeper than a wall
+    may lean, so nothing needs supports."""
+    h0, h1, h2, h3 = heights
+    h = H - np.asarray(z, dtype=float)
+    depth = LEDGE_DEPTH * np.interp(h, [h0, h1, h2, h3], [0.0, 1.0, 1.0, 0.0], left=0.0, right=0.0)
+    rim = I[-1]
+    X, Y = np.abs(rim).max(axis=0)
+    U = np.array([1.0, 0.0]) if X >= Y else np.array([0.0, 1.0])
+    V = np.array([-U[1], U[0]])
+    u, v = rim @ U, rim @ V
+    flat = v[np.abs(u) >= np.abs(u).max() - 0.05]
+    half = max(0.5 * float(flat.max() - flat.min()) - 1.0, 12.0)     # the straight part of each end, or its middle
+    across = np.clip((half - np.abs(I @ V)) / 3.0, 0.0, 1.0)         # each ledge tapers off at its ends ...
+    on_end = np.abs(I @ U) > 0.5 * np.abs(u).max()                   # ... and is only on the ends
+    off = depth[:, None] * across * on_end
+    return I - sections.normals(I) * off[..., None]
 
 
 # ================================================================ sizing for a head

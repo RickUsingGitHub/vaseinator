@@ -799,7 +799,8 @@ class MainWindow(QMainWindow):
         self.a_print = act("Save for printing…", self.save_for_printing, glyph_icon("export"), "Ctrl+Shift+P",
                            "Save the vase for your printer's slicer, with how to print it")
         self.a_lid = act("Save the lid for printing…", self.save_lid, None, None,
-                         "A tissue box cover's lid for its open end, to print on its own: springy tabs hold it on")
+                         "A tissue box cover's lid for its open end, to print on its own: it hooks in at one end "
+                         "and clicks in at the other")
         self.a_slicer = act("Open in slicer", lambda: self.open_in_slicer(), None, "Ctrl+L",
                             "Open the vase saved for printing in your slicer")
         self.a_pick_slicer = act("Choose slicer program…", lambda: self.choose_slicer(), None, None,

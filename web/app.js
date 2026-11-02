@@ -492,12 +492,12 @@ function colourStyleOf(p) {
   return p.vase_mode === K.REAL_VASE && (p.colour_style === 1 || p.colour_style === 2) ? K.ONE_COLOUR : p.colour_style;
 }
 
-function numberBox(row, { scale = 1, decimals = 2 } = {}) {
+function numberBox(row, { decimals = 2 } = {}) {
   const input = document.createElement("input");
   input.type = "number";
-  input.min = row.lo * scale;
-  input.max = row.hi * scale;
-  input.step = row.step * scale;
+  input.min = row.lo;
+  input.max = row.hi;
+  input.step = row.step;
   input.dataset.decimals = decimals;
   return input;
 }
@@ -516,8 +516,8 @@ function makeRow(row, rowsBox) {
   let input = null;
   const whole = ["curve", "expr", "outline"].includes(kind);
   if (kind === "float" || kind === "int" || kind === "seed" || kind === "pct" || kind === "widest" || kind === "head") {
-    const scale = kind === "pct" ? 100 : 1;
-    input = numberBox(row, { scale });
+    const scale = kind === "pct" ? 100 : 1;     // a percent is shown ×100; its limits are in percent already
+    input = numberBox(row);
     lab.htmlFor = input.id = `set-${key}`;
     control.append(input);
     if (unit) {
@@ -544,7 +544,7 @@ function makeRow(row, rowsBox) {
     input.addEventListener("change", () => {
       let v = parseFloat(input.value);
       if (Number.isNaN(v)) return;
-      v = Math.min(Math.max(v, row.lo * scale), row.hi * scale) / scale;
+      v = Math.min(Math.max(v, row.lo), row.hi) / scale;
       if (kind === "int" || kind === "seed") v = Math.round(v);
       if (kind === "head") return fitHead(v);
       commit(key, v);

@@ -390,8 +390,8 @@ class SimplePanel(QWidget):
         v.addWidget(save)
         self.lid = QPushButton("Save a lid for it…")
         self.lid.setObjectName("bigButton")
-        self.lid.setToolTip("A lid for the cover's open end, printed on its own - now or later. Springy tabs hold it\n"
-                            "on, and a pull tab takes it off to change the tissues.")
+        self.lid.setToolTip("A lid for the cover's open end, printed on its own - now or later. It hooks in at one\n"
+                            "end and clicks in at the other, and a pull tab takes it off to change the tissues.")
         self.lid.clicked.connect(self.save_lid)
         v.addWidget(self.lid)
         more = QPushButton("More settings (Advanced)…")
