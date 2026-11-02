@@ -232,6 +232,7 @@ class SimplePanel(QWidget):
     surprise = Signal()
     draw_own = Signal()
     save = Signal()
+    save_lid = Signal()
     advanced = Signal()
 
     def __init__(self):
@@ -387,6 +388,12 @@ class SimplePanel(QWidget):
         save.clicked.connect(self.save)
         v.addSpacing(6)
         v.addWidget(save)
+        self.lid = QPushButton("Save a lid for it…")
+        self.lid.setObjectName("bigButton")
+        self.lid.setToolTip("A lid for the cover's open end, printed on its own - now or later. Springy tabs hold it\n"
+                            "on, and a pull tab takes it off to change the tissues.")
+        self.lid.clicked.connect(self.save_lid)
+        v.addWidget(self.lid)
         more = QPushButton("More settings (Advanced)…")
         more.setFlat(True)
         more.setToolTip("Every setting: curves, patterns, colours, printing")
@@ -437,7 +444,7 @@ class SimplePanel(QWidget):
             w.setVisible(not p.worn and not p.box)
         for w in (self.above_title, self.above, self.own, self.twist_title, self.twist_row):
             w.setVisible(not p.box)
-        for w in (self.box_row, self.tissue_title, self.tissue):
+        for w in (self.box_row, self.tissue_title, self.tissue, self.lid):
             w.setVisible(p.box)
         for key, spin in self.box_sizes.items():
             spin.blockSignals(True)

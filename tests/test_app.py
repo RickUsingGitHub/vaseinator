@@ -185,6 +185,9 @@ def main():
     QFileDialog.getSaveFileName = staticmethod(
         lambda *a, **k: (out[next(e for e in out if a[2].lower().endswith(e) or e in a[1].lower())], ""))
     QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Discard)
+    shown = []                                   # warnings are noted, never left open waiting for a click
+    for kind in ("warning", "critical", "information"):
+        setattr(QMessageBox, kind, staticmethod(lambda *a, **k: shown.append(a[2]) or QMessageBox.Ok))
     win.save_design(as_new=True)
     check("save writes a design that opens the same", load_design(out["vase"]).to_dict() == win.params.to_dict())
     win.export_stl()
@@ -481,14 +484,40 @@ def main():
     check("... and the round hole picks a size that suits the box", win.params.tissue_hole == TISSUE_ROUND
           and win.params.tissue_width == win.params.tissue_length > 50.0
           and win.widgets["tissue_width"].value() == win.params.tissue_width and "a round hole" in win.info.toPlainText())
+    if os.path.exists(out["3mf"]):
+        os.remove(out["3mf"])
+    told = len(shown)
+    sp.save.emit()
+    qapp.processEvents()
+    check("... it saves for printing after its box and hole are changed", os.path.exists(out["3mf"])
+          and len(shown) == told and all(edge_check(f)[0] for _, _, f, _, _ in read_3mf(out["3mf"])))
+    win.steps.close()
+    os.remove(out["3mf"])
+    check("... a lid can be saved for it", sp.lid.isVisibleTo(sp) and win.a_lid.isEnabled())
+    sp.lid.click()
+    qapp.processEvents()
+    words = " ".join(lab.text() for lab in win.steps.findChildren(QLabel))
+    [(name, v3, f3, fil, pos)] = read_3mf(out["3mf"])
+    check("Save a lid writes the lid, closed, and says how to print it and put it on", name.endswith(" lid")
+          and edge_check(f3)[0] and v3[:, 2].max() < 20.0 and win.steps.isVisible() and "pull the lid off" in words
+          and "8 tabs" in words)
+    win.steps.close()
     win.set_simple_mode(False, remember=False)
     check("Advanced shows the box's settings, not the ones it sets itself", win._wanted("box_corner")
-          and not win._wanted("height") and not win._wanted("twist") and not win._wanted("tissue_length"))
+          and not win._wanted("height") and not win._wanted("twist") and not win._wanted("tissue_length")
+          and win._wanted("lid_grip") and win._wanted("lid_open"))
+    built = win.design
+    win.widgets["lid_open"].setChecked(False)
+    qapp.processEvents()
+    check("... and the lid's settings change the lid, not the cover: it isn't built again",
+          win.design is built and not win.regen_timer.isActive() and not built.p.lid_open
+          and win._current_design() is built)
     win.use_plain()
     win.set_simple_mode(True, remember=False)
     settle()
     check("a vase shows Tall and Wide again", sp.size_row.isVisibleTo(sp) and not sp.head_row.isVisibleTo(sp)
-          and not sp.box_row.isVisibleTo(sp) and sp.above.isVisibleTo(sp))
+          and not sp.box_row.isVisibleTo(sp) and sp.above.isVisibleTo(sp) and not sp.lid.isVisibleTo(sp)
+          and not win.a_lid.isEnabled())
     pt = QApplication.font().pointSizeF()
     win.a_big.trigger()
     qapp.processEvents()

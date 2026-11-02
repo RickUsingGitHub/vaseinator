@@ -235,6 +235,7 @@ a.save { display: block; box-sizing: border-box; text-align: center; text-decora
   color: var(--accent-ink);
   border-color: var(--accent);
 }
+button.lid { width: 100%; margin-top: 0.5rem; padding: 0.6rem; font-weight: 600; }
 .files { margin-top: 0.5rem; flex-wrap: wrap; }
 .files button { flex: 1; font-size: 0.88rem; }
 details#printer { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 0.6rem; }

@@ -59,8 +59,8 @@ self.onmessage = async (event) => {
       self.postMessage({ id, ok: true, result }, [result.positions, result.triangles, result.colours, result.lean]);
       return;
     }
-    if (call === "export_3mf") {
-      const out = bridge.export_3mf(...args);
+    if (call === "export_3mf" || call === "export_lid") {
+      const out = bridge[call](...args);
       const result = { data: bytesOf(out.get(0)), steps: out.get(1) };
       out.destroy();
       self.postMessage({ id, ok: true, result }, [result.data]);

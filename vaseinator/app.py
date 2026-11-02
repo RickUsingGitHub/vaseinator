@@ -26,7 +26,8 @@ from .outline_editor import CLOSE_UP_FROM, OutlineEditor, OutlineWindow
 from .params import (DRAWN, FILAMENTS, ONE_COLOUR, OWN_PROFILE, POLYGON, REAL_VASE, VaseParams, colour_style_of,
                      load_design, save_design)
 from .plots import ShapePlots
-from .report import ABOUT, APP_NAME, DRAWING_HELP, PRINTING_HELP, function_help, info_html, print_steps
+from .lid import Lid
+from .report import ABOUT, APP_NAME, DRAWING_HELP, PRINTING_HELP, function_help, info_html, lid_steps, print_steps
 from .settings import (COLOUR_STYLES, REAL_COLOUR_STYLES, REMEMBERED, SPEC, TEXT_KEYS, change as apply_change,
                        outline_from_shape, wanted)
 from .presets import GALLERY, gallery_design, outline, palette, plain_design, slug, surprise
@@ -154,14 +155,15 @@ class FunctionHelp(QDialog):
 
 
 class PrintSteps(QDialog):
-    """After Save for printing: where the file is, and plain steps to print it."""
+    """After Save for printing: where the file is, and plain steps to print it - the vase's, or the steps
+    given (a lid's, say, as steps(where))."""
     open_slicer = Signal()
 
-    def __init__(self, parent, d, path, parts: int, slicer):
+    def __init__(self, parent, d, path, parts: int, slicer, steps=None):
         super().__init__(parent)
         self.setWindowTitle("How to print it")
         where = slicers.slicer_name(slicer) if slicer else "your slicer"
-        text = QLabel(print_steps(d, path, parts, where))
+        text = QLabel(steps(where) if steps else print_steps(d, path, parts, where))
         text.setWordWrap(True)
         text.setTextInteractionFlags(Qt.TextSelectableByMouse)
         box = QVBoxLayout(self)
@@ -308,6 +310,7 @@ class MainWindow(QMainWindow):
         self.simple.surprise.connect(lambda: self.surprise_me())
         self.simple.draw_own.connect(self.draw_own_shape)
         self.simple.save.connect(self.save_for_printing)
+        self.simple.save_lid.connect(self.save_lid)
         self.simple.advanced.connect(lambda: self.set_simple_mode(False))
         simple_scroll = QScrollArea()
         simple_scroll.setWidget(self.simple)
@@ -722,6 +725,8 @@ class MainWindow(QMainWindow):
             titles = {slug(t): t for t, _, _ in GALLERY}
             titles["plain_cylinder"] = "Plain cylinder"
             self.simple.refresh(p, self._widest(), titles.get(p.name, ""))
+        if hasattr(self, "a_lid"):
+            self.a_lid.setEnabled(p.box)
         self._apply_mode()
 
     def _wanted(self, key) -> bool:
@@ -793,6 +798,8 @@ class MainWindow(QMainWindow):
                           "Save the 3D view as a PNG image")
         self.a_print = act("Save for printing…", self.save_for_printing, glyph_icon("export"), "Ctrl+Shift+P",
                            "Save the vase for your printer's slicer, with how to print it")
+        self.a_lid = act("Save the lid for printing…", self.save_lid, None, None,
+                         "A tissue box cover's lid for its open end, to print on its own: springy tabs hold it on")
         self.a_slicer = act("Open in slicer", lambda: self.open_in_slicer(), None, "Ctrl+L",
                             "Open the vase saved for printing in your slicer")
         self.a_pick_slicer = act("Choose slicer program…", lambda: self.choose_slicer(), None, None,
@@ -831,6 +838,8 @@ class MainWindow(QMainWindow):
         m = QMenu(exp_btn)
         m.addAction(self.a_exp_stl)
         m.addAction(self.a_exp_3mf)
+        m.addSeparator()
+        m.addAction(self.a_lid)
         exp_btn.setMenu(m)
         tb.addWidget(exp_btn)
         tb.addAction(self.a_snap)
@@ -861,7 +870,7 @@ class MainWindow(QMainWindow):
         mb = self.menuBar()
         fm = mb.addMenu("&File")
         for a in (self.a_new, self.a_plain, self.a_open, self.a_save, self.a_save_as, None, self.a_print,
-                  self.a_slicer, self.a_pick_slicer, None, self.a_exp_stl, self.a_exp_3mf, self.a_snap, None,
+                  self.a_lid, self.a_slicer, self.a_pick_slicer, None, self.a_exp_stl, self.a_exp_3mf, self.a_snap, None,
                   self.a_quit):
             fm.addAction(a) if a is not None else fm.addSeparator()
         em = mb.addMenu("&Edit")
@@ -923,6 +932,12 @@ class MainWindow(QMainWindow):
         self._sync_widgets()
         self._dirty = True
         self._update_title()
+        d = self.design
+        if key in ("lid_grip", "lid_open") and d is not None and not d.draft and not self.regen_timer.isActive():
+            for q in (d.p, d.asked):                       # the lid's own: the cover itself stays as it is
+                setattr(q, key, getattr(self.params, key))
+            self._remember()
+            return
         self._schedule(live=live, text=key in TEXT_KEYS)
 
     def _set_head(self, cm: float):
@@ -1405,7 +1420,7 @@ class MainWindow(QMainWindow):
         if d is not None and d.draft:
             self.regenerate()
             d = self.design
-        if d is None or {**d.p.to_dict(), "name": ""} != {**self.params.to_dict(), "name": ""}:
+        if d is None or {**d.asked.to_dict(), "name": ""} != {**self.params.to_dict(), "name": ""}:
             QMessageBox.warning(self, "Nothing to export", "The current settings do not make a vase.")
             return None
         if not d.closed:
@@ -1515,6 +1530,38 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Saved {os.path.basename(path)} for printing, in {os.path.dirname(path)}",
                                      12000)
         self.steps = PrintSteps(self, d, path, len(parts), self._slicer(ask=False))
+        self.steps.open_slicer.connect(lambda: self.open_in_slicer(path))
+        self.steps.show()
+
+    def save_lid(self):
+        """A tissue box cover's lid, made to fit it, as a 3MF for the slicer - with how to print it and put it on."""
+        d = self._current_design()
+        if d is None:
+            return
+        lid = Lid(d)
+        if lid.errors:
+            QMessageBox.warning(self, "No lid", " ".join(lid.errors))
+            return
+        base = self._safe_name() + " lid"
+        path, _ = QFileDialog.getSaveFileName(self, "Save the lid for printing",
+                                              os.path.join(self._last_dir(), base + ".3mf"),
+                                              "3MF files, for the slicer (*.3mf)")
+        if not path:
+            return
+        if not path.lower().endswith(".3mf"):
+            path += ".3mf"
+        try:
+            write_3mf(path, base, [(base, lid.verts, lid.faces, 1, d.p.colors()[1])],
+                      (d.p.bed_x / 2.0, d.p.bed_y / 2.0, 0.0))
+        except OSError as exc:
+            QMessageBox.critical(self, "Couldn't save it", str(exc))
+            return
+        self._remember_dir(path)
+        self.print_file = path
+        self.statusBar().showMessage(f"Saved {os.path.basename(path)} for printing, in {os.path.dirname(path)}",
+                                     12000)
+        self.steps = PrintSteps(self, d, path, 1, self._slicer(ask=False),
+                                steps=lambda where: lid_steps(lid, path, where))
         self.steps.open_slicer.connect(lambda: self.open_in_slicer(path))
         self.steps.show()
 
@@ -1764,6 +1811,9 @@ def main(argv=None):
             d = win.design
             write_stl(os.path.join(out_dir, "t_vase.stl"), d.verts, d.faces, "t")
             write_3mf(os.path.join(out_dir, "t.3mf"), "t", win.band_parts(d), (d.p.bed_x / 2, d.p.bed_y / 2, 0.0))
+            if d.p.box:
+                lid = Lid(d)
+                write_3mf(os.path.join(out_dir, "t_lid.3mf"), "t lid", [("t lid", lid.verts, lid.faces, 1, (1, 1, 1))])
 
         def snap():
             win._fitted = None

@@ -343,6 +343,7 @@ class VaseDesign:
         self.errors: list[str] = []
         self.warnings: list[str] = []
         self.notes: list[str] = []
+        self.asked = p.copy()                     # the settings as given: p below is as built, a box's shape and all
         self.box_room = 0.0
         if p.box:                                 # a tissue box cover: its shape comes from the box it fits
             self.box_room = box_room(p)

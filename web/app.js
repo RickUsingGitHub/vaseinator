@@ -388,6 +388,7 @@ function refreshSimple() {
   $("side").hidden = p.worn || p.box;
   for (const id of ["abovetitle", "above", "drawown", "twisttitle", "twistrow"]) $(id).hidden = p.box;
   $("boxrow").hidden = !p.box;
+  for (const b of document.querySelectorAll(".lidonly")) b.hidden = !p.box;
   for (const input of document.querySelectorAll("#boxrow input")) setNumber(input, Math.round(p[input.dataset.key]) / 10);
   lightTile($("tissue"), C.tissue_holes.findIndex((t) => t.value === p.tissue_hole));
   lightTile($("above"), C.shapes.findIndex(({ settings: s }) =>
@@ -957,6 +958,10 @@ const actions = {
   print: () => withBusy("Making the file for your slicer…", async () => {
     const { data, steps } = await builder.call("export_3mf", JSON.stringify(params));
     offer(data, fileName() + ".3mf", "model/3mf", "How to print it", steps);
+  }).catch(() => {}),
+  lid: () => withBusy("Making the lid…", async () => {
+    const { data, steps } = await builder.call("export_lid", JSON.stringify(params));
+    offer(data, fileName() + " lid.3mf", "model/3mf", "How to print the lid", steps);
   }).catch(() => {}),
   stl: () => withBusy("Making the STL…", async () =>
     offer(await builder.call("export_stl", JSON.stringify(params)), fileName() + ".stl", "model/stl",

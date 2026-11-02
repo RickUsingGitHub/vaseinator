@@ -22,10 +22,11 @@ from vaseinator.choices import (COLOURS, MANY_COLOURS, NO_PATTERN, PATTERNS, SHA
                                 twist_words)
 from vaseinator.expr import EXAMPLES
 from vaseinator.geometry import TOLERANCE, VaseDesign, fit_head
+from vaseinator.lid import Lid
 from vaseinator.params import (CIRCLE, DRAWN, EVENLY, FAKE_VASE, FILE_FORMAT, FILE_VERSION, ONE_COLOUR, OWN,
                                OWN_PROFILE, POLYGON, REAL_VASE, SAME, TISSUE_OVAL, TISSUE_ROUND, VaseParams)
 from vaseinator.presets import GALLERY, PRINTER_KEYS, gallery_design, plain_design, slug, surprise
-from vaseinator.report import ABOUT, DRAWING_HELP, PRINTING_HELP, function_help, info_html, print_steps
+from vaseinator.report import ABOUT, DRAWING_HELP, PRINTING_HELP, function_help, info_html, lid_steps, print_steps
 from vaseinator.settings import COLOUR_STYLES, LIVE_KEYS, REAL_COLOUR_STYLES, SPEC, TEXT_KEYS, change, wanted
 from vaseinator.shapes import PALETTES, PROFILES, SHAPE_LABELS, pchip, shape_table
 from vaseinator.stl import write_stl
@@ -247,6 +248,25 @@ def export_3mf(text: str):
         data = fh.read()
     steps = print_steps(d, f"{base}.3mf", len(parts))
     steps = re.sub(r"^<p>Saved .*?</p>", "", steps, flags=re.S)        # saved by the button above the steps
+    return data, steps.replace(" (the button below, or File ▸ Import)", " (File ▸ Import)")
+
+
+def export_lid(text: str):
+    """A tissue box cover's lid, made to fit it, as the desktop app's Save the lid for printing makes it.
+    Returns (the file, the steps to print it and put it on, as HTML)."""
+    p = _params(text)
+    d = VaseDesign(p)
+    if d.errors:
+        raise ValueError("; ".join(d.errors))
+    lid = Lid(d)
+    if lid.errors:
+        raise ValueError(" ".join(lid.errors))
+    base = _name(p) + " lid"
+    path = os.path.join(tempfile.gettempdir(), "lid.3mf")
+    write_3mf(path, base, [(base, lid.verts, lid.faces, 1, d.p.colors()[1])], (p.bed_x / 2.0, p.bed_y / 2.0, 0.0))
+    with open(path, "rb") as fh:
+        data = fh.read()
+    steps = re.sub(r"^<p>Saved .*?</p>", "", lid_steps(lid, f"{base}.3mf"), flags=re.S)
     return data, steps.replace(" (the button below, or File ▸ Import)", " (File ▸ Import)")
 
 

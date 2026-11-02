@@ -16,8 +16,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # the package's modules that need no Qt: the geometry, the designs, the settings, the report and the exports
-MODULES = ("__init__", "choices", "expr", "geometry", "hollow", "params", "presets", "report", "sections", "settings",
-           "shapes", "stl", "threemf")
+MODULES = ("__init__", "choices", "expr", "geometry", "hollow", "lid", "params", "presets", "report", "sections",
+           "settings", "shapes", "stl", "threemf")
 
 
 def main(out=None):

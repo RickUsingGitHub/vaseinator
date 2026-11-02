@@ -25,6 +25,7 @@ NO_EYES, ALMOND_EYES, ROUND_EYES = 0, 1, 2                # a face: its eyes ...
 NO_NOSE, RAISED_NOSE = 0, 1                               # ... its nose ...
 NO_MOUTH, OPEN_MOUTH, GRILLE_MOUTH, CHIN_MOUTH = 0, 1, 2, 3   # ... and its mouth (CHIN: open down to the chin)
 NO_TISSUE, TISSUE_SLOT, TISSUE_OVAL, TISSUE_ROUND = 0, 1, 2, 3   # the hole in a tissue box cover's top
+LID_GENTLE, LID_SNUG, LID_FIRM = 0, 1, 2                          # how hard a cover's lid holds on
 MATTE, SILK, GLOSSY, TRANSLUCENT = 0, 1, 2, 3             # how the filament looks in the 3D view
 
 MAX_REPEAT = 100                                          # most copies of a drawn piece round the axis
@@ -166,6 +167,8 @@ class VaseParams:
     tissue_hole: int = TISSUE_SLOT    # the hole in its top the tissues come out of
     tissue_length: float = 130.0  # ... along the box
     tissue_width: float = 36.0    # ... and across it (a round hole: its diameter)
+    lid_grip: int = LID_SNUG      # the lid for its open end, printed on its own: how hard its tabs press
+    lid_open: bool = True         # ... a frame, open in the middle - or a solid plate
 
     # --- printing -----------------------------------------------------------
     vase_mode: int = FAKE_VASE    # real: spiral vase mode, one solid, one colour (slicers won't change
@@ -230,7 +233,8 @@ class VaseParams:
                    "holes": (NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS),
                    "eyes": (NO_EYES, ALMOND_EYES, ROUND_EYES), "nose": (NO_NOSE, RAISED_NOSE),
                    "mouth": (NO_MOUTH, OPEN_MOUTH, GRILLE_MOUTH, CHIN_MOUTH),
-                   "tissue_hole": (NO_TISSUE, TISSUE_SLOT, TISSUE_OVAL, TISSUE_ROUND)}
+                   "tissue_hole": (NO_TISSUE, TISSUE_SLOT, TISSUE_OVAL, TISSUE_ROUND),
+                   "lid_grip": (LID_GENTLE, LID_SNUG, LID_FIRM)}
         for key, values in allowed.items():
             if getattr(p, key) not in values:
                 setattr(p, key, getattr(fresh, key))

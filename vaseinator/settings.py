@@ -8,7 +8,7 @@ from __future__ import annotations
 from . import sections
 from .geometry import box_shape
 from .params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, GLOSSY,
-                     GRADIENT, GRILLE_MOUTH, MATTE, NO_EYES, NO_HOLES, NO_MOUTH, NO_NOSE, NO_TISSUE, ONE_COLOUR,
+                     GRADIENT, GRILLE_MOUTH, LID_FIRM, LID_GENTLE, LID_SNUG, MATTE, NO_EYES, NO_HOLES, NO_MOUTH, NO_NOSE, NO_TISSUE, ONE_COLOUR,
                      OPEN_MOUTH, OWN, OWN_PROFILE, PEBBLE, RAISED_NOSE, REAL_VASE, ROUND, ROUND_EYES, SAME, SHAPES,
                      SILK, SLOTS, SLOW_DOWN, SPEED_UP, STRIPES, SWING, TISSUE_OVAL, TISSUE_ROUND, TISSUE_SLOT,
                      TRANSLUCENT, VORONOI, VaseParams, colour_style_of, face_holes, needs_normal)
@@ -35,6 +35,7 @@ EYE_CHOICES = [(NO_EYES, "None"), (ALMOND_EYES, "Almond"), (ROUND_EYES, "Round")
 NOSE_CHOICES = [(NO_NOSE, "None"), (RAISED_NOSE, "Raised")]
 MOUTH_CHOICES = [(NO_MOUTH, "None"), (OPEN_MOUTH, "Open"), (GRILLE_MOUTH, "A grille of slots"),
                  (CHIN_MOUTH, "Open down to the chin")]
+LID_GRIPS = [(LID_GENTLE, "Gentle"), (LID_SNUG, "Snug"), (LID_FIRM, "Firm")]
 TISSUE_CHOICES = [(TISSUE_SLOT, "A long slot"), (TISSUE_OVAL, "An oval"), (TISSUE_ROUND, "A round hole"),
                   (NO_TISSUE, "None")]
 # what a tissue box cover sets for itself, from the box it fits: not shown while it is one
@@ -238,6 +239,14 @@ SPEC = [
         ("tissue_length", "Hole length", "float", 5.0, 600.0, 1.0, " mm", "How long the hole is, along the box."),
         ("tissue_width", "Hole width", "float", 5.0, 600.0, 1.0, " mm",
          "How wide the hole is, across the box - a round hole, from side to side."),
+        ("lid_grip", "Lid grip", "choice", LID_GRIPS, None, None, "",
+         "A lid for the open end, printed on its own with Save the lid for printing - after the cover, if you\n"
+         "like: springy tabs inside the wall hold it on, and a pull tab takes it off to change the tissues.\n"
+         "How hard the tabs press on the wall: if the lid falls off, print it again a step firmer; if it is\n"
+         "hard to take off, or rubs on the box of tissues, a step gentler."),
+        ("lid_open", "Lid open in the middle", "bool", None, None, None, "",
+         "The lid as a frame round the edge, which the box of tissues stands on: quicker to print and lighter.\n"
+         "Off: a solid plate, closed underneath."),
     ]),
     ("Your own function", [
         ("expression", "", "expr", None, None, None, "",
@@ -328,7 +337,7 @@ def wanted(p, key) -> bool:
     if p.box and (key in BOX_SETS or key.startswith(("eye_", "nose_", "mouth_", "strap_"))
                   or (key[:-1] in ("shape", "drawn", "repeat", "count", "depth", "sharp", "turn") and key[-1] in "12")):
         show = False
-    elif key in ("box_length", "box_width", "box_height", "box_corner", "tissue_hole"):
+    elif key in ("box_length", "box_width", "box_height", "box_corner", "tissue_hole", "lid_grip", "lid_open"):
         show = p.box
     elif key == "tissue_length":
         show = p.box and p.tissue_hole in (TISSUE_SLOT, TISSUE_OVAL)

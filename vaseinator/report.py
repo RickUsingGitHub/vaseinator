@@ -117,6 +117,22 @@ def print_steps(d, path: str, parts: int, where: str = "your slicer") -> str:
             f"<b>{d.grams:.0f} g</b> of filament.</li></ol>")
 
 
+def lid_steps(lid, path: str, where: str = "your slicer") -> str:
+    """After Save the lid for printing: where the file is, how to print it, and how it goes on (HTML)."""
+    notes = "".join(f"<li>{n}</li>" for n in lid.notes)
+    return (f"<p>Saved <b>{os.path.basename(path)}</b><br>in {os.path.dirname(path)}</p>"
+            f"<p>The lid: {lid.info()}.</p>"
+            f"<ol><li>Open it in {where} (the button below, or File ▸ Import).</li>"
+            "<li>Print it with your <b>usual settings</b>, <b>Spiral vase off</b>, <b>no supports</b>: it lies flat, "
+            "the tabs standing up, just as it is in the file.</li>"
+            f"<li>It takes about <b>{duration(lid.seconds)}</b> and <b>{lid.grams:.0f} g</b> of filament.</li>"
+            "<li>Put the box of tissues in the cover, turn them over together and push the lid into the open end, "
+            "tabs first, till it sits flat on the rim. To change the tissues, hold the cover and pull the lid off "
+            "by its tab.</li>"
+            "<li>If it falls off, print it again with Advanced ▸ Tissue box ▸ <b>Lid grip</b> a step firmer; if it "
+            f"is hard to take off, a step gentler.</li>{notes}</ol>")
+
+
 PRINTING_HELP = ("<p><b>Save for printing</b> saves the vase as a 3MF and says how to print it. Advanced ▸ "
                  "Printing ▸ <b>Print as</b> chooses how:</p>"
                  "<ul><li><b>Normal print</b> (the usual): printed like any other print, the wall in the model. "

@@ -22,8 +22,10 @@ from vaseinator.expr import ExprError, compile_expression  # noqa: E402
 from vaseinator.geometry import (BOX_ROOM, BOX_TOP_ROOM, TOLERANCE, VORONOI_LONGEST, VaseDesign,  # noqa: E402
                                  edge_check, face_normals, fit_head, lean_angles, mesh_volume)
 from vaseinator import hollow  # noqa: E402
+from vaseinator.lid import LID_GAP, LID_GRIP, LID_PLATE, Lid  # noqa: E402
 from vaseinator.params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, ELLIPSE, EVENLY,  # noqa: E402
-                               FAKE_VASE, FLOWER, GEAR, GRADIENT, GRILLE_MOUTH, NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN,
+                               FAKE_VASE, FLOWER, GEAR, GRADIENT, GRILLE_MOUTH, LID_FIRM, LID_GENTLE, LID_SNUG,
+                               NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN,
                                NO_TISSUE, POLYGON, RAISED_NOSE, REAL_VASE, RECTANGLE, ROUND, ROUND_EYES, SAME, SLOTS,
                                STAR, STRIPES, SWING, TISSUE_OVAL, TISSUE_ROUND, TISSUE_SLOT, VORONOI, VaseParams,
                                load_design, save_design)
@@ -427,6 +429,48 @@ def test_tissue_box_covers():
         assert d.p.box and d.closed and d.worst <= limit and d.tissue, title
 
 
+def test_tissue_box_lids():
+    """A lid for a cover's open end, made from its design: closed, flat on the bed, the rim's shape with a pull tab,
+    and springy tabs standing in it - each clear of the cover's real wall all the way up but for its bump, which
+    presses into the wall by the grip chosen. A frame or a solid plate; holes too near the rim leave no room."""
+    for title, open_, grip in (("Tissue Box Cover", True, LID_SNUG), ("Tissue Box Cover", False, LID_FIRM),
+                               ("Lace Tissue Cube", True, LID_GENTLE)):
+        p = gallery_design(title)
+        p.lid_open, p.lid_grip = open_, grip
+        d = VaseDesign(p)
+        lid = Lid(d)
+        assert not lid.errors and lid.closed and edge_check(lid.faces)[0] and lid.tabs == 8, (title, lid.errors)
+        assert abs(lid.verts[:, 2].min()) < 1e-9 and lid.size[2] < 20.0 and lid.grams > 5.0
+        rim = d.pot_rows[1][-1]
+        span = np.abs(rim).max(axis=0)
+        assert np.allclose(np.sort(lid.size[:2]), np.sort(2 * span + [9.0, 0.0]), atol=0.5), (lid.size, span)
+        # the cover, turned over and stood on the plate: where its wall crosses the height of each tab point
+        H = float(d.pot_rows[0][-1])
+        tabs = lid.verts[lid.verts[:, 2] > LID_PLATE + 0.1]
+        g, inside = LID_GRIP[grip], 0
+        for x, y, z in tabs:
+            seg = d.contour(H - (z - LID_PLATE))[:, :, :2] * [1.0, -1.0]
+            a, b = seg[:, 0], seg[:, 1]
+            q = np.array([x, y])
+            t = np.clip(np.einsum("ij,ij->i", q - a, b - a) / np.maximum(np.einsum("ij,ij->i", b - a, b - a), 1e-12), 0, 1)
+            gap = np.linalg.norm(a + t[:, None] * (b - a) - q, axis=1).min()
+            ya, yb = a[:, 1] - y, b[:, 1] - y                     # in the plastic: an odd number of crossings
+            cross = (ya > 0) != (yb > 0)
+            xc = a[:, 0] + (b[:, 0] - a[:, 0]) * ya / np.where(cross, ya - yb, 1.0)
+            if np.sum(cross & (xc > x)) % 2:
+                assert gap < g + 0.05, (title, x, y, z, gap)
+                inside += gap > 0.5 * g
+            else:
+                assert gap > LID_GAP - 0.05, (title, x, y, z, gap)
+        assert inside >= 2 * lid.tabs, (title, inside)
+        info = lid.info()
+        assert ("frame" in info) == open_ and "8 tabs" in info
+    assert Lid(VaseDesign(plain())).errors
+    p = gallery_design("Lace Tissue Cube")
+    p.hole_rim = 0.0
+    assert "too near the rim" in Lid(VaseDesign(p)).errors[0]
+
+
 def test_fine_meshes_stay_light():
     """A fine mesh (0.2 mm, the default) leaves out the rows and columns that lie in line - a box needs few - and
     is simplified again for saving, closed, holding the same plastic."""
@@ -470,6 +514,8 @@ assert json.loads(bridge.open_vase(bridge.save_vase(mask)))["name"] == "theatre_
 cube = bridge.design_of("Lace Tissue Cube", keep)
 assert not json.loads(bridge.build(cube, True)[0])["errors"] and "box_corner" in json.loads(bridge.shown(cube))
 assert json.loads(bridge.apply(cube, "tissue_hole", "3"))["touched"] == ["tissue_length", "tissue_width"]
+data, steps = bridge.export_lid(cube)
+assert data[:2] == b"PK" and "pull the lid off" in steps and "Saved" not in steps
 # the Advanced panel: every setting, and the desktop app's own rules for a change
 assert [g["title"] for g in s["spec"]][0] == "Size" and "eye_tilt" in json.loads(bridge.shown(mask))
 r = json.loads(bridge.apply(keep, "twist_style", "5"))
