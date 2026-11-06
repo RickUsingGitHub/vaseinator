@@ -122,6 +122,52 @@ ready to slice.
 
 ## Download and run
 
+### Design library and profiles (desktop and web)
+
+Open **Designs → Library, profiles and Surprise locks** on desktop or in the browser.
+Both interfaces use the same Python rules and portable library format:
+
+* **Surprise locks:** preserve Dimensions (height and widest diameter), Silhouette (including its width),
+  Cross-section, Twist, or Colours while exploring new random variations. Printer settings are always kept.
+  Locks preserve the requested settings; softening can still alter the printable surface. Existing masks
+  and tissue-box modes are not locks: Surprise me still creates a vase.
+* **My designs:** save named variants, browse silhouette sketches, mark favourites, restore, or remove them.
+  Restoring a variant remains undoable. These are silhouette thumbnails, not full 3D renders.
+* **Printer and material profiles:** name and apply printer settings separately from material properties.
+  Printer profiles store bed/build height, line/layer widths, bottom, walls, overhang limit and mesh detail.
+  Material profiles store filament diameter, density, speed and maximum flow. Applying a profile keeps the
+  design's shape and colours and can be undone.
+* **Recovery:** retains up to 30 settled snapshots, beyond the current session's undo history. It is local
+  to this computer/browser. Export a library backup before clearing browser storage or moving computers.
+* **Export/import library:** transfer variants, profiles, recovery and locks between desktop and browser.
+  Import merges entries by identity, leaves existing entries intact, and combines locks. Each library can
+  hold up to 500 saved designs and 500 profiles. There is no automatic cloud synchronisation.
+
+In **View → Compare original and softened**, blue shows the requested side envelope and orange shows
+the softened envelope. Connecting strokes highlight changed widths; the maximum surface movement is
+also reported. This side view can overlap where changes are angular rather than changes in outer width.
+
+**File → Save clearance samples** exports five socket-and-pin pairs as one 3MF. Left to right, the radial
+clearances are 0.1, 0.2, 0.3, 0.4 and 0.5 mm (diametral clearances are double those values). Print with the
+intended material and settings, keep the pairs in order, and test the fit before committing to a larger
+print. These are general clearance samples, not replicas of the lid latches; they do not change a design's
+clearance automatically. The sample layout is approximately 92 × 33 × 3 mm.
+
+### Regression checks
+
+```text
+python -m tests.test_vase
+python -m unittest tests.test_workspace -v
+node tests/test_web_state.cjs
+python -m tests.test_app
+python -m unittest tests.test_design_tools -v
+```
+
+The desktop tests require the packages in `requirements.txt`. They can run with
+`QT_QPA_PLATFORM=offscreen`. The optional `node tests/test_browser.cjs` end-to-end test needs Playwright,
+a Chrome/Chromium executable in `BROWSER_PATH`, and a built site served at `http://127.0.0.1:8765`
+(or `VASE_URL`). Shared geometry, library and browser-state regressions run before Pages deployment.
+
 * **In your browser:** <https://rickusinggithub.github.io/vaseinator/> – the whole app, Simple and Advanced:
   every setting, the curves, drawing and tracing your own cross-section (in a full window too), your own
   function, the Vase, Section, Overhangs and Print layout views, Spin and Watch it print, the side and

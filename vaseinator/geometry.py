@@ -54,6 +54,15 @@ HEAD_SCALED = ("height", "eye_width", "eye_height", "eye_apart", "eye_up", "nose
                "nose_depth", "nose_up", "mouth_width", "mouth_height", "mouth_up", "mouth_smile", "strap_up")
 
 
+def require_exportable(design):
+    """One export gate for desktop and browser, including lids."""
+    if design.errors:
+        raise ValueError("; ".join(design.errors))
+    if not design.closed:
+        raise ValueError("The mesh is not closed. Please report this design before printing it.")
+    return design
+
+
 # ===================================================================== meshes
 def grid_side(z, theta, R):
     """The wall from a grid: rows of radii at shared angles.

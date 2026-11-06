@@ -404,3 +404,10 @@ dialog.full canvas { flex: 1; width: 100%; min-height: 0; border-radius: 8px; to
   header { flex-wrap: wrap; }
   .menubar { order: 3; width: 100%; margin-left: 0; }
 }
+
+.library { width: min(960px, 92vw); max-height: 85vh; overflow: auto; }
+.library label { display: inline-flex; gap: .35em; margin: .4em; }
+.library button { margin: .25em; }
+.library-entry { display: flex; flex-wrap: wrap; align-items: center; gap: .5em; padding: .5em; border-bottom: 1px solid #8885; }
+.library-entry img { width: 65px; height: 65px; }
+.library-entry span { flex: 1; min-width: 150px; }

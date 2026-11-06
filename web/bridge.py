@@ -21,7 +21,7 @@ from vaseinator import __version__, sections
 from vaseinator.choices import (COLOURS, MANY_COLOURS, NO_PATTERN, PATTERNS, SHAPES_FROM_ABOVE, TISSUE_HOLES, pattern_of,
                                 twist_words)
 from vaseinator.expr import EXAMPLES
-from vaseinator.geometry import TOLERANCE, VaseDesign, fit_head
+from vaseinator.geometry import TOLERANCE, VaseDesign, fit_head, require_exportable
 from vaseinator.lid import Lid
 from vaseinator.params import (CIRCLE, DRAWN, EVENLY, FAKE_VASE, FILE_FORMAT, FILE_VERSION, ONE_COLOUR, OWN,
                                OWN_PROFILE, POLYGON, REAL_VASE, SAME, TISSUE_OVAL, TISSUE_ROUND, VaseParams)
@@ -29,6 +29,7 @@ from vaseinator.presets import GALLERY, PRINTER_KEYS, gallery_design, plain_desi
 from vaseinator.report import ABOUT, DRAWING_HELP, PRINTING_HELP, function_help, info_html, lid_steps, print_steps
 from vaseinator.settings import COLOUR_STYLES, LIVE_KEYS, REAL_COLOUR_STYLES, SPEC, TEXT_KEYS, change, wanted
 from vaseinator.shapes import PALETTES, PROFILES, SHAPE_LABELS, pchip, shape_table
+from vaseinator.workspace import Workspace, locked_surprise, comparison, calibration_parts, CALIBRATION_HELP
 from vaseinator.stl import write_stl
 from vaseinator.threemf import write_3mf
 
@@ -137,8 +138,8 @@ def design_of(title: str, keep: str) -> str:
     return _dump(plain_design(k) if title == "Plain cylinder" else gallery_design(title, keep=k))
 
 
-def surprise_me(keep: str, seed: int) -> str:
-    return _dump(surprise(_params(keep), int(seed)))
+def surprise_me(keep: str, seed: int, locks: str = "[]") -> str:
+    return _dump(locked_surprise(_params(keep), int(seed), json.loads(locks)))
 
 
 def fit(text: str, head_mm: float) -> str:
@@ -235,8 +236,7 @@ def export_3mf(text: str):
     Returns (the file, the steps to print it, as HTML)."""
     p = _params(text)
     d = VaseDesign(p)
-    if d.errors:
-        raise ValueError("; ".join(d.errors))
+    require_exportable(d)
     colors = d.p.colors()
     parts = d.export_parts()
     base = _name(p)
@@ -248,7 +248,7 @@ def export_3mf(text: str):
         data = fh.read()
     steps = print_steps(d, f"{base}.3mf", len(parts))
     steps = re.sub(r"^<p>Saved .*?</p>", "", steps, flags=re.S)        # saved by the button above the steps
-    return data, steps.replace(" (the button below, or File ▸ Import)", " (File ▸ Import)")
+    return data, steps.replace(" (the button below, or File â–¸ Import)", " (File â–¸ Import)")
 
 
 def export_lid(text: str):
@@ -256,25 +256,22 @@ def export_lid(text: str):
     Returns (the file, the steps to print it and put it on, as HTML)."""
     p = _params(text)
     d = VaseDesign(p)
-    if d.errors:
-        raise ValueError("; ".join(d.errors))
+    require_exportable(d)
     lid = Lid(d)
-    if lid.errors:
-        raise ValueError(" ".join(lid.errors))
+    require_exportable(lid)
     base = _name(p) + " lid"
     path = os.path.join(tempfile.gettempdir(), "lid.3mf")
     write_3mf(path, base, [(base, lid.verts, lid.faces, 1, d.p.colors()[1])], (p.bed_x / 2.0, p.bed_y / 2.0, 0.0))
     with open(path, "rb") as fh:
         data = fh.read()
     steps = re.sub(r"^<p>Saved .*?</p>", "", lid_steps(lid, f"{base}.3mf"), flags=re.S)
-    return data, steps.replace(" (the button below, or File ▸ Import)", " (File ▸ Import)")
+    return data, steps.replace(" (the button below, or File â–¸ Import)", " (File â–¸ Import)")
 
 
 def export_stl(text: str) -> bytes:
     p = _params(text)
     d = VaseDesign(p)
-    if d.errors:
-        raise ValueError("; ".join(d.errors))
+    require_exportable(d)
     path = os.path.join(tempfile.gettempdir(), "vase.stl")
     write_stl(path, *d.export_mesh(), _name(p))
     with open(path, "rb") as fh:
@@ -292,3 +289,19 @@ def open_vase(text: str) -> str:
     if data.get("format") != FILE_FORMAT:
         raise ValueError("That is not a Vaseinator design file.")
     return _dump(VaseParams.from_dict(data.get("params", {})))
+
+
+def workspace_action(state: str, text: str, op: str, payload: str = "{}") -> str:
+    return json.dumps(Workspace(json.loads(state) if state else None).command(op, _params(text), json.loads(payload)))
+
+
+def compare_design(text: str) -> str:
+    return json.dumps(comparison(VaseDesign(_params(text))))
+
+
+def export_calibration(text: str):
+    p = _params(text)
+    path = os.path.join(tempfile.gettempdir(), "calibration.3mf")
+    write_3mf(path, "Clearance samples", calibration_parts(), (p.bed_x/2, p.bed_y/2, 0))
+    with open(path, "rb") as fh:
+        return fh.read(), "<p>" + CALIBRATION_HELP + "</p>"
