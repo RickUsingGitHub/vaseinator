@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import json
 import os
 import random
 import sys
@@ -19,9 +20,11 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox,
                                QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
 from . import sections, slicers
+from .workspace import Workspace, locked_surprise
+from .design_tools import DesignTools, show_comparison, save_calibration
 from .curves import CurveEditor
 from .expr import EXAMPLES
-from .geometry import HEAD_SCALED, VaseDesign, duration, fit_head
+from .geometry import HEAD_SCALED, VaseDesign, duration, fit_head, require_exportable
 from .outline_editor import CLOSE_UP_FROM, OutlineEditor, OutlineWindow
 from .params import (DRAWN, FILAMENTS, ONE_COLOUR, OWN_PROFILE, POLYGON, REAL_VASE, VaseParams, colour_style_of,
                      load_design, save_design)
@@ -194,6 +197,12 @@ class MainWindow(QMainWindow):
                         scale=1.3 if self.settings.value("big_text", False, type=bool) else 1.0)
         self.simple_mode = self.settings.value("simple_mode", True, type=bool)
         self.params = self._fresh_params()
+        try:
+            saved = self.settings.value("workspace", "")
+            self.workspace = Workspace(json.loads(saved) if saved else None)
+        except (ValueError, TypeError):
+            self.settings.setValue("workspace_unreadable_backup", saved)
+            self.workspace = Workspace()
         self.design: VaseDesign | None = None
         self.current_file = None
         self.view = VASE
@@ -879,6 +888,9 @@ class MainWindow(QMainWindow):
             em.addAction(a) if a is not None else em.addSeparator()
         dm = mb.addMenu("&Designs")
         dm.addActions(self.gallery_menu.actions())
+        dm.addSeparator()
+        dm.addAction(act("Library, profiles and Surprise locks…", lambda: DesignTools(self).exec()))
+        fm.addAction(act("Save clearance samples…", lambda: save_calibration(self)))
         vm = mb.addMenu("&View")
         self.view_actions = []
         for i, name in enumerate(VIEW_NAMES):
@@ -901,6 +913,7 @@ class MainWindow(QMainWindow):
         a.triggered.connect(lambda: self.show_view(self.view))
         vm.addAction(a)
         vm.addSeparator()
+        vm.addAction(act("Compare original and softened…", lambda: show_comparison(self)))
         vm.addAction(self.a_big)
         vm.addAction(self.a_light)
         hm = mb.addMenu("&Help")
@@ -1068,6 +1081,8 @@ class MainWindow(QMainWindow):
     def _on_name(self, text):
         self.params.name = text.strip() or "vase"
         self._dirty = True
+        self.workspace.add("recovery", self.params)
+        self._save_workspace()
         self._update_title()
 
     def _update_title(self):
@@ -1078,11 +1093,17 @@ class MainWindow(QMainWindow):
     # ======================================================= undo / redo
     def _remember(self):
         d = self.params.to_dict()
+        if self.history:
+            self.workspace.add("recovery", self.params)
+            self._save_workspace()
         if not self.history or self.history[-1] != d:
             self.history.append(d)
             del self.history[:-200]
             self.future.clear()
         self._update_undo()
+
+    def _save_workspace(self):
+        self.settings.setValue("workspace", self.workspace.dumps())
 
     def _update_undo(self):
         if hasattr(self, "a_undo"):
@@ -1122,7 +1143,7 @@ class MainWindow(QMainWindow):
     def surprise_me(self, seed=None):
         self._flush()
         seed = random.randint(1, 999_999) if seed is None or seed is False else int(seed)
-        self.params = surprise(self.params, seed)
+        self.params = locked_surprise(self.params, seed, self.workspace.data["locks"])
         self._dirty = True
         self._refresh_widgets()
         self.regenerate()
@@ -1424,9 +1445,10 @@ class MainWindow(QMainWindow):
         if d is None or {**d.asked.to_dict(), "name": ""} != {**self.params.to_dict(), "name": ""}:
             QMessageBox.warning(self, "Nothing to export", "The current settings do not make a vase.")
             return None
-        if not d.closed:
-            QMessageBox.warning(self, "Not exported", "The mesh is not closed, so it would not print as one "
-                                "watertight wall. Please report this design.")
+        try:
+            require_exportable(d)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Not exported", str(exc))
             return None
         return d
 
@@ -1540,8 +1562,10 @@ class MainWindow(QMainWindow):
         if d is None:
             return
         lid = Lid(d)
-        if lid.errors:
-            QMessageBox.warning(self, "No lid", " ".join(lid.errors))
+        try:
+            require_exportable(lid)
+        except ValueError as exc:
+            QMessageBox.warning(self, "No lid", str(exc))
             return
         base = self._safe_name() + " lid"
         path, _ = QFileDialog.getSaveFileName(self, "Save the lid for printing",
@@ -1636,6 +1660,8 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard():
             ev.ignore()
             return
+        self.workspace.add("recovery", self.params)
+        self._save_workspace()
         self.settings.setValue("geometry", self.saveGeometry())
         super().closeEvent(ev)
 

@@ -6,6 +6,7 @@ import { CurveEditor } from "./curves.js";
 import { OutlineEditor } from "./outline.js";
 import { drawSide, drawTop } from "./plots.js";
 import { View } from "./view.js";
+import { libraryDialog } from "./library.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -33,7 +34,11 @@ class Python {
       if (ok) w.resolve(result);
       else w.reject(new Error(lastLine(error)));
     };
-    this.worker.onerror = (event) => failed(event.message || "Python stopped");
+    this.worker.onerror = (event) => {
+      for (const w of this.waiting.values()) w.reject(new Error(event.message || "Python stopped"));
+      this.waiting.clear();
+      failed(event.message || "Python stopped");
+    };
   }
 
   call(name, ...args) {
@@ -58,12 +63,23 @@ const helper = new Python();
 let C = null;                 // the settings, choices, constants and help, from Python
 let K = null;                 // C.constants
 let params = null;            // the design's settings
+let libraryState = store.get("library");
+let recoveryTimer = 0;
 let meta = null;              // what the last build says about it
 let shown = new Set();        // the Advanced settings shown for it
 const undoStack = [];
 const redoStack = [];
 let liveFrom = null;          // the settings before a drag began, for Undo
 let queue = Promise.resolve();
+let pendingText = null;
+function flushText() {
+  if (pendingText) pendingText();
+}
+function enqueue(work) {
+  const result = queue.then(work);
+  queue = result.catch((err) => showProblem(err.message));
+  return queue;
+}
 
 function pushUndo(snapshot) {
   undoStack.push(snapshot);
@@ -86,16 +102,18 @@ function needsNormal(p) {
   return p.holes !== 0 || p.open_bottom || p.around < 360 || p.eyes !== 0 || p.mouth !== 0 || p.straps || p.box;
 }
 
-function change(updates) {
+function change(updates) { return enqueue(() => changeNow(updates)); }
+function changeNow(updates) {
   // several settings at once, as a picture in Simple mode sets them
   if (!C) return;
   pushUndo(JSON.stringify(params));
-  Object.assign(params, updates);
+  Object.assign(params, typeof updates === "function" ? updates(params) : updates);
   if (params.vase_mode === K.REAL_VASE && needsNormal(params)) params.vase_mode = K.FAKE_VASE;
   settled({});
 }
 
-function commit(key, value, live = false) {
+function commit(key, value, live = false) { return enqueue(() => commitNow(key, value, live)); }
+async function commitNow(key, value, live = false) {
   // one setting, as the desktop app's panel changes it: Python applies the app's own rules
   if (!C) return Promise.resolve();
   if (live) {
@@ -105,7 +123,7 @@ function commit(key, value, live = false) {
     rebuild({ live: true });
     return Promise.resolve();
   }
-  queue = queue.then(async () => {
+  {
     const before = liveFrom !== null ? liveFrom : JSON.stringify(params);
     liveFrom = null;
     try {
@@ -118,16 +136,21 @@ function commit(key, value, live = false) {
     } catch (err) {
       showProblem(err.message);
     }
-  });
-  return queue;
+  }
 }
 
 function settled({ refit = false, known = false }) {
   store.set("design", params);
+  rememberPrinter();
+  clearTimeout(recoveryTimer);
+  const snapshot = JSON.stringify(params);
+  recoveryTimer = setTimeout(() => enqueue(() => libraryWork("recover", {}, snapshot)), 1500);
   refreshSimple();
   refreshAdvanced();
   if (!known) {
-    helper.call("shown", JSON.stringify(params)).then((keys) => {
+    const snapshot = JSON.stringify(params);
+    helper.call("shown", snapshot).then((keys) => {
+      if (JSON.stringify(params) !== snapshot) return;
       shown = new Set(JSON.parse(keys));
       refreshAdvanced();
     }).catch(() => {});
@@ -135,13 +158,15 @@ function settled({ refit = false, known = false }) {
   rebuild({ refit });
 }
 
-function replace(next, refit = true) {
+function replace(next, refit = true) { return enqueue(() => replaceNow(next, refit)); }
+function replaceNow(next, refit = true) {
   pushUndo(JSON.stringify(params));
   params = next;
   settled({ refit });
 }
 
-function step(from, to) {
+function step(from, to) { return enqueue(() => stepNow(from, to)); }
+function stepNow(from, to) {
   if (!from.length) return;
   to.push(JSON.stringify(params));
   params = JSON.parse(from.pop());
@@ -410,10 +435,10 @@ function buildSimple() {
   tiles($("above"), C.shapes.map((s) => ({ label: s.name, icon: aboveIcon(s.outline) })),
     (k) => change({ shape2: K.SAME, turn1: 0, ...C.shapes[k].settings }));
   tiles($("side"), C.profiles.map((s) => ({ label: s.name, icon: sideIcon(s.widths), tip: s.full })),
-    (k) => {
+    (k) => change(() => {
       const w = widest();
-      change({ profile: k, silhouette: C.profiles[k].points.map(([h, f]) => [h, Math.round(f * w * 100) / 100]) });
-    });
+      return { profile: k, silhouette: C.profiles[k].points.map(([h, f]) => [h, Math.round(f * w * 100) / 100]) };
+    }));
   tiles($("pattern"), C.patterns.map((s) => ({ label: s.name, icon: patternIcon(s.name) })),
     (k) => change({ ...C.no_pattern, ...C.patterns[k].settings }));
   const colourItems = C.colours.map((c) => ({ label: c.name, icon: swatch([c.colour]) }))
@@ -450,16 +475,15 @@ function buildSimple() {
     $("twistwords").textContent = twistWords(15 * e.target.value);
   });
   $("twist").addEventListener("change", (e) => {
-    const updates = { twist: 15 * Number(e.target.value) };
-    if (params.twist_style === K.OWN) updates.twist_style = K.EVENLY;
-    change(updates);
+    const twist = 15 * Number(e.target.value);
+    change((p) => ({twist, ...(p.twist_style === K.OWN ? {twist_style: K.EVENLY} : {})}));
   });
   for (const input of document.querySelectorAll("#printer input")) {
     input.addEventListener("change", () => {
       const v = parseFloat(input.value);
       if (!(v > 0)) return;
       change({ [input.dataset.key]: input.dataset.key === "walls" ? Math.round(v) : v });
-      rememberPrinter();
+      // settled() persists the final queued settings.
     });
   }
   $("drawown").addEventListener("click", async () => {
@@ -472,11 +496,11 @@ function rememberPrinter() {
   store.set("printer", Object.fromEntries(C.printer_keys.map((k) => [k, params[k]])));
 }
 
-async function fitHead(cm) {
+async function fitHead(cm) { return enqueue(async () => {
   await withBusy("Fitting it to the head…", async () =>
-    replace(JSON.parse(await helper.call("fit", JSON.stringify(params), cm * 10)), false));
+    replaceNow(JSON.parse(await helper.call("fit", JSON.stringify(params), cm * 10)), false));
   status(`Sized for a head ${cm} cm round — Undo to go back`);
-}
+}); }
 
 // ================================================================== Advanced: every setting
 const widgets = new Map();    // key -> {rows: [elements], set(p), input}
@@ -656,7 +680,13 @@ function makeRow(row, rowsBox) {
     let timer = 0;
     text.addEventListener("input", () => {
       clearTimeout(timer);
-      timer = setTimeout(() => commit(key, text.value), 600);
+      const value = text.value;
+      pendingText = () => {
+        clearTimeout(timer);
+        pendingText = null;
+        commit(key, value);
+      };
+      timer = setTimeout(flushText, 600);
     });
     examples.addEventListener("change", () => {
       if (examples.value) setFormula(examples.value);
@@ -715,11 +745,12 @@ function startFromMenu(k) {
   return start;
 }
 
-function useOutline(k, points, repeat) {
+function useOutline(k, points, repeat) { return enqueue(() => useOutlineNow(k, points, repeat)); }
+function useOutlineNow(k, points, repeat) {
   // start drawn outline k again from given control points
   liveFrom = JSON.stringify(params);
   params[`repeat${k}`] = repeat;
-  return commit(`drawn${k}`, points);
+  return commitNow(`drawn${k}`, points);
 }
 
 let traceFor = 1;
@@ -729,7 +760,8 @@ function tracePicture(k) {
 }
 
 async function traceFile(file) {
-  await withBusy("Tracing the picture…", async () => {
+  const target = traceFor;
+  return enqueue(() => withBusy("Tracing the picture…", async () => {
     const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, 1080 / Math.max(bitmap.width, bitmap.height));
     const w = Math.max(Math.round(bitmap.width * scale), 1);
@@ -741,12 +773,14 @@ async function traceFile(file) {
     let text = "";
     for (let i = 0; i < pixels.length; i += 0x8000) text += String.fromCharCode(...pixels.subarray(i, i + 0x8000));
     const pts = JSON.parse(await helper.call("trace", btoa(text), w, h));
-    await useOutline(traceFor, pts, 1);
+    bitmap.close();
+    await useOutlineNow(target, pts, 1);
     status(`Traced ${file.name}: ${pts.length} points, ${pts.filter((q) => q[2]).length} sharp corners.`);
-  }).catch(() => {});
+  }).catch(() => {}));
 }
 
 function setFormula(text) {
+  flushText();
   const w = widgets.get("expression");
   if (w && w.input) w.input.value = text;
   commit("expression", text);
@@ -878,8 +912,8 @@ function buildGallery() {
 }
 
 function chooseDesign(title) {
-  return withBusy("Getting it ready…", async () =>
-    replace(JSON.parse(await helper.call("design_of", title, JSON.stringify(params)))));
+  return enqueue(() => withBusy("Getting it ready…", async () =>
+    replaceNow(JSON.parse(await helper.call("design_of", title, JSON.stringify(params))))));
 }
 
 function openHelp(which) {
@@ -950,8 +984,45 @@ function effectiveLight() {
   return t ? t === "light" : window.matchMedia("(prefers-color-scheme: light)").matches;
 }
 
+async function libraryWork(op, payload = {}, text = JSON.stringify(params)) {
+  const result = JSON.parse(await helper.call("workspace_action", libraryState ? JSON.stringify(libraryState) : "", text, op, JSON.stringify(payload)));
+  libraryState = result.workspace;
+  // Unlike optional preferences, library failures must be visible to avoid silent data loss.
+  try { localStorage.setItem("vaseinator.library", JSON.stringify(libraryState)); }
+  catch { showProblem("The library could not be saved in this browser. Export a backup before closing the page."); }
+  if (result.params) replaceNow(result.params);
+  return result;
+}
+
+function openLibrary() {
+  libraryDialog({
+    current: () => params,
+    read: () => enqueue(() => libraryWork("read")),
+    command: (op, data) => { flushText(); return enqueue(() => libraryWork(op, data)); },
+    exportFile: () => enqueue(() => download(JSON.stringify(libraryState, null, 2), "vaseinator-library.json", "application/json")),
+    importFile: (refresh) => {
+      const input = document.createElement("input"); input.type = "file"; input.accept = ".json";
+      input.onchange = async () => { if (input.files[0]) { await enqueue(async () => libraryWork("import", JSON.parse(await input.files[0].text()))); refresh(); } };
+      input.click();
+    },
+  });
+}
+
 const actions = {
-  new: () => replace({ ...C.defaults, ...Object.fromEntries(C.printer_keys.map((k) => [k, params[k]])) }),
+  library: openLibrary,
+  compare: () => enqueue(() => withBusy("Comparing the surfaces…", async () => {
+    const data = JSON.parse(await builder.call("compare_design", JSON.stringify(params)));
+    $("helptitle").textContent = "Original and softened";
+    $("helptext").replaceChildren();
+    const text = document.createElement("p"); text.textContent = data.text;
+    const image = document.createElement("img"); image.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(data.svg); image.alt = data.text; image.style.width = "100%";
+    $("helptext").append(text, image); $("helpexamples").hidden = true; $("help").showModal();
+  })),
+  calibration: () => enqueue(() => withBusy("Making clearance samples…", async () => {
+    const {data, steps} = await builder.call("export_calibration", JSON.stringify(params));
+    offer(data, "clearance_samples.3mf", "model/3mf", "How to use the samples", steps);
+  })),
+  new: () => enqueue(() => replaceNow({ ...C.defaults, ...Object.fromEntries(C.printer_keys.map((k) => [k, params[k]])) })),
   plain: () => chooseDesign("Plain cylinder"),
   open: () => $("openfile").click(),
   savevase: async () => download(await helper.call("save_vase", JSON.stringify(params)), fileName() + ".vase", "application/json"),
@@ -974,8 +1045,8 @@ const actions = {
   picture: async () => download(await view.picture(), fileName() + "_3d.png", "image/png"),
   undo: () => step(undoStack, redoStack),
   redo: () => step(redoStack, undoStack),
-  surprise: () => withBusy("Thinking of something…", async () =>
-    replace(JSON.parse(await helper.call("surprise_me", JSON.stringify(params), Math.floor(Math.random() * 1e6))))).catch(() => {}),
+  surprise: () => enqueue(() => withBusy("Thinking of something…", async () =>
+    replaceNow(JSON.parse(await helper.call("surprise_me", JSON.stringify(params), Math.floor(Math.random() * 1e6), JSON.stringify(libraryState?.locks || []))))).catch(() => {})),
   plan: async () => {
     if (!meta) return;
     try {
@@ -1021,6 +1092,15 @@ const actions = {
   "help-about": () => openHelp("about"),
 };
 
+for (const key of ["savevase", "print", "lid", "stl", "3mf", "picture", "plan"]) {
+  const action = actions[key];
+  actions[key] = () => enqueue(action);
+}
+for (const key of Object.keys(actions)) {
+  const action = actions[key];
+  actions[key] = () => { flushText(); return action(); };
+}
+
 function closeMenus(except) {
   document.querySelectorAll(".menu[open]").forEach((m) => { if (m !== except) m.open = false; });
 }
@@ -1043,7 +1123,7 @@ function wire() {
     const file = e.target.files[0];
     e.target.value = "";
     if (!file) return;
-    await withBusy("Opening it…", async () => replace(JSON.parse(await helper.call("open_vase", await file.text())))).catch(() => {});
+    await enqueue(() => withBusy("Opening it…", async () => replaceNow(JSON.parse(await helper.call("open_vase", await file.text())))));
   });
   $("picturefile").addEventListener("change", (e) => {
     const file = e.target.files[0];
@@ -1096,7 +1176,7 @@ async function boot() {
   buildOutlineWindow();
   buildGallery();
   const printer = store.get("printer") || {};
-  params = { ...C.defaults, ...(store.get("design") || {}), ...printer };
+  params = { ...C.defaults, ...printer, ...(store.get("design") || {}) };
   $("loading").hidden = true;
   undoButtons();
   setMode(Boolean(store.get("advanced")));

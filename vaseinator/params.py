@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field, fields
 
 FILE_FORMAT = "vaseinator"
@@ -202,12 +203,16 @@ class VaseParams:
 
     @classmethod
     def from_dict(cls, d: dict) -> "VaseParams":
+        if not isinstance(d, dict):
+            raise ValueError("Design settings must be an object.")
         p = cls()
         fresh = cls()
         for f in fields(cls):
             if f.name not in d:
                 continue
             cur, v = getattr(p, f.name), d[f.name]
+            if isinstance(v, float) and not math.isfinite(v):
+                raise ValueError(f"{f.name} must be a finite number.")
             try:
                 if isinstance(cur, bool):
                     v = bool(v)
@@ -221,8 +226,10 @@ class VaseParams:
                         continue
                 else:
                     v = str(v)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 continue
+            if isinstance(v, float) and not math.isfinite(v):
+                raise ValueError(f"{f.name} must be a finite number.")
             setattr(p, f.name, v)
         allowed = {"shape1": SHAPES, "shape2": (SAME,) + SHAPES,
                    "morph": (EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN),
@@ -297,7 +304,10 @@ def clean_curve(points):
     Returns None if there is nothing usable.
     """
     try:
-        pts = sorted((min(max(float(h), 0.0), 1.0), float(v)) for h, v in points)
+        raw = [(float(h), float(v)) for h, v in points]
+        if not all(math.isfinite(h) and math.isfinite(v) for h, v in raw):
+            return None
+        pts = sorted((min(max(h, 0.0), 1.0), v) for h, v in raw)
     except (TypeError, ValueError):
         return None
     out = []
