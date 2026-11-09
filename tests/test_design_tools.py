@@ -48,8 +48,20 @@ class DesktopToolsTests(unittest.TestCase):
             )
             profile = win.workspace.data["profiles"][0]
             win.params.line_width = 0.4
+            win._remember()                                      # as the panel records a change
             dialog.run("restore", dict(category="profiles", id=profile["id"]))
             self.assertEqual(win.params.line_width, 0.8)
+            # kept for New and the next start, as a line width typed in the panel is
+            self.assertEqual(win._fresh_params().line_width, 0.8)
+            win.undo()
+            self.assertEqual(win.params.line_width, 0.4)       # one step back, as any change
+            win.redo()
+            # renaming, a letter at a time, renames the design's one recovery place, pushing nothing out
+            kept = len(win.workspace.data["recovery"])
+            for n in range(1, 25):
+                win._on_name("a long name for a vase"[:n])
+            self.assertEqual(len(win.workspace.data["recovery"]), kept)
+            self.assertEqual(win.workspace.data["recovery"][-1]["name"], "a long name for a vase")
             win.current_file = "old.vase"
             dialog.run("restore", dict(category="designs", id=entry["id"]))
             self.assertIsNone(win.current_file)

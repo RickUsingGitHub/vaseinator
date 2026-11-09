@@ -1134,6 +1134,11 @@ class MainWindow(QMainWindow):
             self.a_undo.setEnabled(len(self.history) > 1)
             self.a_redo.setEnabled(bool(self.future))
 
+    def _remember_printer(self):
+        """Keep every printer setting for New and the next start, as changing one in the panel keeps it."""
+        for key in REMEMBERED:
+            self.settings.setValue(f"default_{key}", float(getattr(self.params, key)))
+
     def _restore(self, d):
         self.params = VaseParams.from_dict(d)
         self._dirty = True

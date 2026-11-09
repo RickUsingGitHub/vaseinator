@@ -106,6 +106,42 @@ class WorkspaceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             Workspace({"format": "other"})
 
+    def test_malformed_libraries_are_reported(self):
+        good = Workspace().data
+        p = plain_design().to_dict()
+        for bad in (
+            {**good, "locks": None},
+            {**good, "locks": [[1]]},
+            {**good, "profiles": [{"params": p, "kind": []}]},
+            {**good, "designs": [{"params": p, "name": {}}]},
+            {**good, "designs": [{"params": p, "favorite": "yes"}]},
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                Workspace(bad)
+        # missing or empty fields are fine: they take their usual values
+        w = Workspace({**good, "designs": [{"params": p, "id": None, "name": None}]})
+        self.assertEqual(w.data["designs"][0]["name"], "plain_cylinder")
+        for payload in ({"locks": None}, {"locks": [["Colours"]]}):
+            with self.assertRaises(ValueError):
+                w.command("locks", plain_design(), payload)
+        with self.assertRaises(ValueError):
+            w.add("profiles", plain_design(), kind="nozzle")
+        # and the browser reports them the same way
+        with self.assertRaises(ValueError):
+            bridge.workspace_action("", json.dumps(p), "import", json.dumps({**good, "locks": None}))
+
+    def test_renaming_keeps_one_recovery_place(self):
+        w = Workspace()
+        first = VaseParams(height=120)
+        w.add("recovery", first)
+        q = VaseParams(height=150)
+        for n in range(1, 40):                       # typing a long name, a letter at a time
+            q = q.copy()
+            q.name = "a long name for a vase"[:n]
+            w.add("recovery", q)
+        self.assertEqual([e["params"]["height"] for e in w.data["recovery"]], [120, 150])
+        self.assertEqual(w.data["recovery"][-1]["name"], "a long name for a vase")
+
     def test_comparison_and_calibration(self):
         p = plain_design()
         p.facet_size = 2

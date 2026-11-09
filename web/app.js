@@ -1004,11 +1004,19 @@ function effectiveLight() {
 }
 
 async function libraryWork(op, payload = {}, text = JSON.stringify(params)) {
-  const result = JSON.parse(await helper.call("workspace_action", libraryState ? JSON.stringify(libraryState) : "", text, op, JSON.stringify(payload)));
-  libraryState = result.workspace;
-  // Unlike optional preferences, library failures must be visible to avoid silent data loss.
-  try { localStorage.setItem("vaseinator.library", JSON.stringify(libraryState)); }
-  catch { showProblem("The library could not be saved in this browser. Export a backup before closing the page."); }
+  // Every tab of this site shares the one library: each change is made, one tab at a time, to the library
+  // as last saved - not to this tab's own copy, which would undo what another tab saved meanwhile.
+  const work = async () => {
+    const latest = store.get("library");
+    if (latest) libraryState = latest;
+    const result = JSON.parse(await helper.call("workspace_action", libraryState ? JSON.stringify(libraryState) : "", text, op, JSON.stringify(payload)));
+    libraryState = result.workspace;
+    // Unlike optional preferences, library failures must be visible to avoid silent data loss.
+    try { localStorage.setItem("vaseinator.library", JSON.stringify(libraryState)); }
+    catch { showProblem("The library could not be saved in this browser. Export a backup before closing the page."); }
+    return result;
+  };
+  const result = navigator.locks ? await navigator.locks.request("vaseinator-library", work) : await work();
   if (result.params) replaceNow(result.params);
   return result;
 }

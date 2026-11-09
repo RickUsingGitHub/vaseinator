@@ -44,6 +44,7 @@ PROFILE_KEYS = {
     "printer": tuple(k for k in PRINTER_KEYS if k not in MATERIAL_KEYS),
     "material": MATERIAL_KEYS,
 }
+_ENTRY_FIELDS = {"id": (str, int), "name": str, "created": str, "favorite": bool, "kind": str}
 
 
 def locked_surprise(p, seed, locks):
@@ -101,12 +102,19 @@ class Workspace:
                         entry.get("params"), dict
                     ):
                         raise ValueError("Invalid library entry.")
+                    # every field a library file may hold is checked here, so a damaged file is reported
+                    # as one, not met later as an error in the middle of the code
+                    for field, types in _ENTRY_FIELDS.items():
+                        if entry.get(field) is not None and not isinstance(entry[field], types):
+                            raise ValueError(
+                                f"Invalid library entry: its {field} is the wrong kind of value."
+                            )
                     p = VaseParams.from_dict(entry["params"])
                     self.data[kind].append(
                         {
                             "id": str(entry.get("id") or uuid.uuid4()),
-                            "name": str(entry.get("name", p.name))[:120],
-                            "created": str(entry.get("created", "")),
+                            "name": str(entry.get("name") or p.name)[:120],
+                            "created": str(entry.get("created") or ""),
                             "favorite": bool(entry.get("favorite", False)),
                             "kind": entry.get("kind", "printer")
                             if entry.get("kind") in PROFILE_KEYS
@@ -114,7 +122,10 @@ class Workspace:
                             "params": p.to_dict(),
                         }
                     )
-            self.data["locks"] = [k for k in data.get("locks", []) if k in LOCKS]
+            locks = data.get("locks", [])
+            if not isinstance(locks, list) or not all(isinstance(k, str) for k in locks):
+                raise ValueError("Invalid library file: its locks must be a list of names.")
+            self.data["locks"] = [k for k in locks if k in LOCKS]
             self.data["recovery"] = self.data["recovery"][-30:]
 
     def entry(self, category, ident):
@@ -127,12 +138,18 @@ class Workspace:
             raise ValueError(
                 "This category is full. Export a backup and remove an entry first."
             )
-        if (
-            category == "recovery"
-            and self.data[category]
-            and self.data[category][-1]["params"] == p.to_dict()
-        ):
-            return
+        if category == "profiles" and kind not in PROFILE_KEYS:
+            raise ValueError("A profile is for a printer or a material.")
+        if category == "recovery" and self.data[category]:
+            last = self.data[category][-1]
+            if last["params"] == p.to_dict():
+                return
+            if {**last["params"], "name": ""} == {**p.to_dict(), "name": ""}:
+                # only renamed: the same design, so it keeps one place - typing a long name mustn't push
+                # every earlier design out of the 30 kept
+                last.update(name=(name or p.name).strip()[:120] or "Untitled", params=p.to_dict(),
+                            created=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+                return last
         entry = dict(
             id=str(uuid.uuid4()),
             name=(name or p.name).strip()[:120] or "Untitled",
@@ -181,7 +198,10 @@ class Workspace:
         payload = payload or {}
         result = None
         if op == "locks":
-            self.data["locks"] = [k for k in payload["locks"] if k in LOCKS]
+            locks = payload.get("locks")
+            if not isinstance(locks, list) or not all(isinstance(k, str) for k in locks):
+                raise ValueError("The locks must be a list of names.")
+            self.data["locks"] = [k for k in locks if k in LOCKS]
         elif op == "save":
             self.add(
                 payload["category"],

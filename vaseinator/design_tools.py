@@ -208,6 +208,8 @@ class DesignTools(QDialog):
                 if payload.get("category") != "profiles":
                     self.win.current_file = None
                 self.win._restore(result["params"])
+                if payload.get("category") == "profiles":
+                    self.win._remember_printer()      # kept for New and next time, as editing them keeps them
             self.win._save_workspace()
             self.refresh()
         except (ValueError, KeyError, StopIteration) as exc:
