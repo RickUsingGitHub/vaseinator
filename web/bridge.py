@@ -248,7 +248,7 @@ def export_3mf(text: str):
         data = fh.read()
     steps = print_steps(d, f"{base}.3mf", len(parts))
     steps = re.sub(r"^<p>Saved .*?</p>", "", steps, flags=re.S)        # saved by the button above the steps
-    return data, steps.replace(" (the button below, or File â–¸ Import)", " (File â–¸ Import)")
+    return data, steps.replace(" (the button below, or File ▸ Import)", " (File ▸ Import)")
 
 
 def export_lid(text: str):
@@ -265,7 +265,7 @@ def export_lid(text: str):
     with open(path, "rb") as fh:
         data = fh.read()
     steps = re.sub(r"^<p>Saved .*?</p>", "", lid_steps(lid, f"{base}.3mf"), flags=re.S)
-    return data, steps.replace(" (the button below, or File â–¸ Import)", " (File â–¸ Import)")
+    return data, steps.replace(" (the button below, or File ▸ Import)", " (File ▸ Import)")
 
 
 def export_stl(text: str) -> bytes:

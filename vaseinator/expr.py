@@ -16,7 +16,8 @@ MAX_LENGTH = 800
 
 VARIABLES = {
     "theta": "angle round the vase, 0 to 2·pi (radians)",
-    "phi": "the same angle, turning with the twist",
+    "phi": "the same angle, turning with the twist - or, with Evenly round the wall on, how far along the wall: "
+           "0 to 2·pi all the way round, so phi/tau is the share of the way round",
     "z": "height above the bed (mm)",
     "h": "height as a share of the vase: 0 at the bottom, 1 at the top",
     "r": "the radius so far, before this function (mm)",

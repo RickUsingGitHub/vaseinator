@@ -46,6 +46,8 @@ KOFI_URL = "https://ko-fi.com/rickapps"
 VASE, SECTION, OVERHANGS, PRINT_LAYOUT = 0, 1, 2, 3
 VIEW_NAMES = ("Vase", "Section", "Overhangs", "Print layout")
 SPIN_SPEED = 30.0          # degrees a second, on the turntable
+TYPING_PAUSE_MS = 800      # your own function: a quick look once the typing pauses this long ...
+TYPING_DONE_MS = 3000      # ... and the whole vase, which can take seconds, once it has stopped this long
 
 
 
@@ -129,6 +131,21 @@ def make_app_icon() -> QIcon:
         if os.path.exists(cand):
             return QIcon(cand)
     return QIcon()
+
+
+class FunctionEdit(QPlainTextEdit):
+    """Your own function's box. It says when the typing is done: on leaving the box, or Ctrl+Enter."""
+    done = Signal()
+
+    def focusOutEvent(self, e):
+        super().focusOutEvent(e)
+        self.done.emit()
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter) and e.modifiers() & Qt.ControlModifier:
+            self.done.emit()
+            return
+        super().keyPressEvent(e)
 
 
 class FunctionHelp(QDialog):
@@ -608,14 +625,19 @@ class MainWindow(QMainWindow):
             vl = QVBoxLayout(box)
             vl.setContentsMargins(0, 0, 0, 0)
             vl.setSpacing(4)
-            t = QPlainTextEdit(val)
+            t = FunctionEdit(val)
             mono = QFontDatabase.systemFont(QFontDatabase.FixedFont)
             t.setFont(mono)
             t.setPlaceholderText("e.g. 1.5 * sin(6*theta + 4*pi*h)")
             t.setTabChangesFocus(True)
             t.setFixedHeight(54)
             t.textChanged.connect(lambda k=key, tt=t: self._on_param(k, tt.toPlainText()))
+            t.done.connect(lambda: self.regen_timer.isActive() and self._flush())
             self.widgets[key] = t
+            note = QLabel(f"A quick look when you pause typing; the whole vase {TYPING_DONE_MS // 1000} s after you "
+                          "stop, or when you leave the box (Ctrl+Enter: now).")
+            note.setWordWrap(True)
+            note.setStyleSheet("color: #9aa3ad;")
             ex = QToolButton()
             ex.setText("Examples")
             ex.setPopupMode(QToolButton.InstantPopup)
@@ -635,6 +657,7 @@ class MainWindow(QMainWindow):
             buttons.addWidget(helpb)
             buttons.addStretch(1)
             vl.addWidget(t)
+            vl.addWidget(note)
             vl.addLayout(buttons)
             return box
         else:
@@ -1068,8 +1091,9 @@ class MainWindow(QMainWindow):
 
     def _schedule(self, live=False, text=False):
         """Rebuild after a pause; while something is being dragged, quick rough builds follow the hand."""
-        if text:
-            self.regen_timer.start(600)
+        if text:                                  # typing: a quick look at each pause, the whole vase once it's done
+            self.draft_timer.start(TYPING_PAUSE_MS)
+            self.regen_timer.start(TYPING_DONE_MS)
             return
         slow = self._last_full_ms > 220
         if live or slow:

@@ -51,7 +51,8 @@ ready to slice.
   and a plain foot and rim.
 * **Low-poly facets**: the whole vase from flat triangles, like a cut gem, with an optional rough cut.
 * **Your own function**: type a formula in millimetres – `1.5 * sin(6*theta + 4*pi*h)` – added to the
-  radius everywhere. Variables for the angle, the angle turning with the twist, height, share of the
+  radius everywhere. Variables for the angle, the angle turning with the twist (on a box with **Evenly round
+  the wall**, counted along the wall, so patterns are even round a rectangle), height, share of the
   height and the radius so far; trig, waves, steps and smooth noise. A long formula can go over several
   lines – they are read as one, so start each new line with + - * or / – with notes after a `#`. It is
   checked and run safely: numbers, the listed variables and functions only; a mistake is pointed out by

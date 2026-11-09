@@ -514,13 +514,13 @@ m = json.loads(meta)
 assert not m["errors"] and m["head"] == 57.0 and len(pos) == len(col) == 3 * len(lean) and len(tri) % 12 == 0, m["errors"]
 assert json.loads(bridge.fit(mask, 520.0))["eye_up"] < json.loads(mask)["eye_up"]
 data, steps = bridge.export_3mf(bridge.design_of("Plain cylinder", keep))
-assert data[:2] == b"PK" and "No supports" in steps
+assert data[:2] == b"PK" and "No supports" in steps and "button below" not in steps    # no such button here
 assert json.loads(bridge.open_vase(bridge.save_vase(mask)))["name"] == "theatre_mask"
 cube = bridge.design_of("Lace Tissue Cube", keep)
 assert not json.loads(bridge.build(cube, True)[0])["errors"] and "box_corner" in json.loads(bridge.shown(cube))
 assert json.loads(bridge.apply(cube, "tissue_hole", "3"))["touched"] == ["tissue_length", "tissue_width"]
 data, steps = bridge.export_lid(cube)
-assert data[:2] == b"PK" and "latches click" in steps and "Saved" not in steps
+assert data[:2] == b"PK" and "latches click" in steps and "Saved" not in steps and "button below" not in steps
 # the Advanced panel: every setting, and the desktop app's own rules for a change
 assert [g["title"] for g in s["spec"]][0] == "Size" and "eye_tilt" in json.loads(bridge.shown(mask))
 r = json.loads(bridge.apply(keep, "twist_style", "5"))

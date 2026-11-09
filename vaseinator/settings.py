@@ -137,7 +137,7 @@ SPEC = [
         ("even_spacing", "Evenly round the wall", "bool", None, None, None, "",
          "Space the patterns by how far round the wall they are, not by the angle from the middle: on a box,\n"
          "a rectangle or an oval, the ribs and bumps are as close together along the long sides as round\n"
-         "the ends. A tissue box cover starts with it on."),
+         "the ends. A tissue box cover starts with it on. Your own function's phi counts the same way."),
         ("strength", "Strength", "choice", STRENGTHS, None, None, "", "How strong the patterns are on the way up."),
         ("strength_curve", "", "curve", dict(lo=0.0, hi=1.5, unit="×", height=100, decimals=2), None, None, "",
          "How strong the patterns are at each height (1 = as set)."),
@@ -379,7 +379,8 @@ def wanted(p, key) -> bool:
         show = patterns and twisting
     elif key == "even_spacing":
         # a round vase is as far round the wall as it is round the middle; a drawn one is laid out along it
-        show = (p.rib_count > 0 or p.bump_around > 0 or p.organic_depth > 0) and DRAWN not in (p.shape1, p.shape2) \
+        show = (p.rib_count > 0 or p.bump_around > 0 or p.organic_depth > 0 or "phi" in p.expression) \
+            and DRAWN not in (p.shape1, p.shape2) \
             and (p.box or p.shape1 != CIRCLE or p.shape2 not in (SAME, CIRCLE))
     elif key in ("strength", "fade_foot", "fade_rim"):
         show = patterns

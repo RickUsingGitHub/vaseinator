@@ -562,14 +562,26 @@ def look(t):
 
 
 def function(t):
-    """A broken function is reported, not crashed on."""
+    """Typing a function waits for a pause; a broken one is reported, not crashed on."""
     qapp, win, tmp, out, shown, check, settle, choose = t
     win.set_simple_mode(False, remember=False)
-    win.widgets["expression"].setPlainText("sin(theta")
+    box = win.widgets["expression"]
+    box.setPlainText("1.5 * sin(6*theta)")
+    check("typing a function waits: a quick look at a pause, the whole vase once the typing has stopped",
+          win.draft_timer.isActive() and win.draft_timer.interval() == appmod.TYPING_PAUSE_MS
+          and win.regen_timer.isActive() and win.regen_timer.interval() == appmod.TYPING_DONE_MS)
+    win.draft_timer.timeout.emit()
+    check("... the quick look is a draft", win.design.draft and win.design.p.expression == "1.5 * sin(6*theta)")
+    box.done.emit()                                   # leaving the box, or Ctrl+Enter
+    qapp.processEvents()
+    check("... and leaving the box builds the whole vase there and then", not win.regen_timer.isActive()
+          and not win.design.draft and win.design.p.expression == "1.5 * sin(6*theta)")
+    box.setPlainText("sin(theta")
     settle()
     check("a broken function is reported in the panel", "Your own function" in win.info.toPlainText())
-    win.widgets["expression"].setPlainText("")
+    box.setPlainText("")
     settle()
+
 
 SECTIONS = [edits, gallery, morph, views, saving, drawn, simple, holes, masks, box, look, function]
 

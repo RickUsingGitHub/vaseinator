@@ -54,14 +54,11 @@ jobs:
           $tag = "v$version"
           $hash = (Get-FileHash -Algorithm SHA256 dist/Vaseinator.exe).Hash.ToLower()
           "$hash  Vaseinator.exe" | Set-Content -Encoding utf8 dist/SHA256SUMS.txt
-          @'
-          Matching desktop and web design tools: Surprise locks, printer/material profiles, a design library with favourites and recovery, portable library backups, original/softened side comparison, and printable clearance samples.
-
-          Fixes lost browser edits, printer-setting rollback, non-finite design inputs and export validation differences.
-
-          Download Vaseinator.exe below for Windows; no Python installation is required. The app is not code-signed. The web app is at https://rickusinggithub.github.io/vaseinator/.
-
-          Library thumbnails and comparison use silhouettes/side profiles. Calibration samples test general clearances rather than replicating lid latches. Libraries are stored locally; use export/import to transfer them between desktop and web.
-          '@ | Set-Content -Encoding utf8 work-temp/release-notes.md
-          gh release create $tag dist/Vaseinator.exe dist/SHA256SUMS.txt --target $env:GITHUB_SHA --title "Vaseinator $version" --notes-file work-temp/release-notes.md --latest
+          # each release's notes are written with it, in .github/release-notes.md, and must say which version
+          # they are for - so an old release's notes are never published again
+          $notes = '.github/release-notes.md'
+          if (-not (Select-String -LiteralPath $notes -SimpleMatch "Changed in $version" -Quiet)) {
+            throw "$notes is not for ${version}: its notes need a 'Changed in $version' heading."
+          }
+          gh release create $tag dist/Vaseinator.exe dist/SHA256SUMS.txt --target $env:GITHUB_SHA --title "Vaseinator $version" --notes-file $notes --latest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

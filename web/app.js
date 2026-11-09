@@ -9,6 +9,8 @@ import { View } from "./view.js";
 import { libraryDialog } from "./library.js";
 
 const $ = (id) => document.getElementById(id);
+const TYPING_PAUSE_MS = 800;   // your own function: a quick look once the typing pauses this long ...
+const TYPING_DONE_MS = 3000;   // ... and the whole vase once it has stopped this long
 
 // what this browser remembers: the design, the printer, the mode and the look - if it may
 const store = {
@@ -676,17 +678,34 @@ function makeRow(row, rowsBox) {
     const clear = document.createElement("button");
     clear.textContent = "Clear";
     tools.append(examples, help, clear);
-    control.append(text, tools);
-    let timer = 0;
+    const note = document.createElement("p");
+    note.className = "hint";
+    note.textContent = `A quick look when you pause typing; the whole vase ${TYPING_DONE_MS / 1000} s after you stop, ` +
+      "or when you leave the box (Ctrl+Enter: now).";
+    control.append(text, note, tools);
+    // typing: a quick look at each pause, the whole vase once it's done
+    let pause = 0, stop = 0, typed = false;
+    const done = () => {
+      clearTimeout(pause);
+      clearTimeout(stop);
+      if (pendingText === done) pendingText = null;
+      if (typed) commit(key, text.value);
+      typed = false;
+    };
     text.addEventListener("input", () => {
-      clearTimeout(timer);
-      const value = text.value;
-      pendingText = () => {
-        clearTimeout(timer);
-        pendingText = null;
-        commit(key, value);
-      };
-      timer = setTimeout(flushText, 600);
+      typed = true;
+      pendingText = done;                     // saved, exported or the like before then: sent first
+      clearTimeout(pause);
+      clearTimeout(stop);
+      pause = setTimeout(() => commit(key, text.value, true), TYPING_PAUSE_MS);
+      stop = setTimeout(done, TYPING_DONE_MS);
+    });
+    text.addEventListener("blur", done);
+    text.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        done();
+      }
     });
     examples.addEventListener("change", () => {
       if (examples.value) setFormula(examples.value);
