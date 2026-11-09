@@ -96,6 +96,16 @@ EXAMPLES = [
     ("Pinch at the waist", "-0.12 * r * exp(-((h - 0.5)/0.12)**2)"),
     ("Terraces", "-0.9 * smoothstep(0.55, 1, mod(z, 9)/9)"),
 ]
+# colours by a function: the filament at each point, less one - made for four filaments
+COLOUR_EXAMPLES = [
+    ("Zigzag bands, for the Zigzag ribs", "2 + 2*tri(2*pi*z/25)"),
+    ("Spiral stripes, for the Waves winding round", "2 + 2*sin(6*theta + 4*pi*h)"),
+    ("Bands up the vase", "4 * h"),
+    ("Stripes up the sides", "2 + 2*sin(8*phi)"),
+    ("Checks (two filaments)", "0.5 + 0.5*square(8*phi)*square(2*pi*z/20)"),
+    ("Speckles", "2 + 3*noise(6*cos(theta), 6*sin(theta), z/8)"),
+]
+FORMULAS = {"expression": EXAMPLES, "colour_expression": COLOUR_EXAMPLES}    # each formula setting's examples
 
 _ALLOWED_NODES = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Call, ast.Name, ast.Load, ast.Constant,
                   ast.Compare, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod, ast.FloorDiv,

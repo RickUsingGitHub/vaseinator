@@ -91,6 +91,14 @@ vec3 gradient_colour(float phase) {
     return mix(a, b, t);
 }
 
+vec3 filament_colour(float k) {       // colours by a function: each part's filament, 0 to 3
+    vec3 c = u_gc[0];
+    for (int i = 1; i < 4; i++) {
+        if (k > float(i) - 0.5) c = u_gc[i];
+    }
+    return c;
+}
+
 vec3 heat(float a) {
     if (a < 0.0) return vec3(0.50, 0.53, 0.58);            // floors and rims: not a wall
     if (a > u_limit + 0.3) return vec3(0.92, 0.16, 0.14);  // over the limit: needs support
@@ -111,6 +119,7 @@ void main() {
     if (u_colmode == 1) col = band_colour(v_obj.z);
     else if (u_colmode == 2) col = gradient_colour(v_val.y);
     else if (u_colmode == 3) col = heat(v_val.x);
+    else if (u_colmode == 4) col = filament_colour(v_val.y);
     vec3 n = normalize(v_nrm);
     if (!gl_FrontFacing) {            // the cut face of a sectioned vase
         n = -n;

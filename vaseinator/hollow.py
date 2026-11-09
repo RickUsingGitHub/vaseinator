@@ -469,20 +469,25 @@ def _keep(F, must, tol):
     return np.array(keep)
 
 
-def simplify(z, O, I, f, swell, must=(), tol=FINE):
+def simplify(z, O, I, f, swell, must=(), tol=FINE, extra=None):
     """The pot's grid with the rows and columns left out that add nothing: each one within ``tol`` mm of the
     straight line between its kept neighbours - the outer and inner faces, how far they swell, and the hole field
     wherever a hole's edge could be near. A box's flat sides and straight walls need only a few rows and columns;
-    a pattern or a hole keeps every one it needs. Returns (z, O, I, f, swell, the kept rows), ``must`` among them."""
+    a pattern or a hole keeps every one it needs. ``extra``, if given - a list of more (K, N) fields, for colours
+    by a function - is kept as true as the rest. Returns (z, O, I, f, swell, the kept rows), ``must`` among them -
+    and the list of extra fields, if given."""
     K, N = f.shape
     near = np.maximum(f, -3.0)                    # far inside the wall, no hole edge is anywhere near
-    rows = np.concatenate([O.reshape(K, -1), I.reshape(K, -1), swell, near], axis=1)
+    more = [] if extra is None else list(extra)
+    rows = np.concatenate([O.reshape(K, -1), I.reshape(K, -1), swell, near] + more, axis=1)
     rk = _keep(rows, must, tol)
     O, I, f, swell, near = O[rk], I[rk], f[rk], swell[rk], near[rk]
+    more = [m[rk] for m in more]
     cols = np.concatenate([O.transpose(1, 0, 2).reshape(N, -1), I.transpose(1, 0, 2).reshape(N, -1), swell.T,
-                           near.T], axis=1)
+                           near.T] + [m.T for m in more], axis=1)
     ck = _keep(np.concatenate([cols, cols[:1]]), (), tol)[:-1]   # round the back to the first column again
-    return z[rk], O[:, ck], I[:, ck], f[:, ck], swell[:, ck], rk
+    out = (z[rk], O[:, ck], I[:, ck], f[:, ck], swell[:, ck], rk)
+    return out if extra is None else out + ([m[:, ck] for m in more],)
 
 
 def insert_rows(z, arrays, zs):

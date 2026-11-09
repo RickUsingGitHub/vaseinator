@@ -23,7 +23,7 @@ from vaseinator.geometry import (BOX_ROOM, BOX_TOP_ROOM, TOLERANCE, VORONOI_LONG
                                  edge_check, face_normals, fit_head, lean_angles, mesh_volume)
 from vaseinator import hollow  # noqa: E402
 from vaseinator.lid import LID_PLATE, Lid  # noqa: E402
-from vaseinator.params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, ELLIPSE, EVENLY,  # noqa: E402
+from vaseinator.params import (ALMOND_EYES, BANDS, BY_FUNCTION, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, ELLIPSE, EVENLY,  # noqa: E402
                                FAKE_VASE, FLOWER, GEAR, GRADIENT, GRILLE_MOUTH, LID_FIRM, LID_GENTLE, LID_SNUG,
                                NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN,
                                NO_TISSUE, POLYGON, RAISED_NOSE, REAL_VASE, RECTANGLE, ROUND, ROUND_EYES, SAME, SLOTS,
@@ -430,6 +430,53 @@ def test_tissue_box_covers():
         assert d.p.box and d.closed and d.worst <= limit and d.tissue, title
 
 
+def test_colours_by_a_function():
+    """A colour function picks the filament at each point: its value rounded down, less one. The pot comes as a
+    closed part per filament - the floor (and a closed top) one more, in the wall's colour where it meets them -
+    which together hold the plastic of the whole, each colour just where the formula puts it; the 3D view shows
+    those parts. A seamless vase, low-poly facets or no formula are one colour; a broken formula is reported."""
+    def coloured(p, formula, used=4):
+        p.vase_mode, p.colour_style, p.colours_used, p.colour_expression = FAKE_VASE, BY_FUNCTION, used, formula
+        return VaseDesign(p)
+
+    # bands by height on a plain box: each part just between its heights, however few rows the flat sides keep
+    box = gallery_design("Tissue Box Cover")
+    box.ring_count, box.facet_size = 0, 0.5
+    for used in (2, 4):
+        d = coloured(box.copy(), f"{used} * h", used)
+        whole = mesh_volume(*d.print_mesh())
+        parts = d.print_parts()
+        assert [fil for fil, _, _ in parts] == [1] + list(range(1, used + 1)), [fil for fil, _, _ in parts]
+        assert all(edge_check(f)[0] for _, _, f in parts)
+        assert abs(sum(mesh_volume(v, f) for _, v, f in parts) / whole - 1.0) < 1e-3
+        for fil, v, _ in parts[1:]:
+            lo, hi = (fil - 1) / used * d.H, fil / used * d.H
+            assert v[:, 2].min() > lo - 0.05 - (d.zb if fil == 1 else 0) and v[:, 2].max() < hi + 0.05, (fil, lo, hi)
+        assert d.colour_filaments() == list(range(1, used + 1)) and "Coloured by a function" in d.colour_plan()
+        assert len(d.show_fil) == len(d.show_verts) and set(d.show_fil) == set(range(1, used + 1))
+    # a texture coloured by its own terms: the Zigzag ribs, in bands that follow the zigzag, round a twisted flower
+    p = gallery_design("Lagoon Twist")
+    p.facet_size, p.expression = 0.8, "1.2 * tri(12*theta + 3*tri(2*pi*z/25))"
+    d = coloured(p, "2 + 2*tri(2*pi*z/25)")
+    parts = d.print_parts()
+    assert not d.errors and all(edge_check(f)[0] for _, _, f in parts) and d.colour_filaments() == [1, 2, 3, 4]
+    assert abs(sum(mesh_volume(v, f) for _, v, f in parts) / mesh_volume(*d.print_mesh()) - 1.0) < 3e-3
+    # and with holes: every part closed, the holes cut through them all
+    d = coloured(gallery_design("Lace Tissue Cube", keep=VaseParams(facet_size=0.8)), "1.5 + 1.5*sin(4*phi)", 3)
+    assert d.holes_open and all(edge_check(f)[0] for _, _, f in d.print_parts()) and d.colour_filaments() == [1, 2, 3]
+    # one colour where it can't be: a seamless vase, low-poly facets, no formula yet
+    p = plain(colour_style=BY_FUNCTION, colour_expression="4*h", colours_used=4, vase_mode=REAL_VASE)
+    assert VaseDesign(p).colour_parts is None and wanted(p, "colour_expression") is False
+    d = coloured(plain(facets=True), "4*h")
+    assert d.colour_parts is None and any("Low-poly" in n for n in d.notes)
+    d = coloured(plain(), "")
+    assert d.colour_parts is None and any("Type a colour function" in n for n in d.notes)
+    assert "Your colour function" in coloured(plain(), "2 * sin(theta").errors[0]
+    # choosing it starts a formula: bands up the vase
+    q = plain()
+    assert change(q, "colour_style", BY_FUNCTION)[0] == ["colour_expression"] and q.colour_expression == "3 * h"
+
+
 def test_tissue_box_lids():
     """A lid for a cover's open end, made from its design: closed, flat on the bed, the rim's shape with a pull tab,
     hooks at one end and latches at the other. On, every part of it is clear of the cover's real wall; pulled
@@ -521,6 +568,11 @@ assert not json.loads(bridge.build(cube, True)[0])["errors"] and "box_corner" in
 assert json.loads(bridge.apply(cube, "tissue_hole", "3"))["touched"] == ["tissue_length", "tissue_width"]
 data, steps = bridge.export_lid(cube)
 assert data[:2] == b"PK" and "latches click" in steps and "Saved" not in steps and "button below" not in steps
+# colours by a function: the view shows each part in its filament's colour
+two = dict(json.loads(cube), colour_style=4, colours_used=2, colour_expression="2*h", holes=0)
+col = bridge.build(json.dumps(two), True)[3]
+assert len({bytes(col[i:i + 12]) for i in range(0, len(col), 12)}) == 2
+assert "filament" in s["help"]["colour"] and s["formulas"]["colour_expression"][0][1] == "2 + 2*tri(2*pi*z/25)"
 # the Advanced panel: every setting, and the desktop app's own rules for a change
 assert [g["title"] for g in s["spec"]][0] == "Size" and "eye_tilt" in json.loads(bridge.shown(mask))
 r = json.loads(bridge.apply(keep, "twist_style", "5"))

@@ -23,7 +23,7 @@ from . import sections, slicers
 from .workspace import Workspace, locked_surprise
 from .design_tools import DesignTools, show_comparison, save_calibration
 from .curves import CurveEditor
-from .expr import EXAMPLES
+from .expr import FORMULAS
 from .geometry import HEAD_SCALED, VaseDesign, duration, fit_head, require_exportable
 from .outline_editor import CLOSE_UP_FROM, OutlineEditor, OutlineWindow
 from .params import (DRAWN, FILAMENTS, ONE_COLOUR, OWN_PROFILE, POLYGON, REAL_VASE, VaseParams, colour_style_of,
@@ -151,18 +151,18 @@ class FunctionEdit(QPlainTextEdit):
 class FunctionHelp(QDialog):
     """What a formula can use, with examples to try."""
 
-    def __init__(self, parent, insert):
+    def __init__(self, parent, insert, key="expression"):
         super().__init__(parent)
-        self.setWindowTitle("Your own function")
+        self.setWindowTitle("Your colour function" if key == "colour_expression" else "Your own function")
         self.resize(640, 560)
         text = QTextBrowser()
-        text.setHtml(function_help())
+        text.setHtml(function_help(colour=key == "colour_expression"))
         box = QVBoxLayout(self)
         box.addWidget(text)
         row = QHBoxLayout()
         row.addWidget(QLabel("Try an example:"))
         pick = ComboBox()
-        for name, formula in EXAMPLES:
+        for name, formula in FORMULAS[key]:
             pick.addItem(name, formula)
         row.addWidget(pick, 1)
         use = QPushButton("Use it")
@@ -628,7 +628,7 @@ class MainWindow(QMainWindow):
             t = FunctionEdit(val)
             mono = QFontDatabase.systemFont(QFontDatabase.FixedFont)
             t.setFont(mono)
-            t.setPlaceholderText("e.g. 1.5 * sin(6*theta + 4*pi*h)")
+            t.setPlaceholderText(f"e.g. {FORMULAS[key][0][1]}")
             t.setTabChangesFocus(True)
             t.setFixedHeight(54)
             t.textChanged.connect(lambda k=key, tt=t: self._on_param(k, tt.toPlainText()))
@@ -642,15 +642,15 @@ class MainWindow(QMainWindow):
             ex.setText("Examples")
             ex.setPopupMode(QToolButton.InstantPopup)
             m = QMenu(ex)
-            for name, formula in EXAMPLES:
+            for name, formula in FORMULAS[key]:
                 a = m.addAction(f"{name}:  {formula}")
-                a.triggered.connect(lambda _=False, f=formula: self._set_expression(f))
+                a.triggered.connect(lambda _=False, k=key, f=formula: self._set_expression(f, k))
             m.addSeparator()
-            m.addAction("Clear").triggered.connect(lambda: self._set_expression(""))
+            m.addAction("Clear").triggered.connect(lambda _=False, k=key: self._set_expression("", k))
             ex.setMenu(m)
             helpb = QToolButton()
             helpb.setText("Help…")
-            helpb.clicked.connect(self.function_help)
+            helpb.clicked.connect(lambda _=False, k=key: self.function_help(k))
             buttons = QHBoxLayout()
             buttons.setContentsMargins(0, 0, 0, 0)
             buttons.addWidget(ex)
@@ -788,11 +788,12 @@ class MainWindow(QMainWindow):
             setattr(self.params, k, v)
         self._on_param("color1", self.params.color1)
 
-    def _set_expression(self, formula):
-        self.widgets["expression"].setPlainText(formula)      # its textChanged updates the design
+    def _set_expression(self, formula, key="expression"):
+        self.widgets[key].setPlainText(formula)      # its textChanged updates the design
+        self._flush()                               # a whole formula at once: no typing to wait for
 
-    def function_help(self):
-        FunctionHelp(self, self._set_expression).exec()
+    def function_help(self, key="expression"):
+        FunctionHelp(self, lambda f: self._set_expression(f, key), key).exec()
 
     def _build_actions(self):
         st = self.style()
@@ -1017,6 +1018,8 @@ class MainWindow(QMainWindow):
             w.setValue(100.0 * v if w.suffix() == " %" else v)
         elif isinstance(w, QCheckBox):
             w.setChecked(bool(getattr(self.params, key)))
+        elif isinstance(w, QPlainTextEdit) and w.toPlainText() != getattr(self.params, key):
+            w.setPlainText(getattr(self.params, key))
         w.blockSignals(False)
 
     # ----------------------------------------------------- drawn outlines
@@ -1278,9 +1281,11 @@ class MainWindow(QMainWindow):
 
     def _show_design(self, d: VaseDesign):
         colors = d.p.colors()
-        phase = d.colour_phase(d.shell_verts[:, 2]) if d.gradient else None
-        self.viewer.set_mesh("vase", d.shell_verts, d.shell_faces, colors[d.bands[0][1]],
-                             face_vals=d.shell_lean, vert_vals=phase, flat=d.rows is not None)
+        phase = d.colour_phase(d.show_verts[:, 2]) if d.gradient else None
+        if d.show_fil is not None:                 # colours by a function: each part, in its filament
+            phase = d.show_fil - 1.0
+        self.viewer.set_mesh("vase", d.show_verts, d.show_faces, colors[d.bands[0][1]],
+                             face_vals=d.show_lean, vert_vals=phase, flat=d.rows is not None)
         self.viewer.set_section_source(d.shell_verts, d.shell_faces)
         self.viewer.set_bed(d.p.bed_x, d.p.bed_y, d.p.printer_height)
         self.plots.set_design(d, colors)
@@ -1310,7 +1315,9 @@ class MainWindow(QMainWindow):
         colors = p.colors()
         v.bands = [(z, colors[f]) for z, f in d.bands]
         v.gradient = [colors[f] for f in d.gradient_fils]
-        v.colmode = 3 if self.view == OVERHANGS else (2 if d.gradient else 1)
+        if d.show_fil is not None:
+            v.gradient = [colors[f] for f in FILAMENTS]
+        v.colmode = 3 if self.view == OVERHANGS else (4 if d.show_fil is not None else 2 if d.gradient else 1)
         v.limit = p.max_overhang
         v.look = p.look
         if self.view == OVERHANGS:

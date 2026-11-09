@@ -514,8 +514,8 @@ function widgetInput(key) {
 }
 
 function colourStyleOf(p) {
-  // a seamless vase prints one filament: no bands or stripes
-  return p.vase_mode === K.REAL_VASE && (p.colour_style === 1 || p.colour_style === 2) ? K.ONE_COLOUR : p.colour_style;
+  // a seamless vase prints one filament: no bands, stripes or colours by a function
+  return p.vase_mode === K.REAL_VASE && [1, 2, K.BY_FUNCTION].includes(p.colour_style) ? K.ONE_COLOUR : p.colour_style;
 }
 
 function numberBox(row, { decimals = 2 } = {}) {
@@ -666,13 +666,14 @@ function makeRow(row, rowsBox) {
     control.className = "whole";
     const text = document.createElement("textarea");
     text.spellcheck = false;
-    text.placeholder = "1.5 * sin(6*theta + 4*pi*h)";
-    text.setAttribute("aria-label", "Your own function");
+    const colour = key === "colour_expression";      // the colour function, or your own function
+    text.placeholder = C.formulas[key][0][1];
+    text.setAttribute("aria-label", colour ? "Your colour function" : "Your own function");
     input = text;
     const tools = document.createElement("div");
     tools.className = "row";
     const examples = document.createElement("select");
-    examples.append(new Option("Examples…", ""), ...C.examples.map(([n, f]) => new Option(`${n}:  ${f}`, f)));
+    examples.append(new Option("Examples…", ""), ...C.formulas[key].map(([n, f]) => new Option(`${n}:  ${f}`, f)));
     const help = document.createElement("button");
     help.textContent = "Help…";
     const clear = document.createElement("button");
@@ -708,11 +709,11 @@ function makeRow(row, rowsBox) {
       }
     });
     examples.addEventListener("change", () => {
-      if (examples.value) setFormula(examples.value);
+      if (examples.value) setFormula(examples.value, key);
       examples.value = "";
     });
-    help.addEventListener("click", () => openHelp("function"));
-    clear.addEventListener("click", () => setFormula(""));
+    help.addEventListener("click", () => openHelp(colour ? "colour" : "function"));
+    clear.addEventListener("click", () => setFormula("", key));
     set = (p) => { if (document.activeElement !== text && text.value !== p[key]) text.value = p[key]; };
   } else if (kind === "outline") {
     control.className = "whole outlinebox";
@@ -798,11 +799,11 @@ async function traceFile(file) {
   }).catch(() => {}));
 }
 
-function setFormula(text) {
+function setFormula(text, key = "expression") {
   flushText();
-  const w = widgets.get("expression");
+  const w = widgets.get(key);
   if (w && w.input) w.input.value = text;
-  commit("expression", text);
+  commit(key, text);
 }
 
 function buildAdvanced() {
@@ -935,12 +936,17 @@ function chooseDesign(title) {
     replaceNow(JSON.parse(await helper.call("design_of", title, JSON.stringify(params))))));
 }
 
+let helpFormula = "expression";   // the formula setting the help's examples go into
 function openHelp(which) {
-  const titles = { printing: "Printing it watertight", function: "Your own function", drawing: "Drawing a cross-section",
-    about: `About Vaseinator ${C.version}` };
+  const titles = { printing: "Printing it watertight", function: "Your own function", colour: "Your colour function",
+    drawing: "Drawing a cross-section", about: `About Vaseinator ${C.version}` };
   $("helptitle").textContent = titles[which];
   $("helptext").innerHTML = C.help[which];
-  $("helpexamples").hidden = which !== "function";
+  $("helpexamples").hidden = which !== "function" && which !== "colour";
+  if (which === "function" || which === "colour") {
+    helpFormula = which === "colour" ? "colour_expression" : "expression";
+    $("examplepick").replaceChildren(...C.formulas[helpFormula].map(([n, f]) => new Option(`${n}:  ${f}`, f)));
+  }
   $("help").showModal();
 }
 
@@ -1158,7 +1164,7 @@ function wire() {
     if (file) traceFile(file);
   });
   $("useexample").addEventListener("click", () => {
-    setFormula($("examplepick").value);
+    setFormula($("examplepick").value, helpFormula);
     $("help").close();
   });
   document.addEventListener("keydown", (e) => {
@@ -1197,7 +1203,6 @@ async function boot() {
     return;
   }
   K = C.constants;
-  $("examplepick").append(...C.examples.map(([n, f]) => new Option(`${n}:  ${f}`, f)));
   buildSimple();
   buildAdvanced();
   buildOutlineWindow();

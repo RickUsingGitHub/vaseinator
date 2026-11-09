@@ -19,7 +19,7 @@ EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN = 0, 1, 2, 3, 4, 5
 EVERYWHERE, GROWS, FADES, MIDDLE = 0, 1, 2, 3            # texture strength (OWN = own curve)
 OWN_PROFILE = -1                                          # the outline has been drawn by hand
 
-ONE_COLOUR, BANDS, STRIPES, GRADIENT = 0, 1, 2, 3         # how the colours go up the vase
+ONE_COLOUR, BANDS, STRIPES, GRADIENT, BY_FUNCTION = 0, 1, 2, 3, 4   # how the colours go on the vase
 REAL_VASE, FAKE_VASE = 0, 1                               # spiral vase mode, or an ordinary print with walls
 NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS = 0, 1, 2, 3, 4  # holes right through the wall
 NO_EYES, ALMOND_EYES, ROUND_EYES = 0, 1, 2                # a face: its eyes ...
@@ -123,6 +123,7 @@ class VaseParams:
     stripe_height: float = 12.0   # mm
     gradient_length: float = 8.0  # metres of filament for one colour cycle of a gradient spool
     look: int = SILK
+    colour_expression: str = ""   # by a function: the filament at each point, 0 (filament 1) to colours_used - 1
 
     # --- holes and an open bottom (a normal print) ---------------------------
     holes: int = NO_HOLES         # holes right through the wall: Voronoi, round, diamonds, slots
@@ -235,7 +236,7 @@ class VaseParams:
                    "morph": (EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN),
                    "twist_style": (EVENLY, EASE, SPEED_UP, SLOW_DOWN, SWING, OWN),
                    "strength": (EVERYWHERE, GROWS, FADES, MIDDLE, OWN),
-                   "colour_style": (ONE_COLOUR, BANDS, STRIPES, GRADIENT), "colours_used": (1, 2, 3, 4),
+                   "colour_style": (ONE_COLOUR, BANDS, STRIPES, GRADIENT, BY_FUNCTION), "colours_used": (1, 2, 3, 4),
                    "look": (MATTE, SILK, GLOSSY, TRANSLUCENT), "vase_mode": (REAL_VASE, FAKE_VASE),
                    "holes": (NO_HOLES, VORONOI, ROUND, DIAMOND, SLOTS),
                    "eyes": (NO_EYES, ALMOND_EYES, ROUND_EYES), "nose": (NO_NOSE, RAISED_NOSE),
@@ -282,8 +283,9 @@ def needs_normal(p: VaseParams) -> bool:
 
 
 def colour_style_of(p: VaseParams) -> int:
-    """The colour style that really prints: a real spiral vase is one filament, so no bands or stripes."""
-    if p.vase_mode == REAL_VASE and p.colour_style in (BANDS, STRIPES):
+    """The colour style that really prints: a real spiral vase is one filament, so no bands, stripes or
+    colours by a function."""
+    if p.vase_mode == REAL_VASE and p.colour_style in (BANDS, STRIPES, BY_FUNCTION):
         return ONE_COLOUR
     return p.colour_style
 

@@ -100,6 +100,12 @@ ready to slice.
 * **Colours**: one colour or a **gradient spool** – shown where its colours will really land, worked out
   from the filament each height uses – and, printed normally, up to four filaments in **bands**
   (even, or thicker at the top or the bottom) or **stripes**, with palettes.
+* **Colours by a function**: a second formula, with the same variables and functions as your own
+  function, picks the **filament at each point** of the wall – below 1 filament 1, 1 to 2 filament 2, and
+  so on. Made from the same terms as the texture, it colours the texture: for the Zigzag ribs,
+  `1.2 * tri(12*theta + 3*tri(2*pi*z/25))`, the colours `2 + 2*tri(2*pi*z/25)` climb up and down with
+  their zigzag. Each colour is a part of its own in the 3MF, cut just where the formula changes, and the
+  3D view shows them.
 * **Looks**: matte, silk, glossy or translucent in the 3D view.
 * **Printable, always**: each layer of the wall rests on the one below it, so it may lean neither out nor
   in further than the limit (45° by default). **Soften to fit** reshapes only what leans too far – and
@@ -230,7 +236,7 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Masks and helmets** | **For a head** and its **head size**; the **eyes** – almond or round, their size, how far apart, how high and tilted; a raised **nose** – its width, length, how far it sticks out and how high its tip is; the **mouth** – open, a grille of slots (how many, and how much they smile) or open down to the chin; and **strap slots**. Sizes and heights are in millimetres along the face, from the bottom. |
 | **Tissue box** | **Tissue box cover**; the **box** of tissues it goes over – its length, width and height; how **rounded** the cover's corners are; and the **tissue hole** – a long slot, an oval, a round hole or none – and its length and width; and its **lid** (File ▸ Save the lid for printing): how far its latches reach in behind the ledge, and whether it is a frame open in the middle or a solid plate. |
 | **Your own function** | A formula added to the radius. **Examples** has eight to try; **Help…** lists the variables and functions. |
-| **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go up the vase: one colour, bands, stripes or a gradient spool. How it looks: matte, silk, glossy, translucent. |
+| **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go on the vase: one colour, bands, stripes, a gradient spool, or by a function – a formula for the filament at each point, with examples and help. How it looks: matte, silk, glossy, translucent. |
 | **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail (0.2 mm; saving simplifies the mesh, so the file stays small). |
 
 The mouse wheel scrolls the panel: a drop-down list only changes with it once it is dropped down, a number
@@ -268,7 +274,8 @@ print (the usual) or seamless.
 * Leave spiral vase mode **off**, and otherwise print with your **usual settings**. The vase comes as the
   hollow pot it is – a wall as thick as *Walls* × *Line width* (1.2 mm as it comes), the floor, the rim and
   any holes – so the slicer simply fills it in: there is nothing to set.
-* The colour bands and stripes are parts of their own filaments in the 3MF, so the slicer prints them in
+* The colour bands and stripes, and colours by a function, are parts of their own filaments in the 3MF, so
+  the slicer prints them in
   colour by itself; on a printer with several toolheads, like the Creator 5 Pro, each band uses its own
   head. It prints a layer at a time, with a seam.
 
@@ -413,6 +420,14 @@ between their neighbours are left out – on a box most of them, on a twisting v
 simplifies the mesh once more, merging triangles wherever the surface moves by no more than a few hundredths
 of a millimetre (pyfqmr in the app, meshoptimizer in the web version), keeping it closed.
 
+**Colours by a function** are worked out at every point of the pot's grid, from the outer face, with the
+same variables as your own function. The grid keeps the rows and columns that hold where the colour
+changes as true as the wall, and no cell spans more than a fifth of a colour. Each filament's part is then
+the pot with the other colours cut away just as holes are – by how far, in mm, each point is from that
+filament's colours – so neighbouring parts share the edge between them and together hold the plastic of the
+whole. The floor, and a closed top's point, are a part each, in the colour most of the wall has where it
+meets them.
+
 A **drawn** cross-section needn't have one radius in each direction – a lobe can swell past its neck – so
 it is built another way: as rows of points up the vase, each row the outline (blended into the second
 one, sized by the outline curve and turned by the twist) cut into the same number of points at even
@@ -450,7 +465,10 @@ it should, a face's holes and nose are where they should be and print without su
 for a head fits it – the masks and helmet a head 57 cm round; that a tissue box cover clears its box of
 tissues by the room to spare everywhere inside, with its hole through the bottom layers alone, holes and
 bands and all, and that its lid is closed, clear of the cover's printed wall everywhere when it is on, and
-caught by the ledges when it is pulled down a millimetre; and that the web version's Python, put
+caught by the ledges when it is pulled down a millimetre; that colours by a function come as closed
+parts, one per filament, each just where the formula puts it and together the plastic of the whole – on a
+plain box, a textured twist and Voronoi lace – and that a seamless vase or facets stay one colour; and that
+the web version's Python, put
 together as the site has it, runs with no Qt at all – it starts, builds a mask, fits it to a head and makes
 the slicer's file.
 `.venv\Scripts\python -m tests.test_app` drives the window itself: edits, curves, undo, the gallery,
@@ -463,7 +481,7 @@ settings and Undo. Test windows open on the second screen, if there is one.
 Either can run just part of itself, for a quick check after a small change: name a word, and only the tests
 (or the window's sections) with it in their names run – `tests.test_vase lid box` runs the tissue box
 cover's and its lid's tests, `tests.test_app box` the window's tissue box section. The window's sections
-are edits, gallery, morph, views, saving, drawn, simple, holes, masks, box, look and function; each starts
+are edits, gallery, morph, views, saving, colours, drawn, simple, holes, masks, box, look and function; each starts
 from a design of its own, so any can run alone. A name that matches nothing lists them all.
 
 ### The web version

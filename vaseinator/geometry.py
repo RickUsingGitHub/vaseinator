@@ -23,7 +23,7 @@ import numpy as np
 
 from .expr import ExprError, compile_expression
 from . import hollow, sections
-from .params import (ALMOND_EYES, BANDS, CHIN_MOUTH, DIAMOND, DRAWN, EVENLY, FAKE_VASE, GRADIENT, GRILLE_MOUTH,
+from .params import (ALMOND_EYES, BANDS, BY_FUNCTION, CHIN_MOUTH, DIAMOND, DRAWN, EVENLY, FAKE_VASE, GRADIENT, GRILLE_MOUTH,
                      MAX_BANDS, NO_EYES, NO_HOLES, NO_MOUTH, NO_NOSE, NO_TISSUE, ONE_COLOUR, OPEN_MOUTH, OWN,
                      RAISED_NOSE, REAL_VASE, RECTANGLE, ROUND, SAME, SLOTS, STRIPES, TISSUE_OVAL, TISSUE_ROUND,
                      VORONOI, VaseParams, colour_style_of, face_holes, needs_normal)
@@ -388,6 +388,9 @@ class VaseDesign:
         self.floor_hole = None                    # a tissue box cover's hole through its top, on the bed
         self.tissue = None                        # ... its length and width (mm)
         self.fn = None
+        self.colour_fn = None                     # colours by a function: the formula ...
+        self.colour_parts = None                  # ... and the pot cut into a part per filament
+        self.frame = None                         # where the patterns are round the wall: your function's phi
         self.closed = None
         self.free = DRAWN in (self.p.shape1, self.p.shape2)    # a drawn outline: built point by point
         self.outer_rows = None
@@ -436,6 +439,11 @@ class VaseDesign:
             self.fn = compile_expression(p.expression)
         except ExprError as exc:
             self.errors.append(f"Your own function: {exc}")
+        if colour_style_of(p) == BY_FUNCTION:
+            try:
+                self.colour_fn = compile_expression(p.colour_expression)
+            except ExprError as exc:
+                self.errors.append(f"Your colour function: {exc}")
         return not self.errors
 
     def _grid_size(self):
@@ -551,7 +559,8 @@ class VaseDesign:
         frame = TH - TA if p.texture_twist else np.broadcast_to(TH, r.shape)
         if p.even_spacing:
             frame = self._round_the_wall(r, tau if p.texture_twist else np.zeros_like(tau))
-        r = r + (q * self._envelope(z))[:, None] * self._texture(frame, z, float(R0.mean()))
+        self.frame = np.broadcast_to(frame, r.shape)
+        r = r +(q * self._envelope(z))[:, None] * self._texture(frame, z, float(R0.mean()))
         if p.nose == RAISED_NOSE:
             # along the surface from the front (-y: the column a quarter turn before the start)
             front = r[:, 3 * N // 4]
@@ -752,14 +761,19 @@ class VaseDesign:
         zb = 0.0 if p.open_bottom else min(max(p.bottom, p.layer_height), 0.5 * self.H)
         self.zb = zb
         f = self._holes(O, zb)
+        V = self._colour_field(O)                 # colours by a function: carried along with the rows
+        rows = [O, I, f] + ([] if V is None else [V])
         if p.open_bottom:
-            zs, (Os, Is, fs), kb = self.z, (O, I, f), None
+            zs, kb = self.z, None
         else:
-            zs, (Os, Is, fs), at = hollow.insert_rows(self.z, [O, I, f], [zb])
+            zs, rows, at = hollow.insert_rows(self.z, rows, [zb])
             kb = at[zb]
         if p.box:                                 # the ledges a lid clicks in behind
             heights = ledge_heights(p)
-            zs, (Os, Is, fs), _ = hollow.insert_rows(zs, [Os, Is, fs], [self.H - h for h in heights])
+            zs, rows, _ = hollow.insert_rows(zs, rows, [self.H - h for h in heights])
+        Os, Is, fs = rows[:3]
+        V = None if V is None else rows[3]
+        if p.box:
             Is = ledges(zs, Is, self.H, heights)
         b = None
         if p.hole_swell > 0 and (fs > 0).any():
@@ -773,7 +787,15 @@ class VaseDesign:
             # leave out the rows and columns that lie in line with their neighbours: far fewer triangles where the
             # wall is flat or straight, every one kept where a pattern, a hole or a curve needs it
             b = np.zeros_like(fs) if b is None else b
-            zs, Os, Is, fs, b, rk = hollow.simplify(zs, Os, Is, fs, b, [k for k in (kb, kr) if k is not None])
+            # colours by a function: kept as true as the wall is, in mm, where its changes of colour lie - and no
+            # cell left spanning more than a fifth of a colour, its wave round each colour bending away from a line
+            extra = None
+            if V is not None:
+                per_mm = float(np.median(_colour_rate(zs, Os, V))) or 1.0
+                extra = [V / per_mm, 0.1 * np.sin(TAU * V), 0.1 * np.cos(TAU * V)]
+            zs, Os, Is, fs, b, rk, *more = hollow.simplify(zs, Os, Is, fs, b, [k for k in (kb, kr) if k is not None],
+                                                           extra=extra)
+            V = more[0][0] * per_mm if more else None
             kb = None if kb is None else int(np.searchsorted(rk, kb))
             kr = None if kr is None else int(np.searchsorted(rk, kr))
         verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb, roof_row=kr, swell=b,
@@ -781,6 +803,8 @@ class VaseDesign:
         kinds, self.bridge, side_worst = hollow.bridges(verts, faces, kinds, p.max_overhang,
                                                         longest=max(8.0, self.bridge_allowed + 1.0))
         self.pot_rows = (zs, Os, Is, fs, kb, kr, np.zeros_like(fs) if b is None else b)
+        if V is not None:
+            self.colour_parts = self._colour_parts(V)
         lo, hi = (0 if kb is None else kb), (len(zs) - 1 if kr is None else kr)
         if kr is not None:
             self.ceiling = hollow.bridge_span(Is[kr])
@@ -794,6 +818,17 @@ class VaseDesign:
         self.holes_open = bool((fs > 0).any())
         self.hole_share = float((fs > 0).mean()) if self.holes_open else 0.0
         self._set_shell(verts, faces, kinds)
+        if self.colour_parts is not None:         # shown as the parts it prints as, each in its colour
+            vs, fs_, ks, fil, n = [], [], [], [], 0
+            for k, v, fc, kd in self.colour_parts:
+                vs.append(v)
+                fs_.append(fc + n)
+                ks.append(kd)
+                fil.append(np.full(len(v), k))
+                n += len(v)
+            self.show_verts, self.show_faces = np.concatenate(vs), np.concatenate(fs_)
+            self.show_lean = self._lean(self.show_verts, self.show_faces, np.concatenate(ks))
+            self.show_fil = np.concatenate(fil)
         self.worst = max(self.worst, side_worst)
         if self.normal:                               # what is exported, and what the panel counts
             self.triangles = len(faces)
@@ -843,15 +878,78 @@ class VaseDesign:
         return int(ok[-1])
 
     def _set_shell(self, verts, faces, kinds=None):
-        """The shell to show, and how far each face leans: a hole's side only counts where it leans out over
-        the hole (its sill faces up, and prints as it is); the bridge at a hole's very top is as steep as allowed."""
+        """The shell to show, and how far each face leans."""
+        lean = self._lean(verts, faces, kinds)
+        self.shell_verts, self.shell_faces, self.shell_kind, self.shell_lean = verts, faces, kinds, lean
+        self.show_verts, self.show_faces, self.show_lean, self.show_fil = verts, faces, lean, None
+
+    def _lean(self, verts, faces, kinds=None):
+        """How far each face leans: a hole's side only counts where it leans out over the hole (its sill faces
+        up, and prints as it is); the bridge at a hole's very top is as steep as allowed."""
         lean = lean_angles(verts, faces)
         if kinds is not None:
             over = np.degrees(np.arcsin(np.clip(-face_normals(verts, faces)[:, 2], 0.0, 1.0)))
             lean = np.where(kinds == hollow.SIDE, over, lean)
             lean = np.where(kinds == hollow.TIP, np.minimum(over, self.p.max_overhang), lean)
             lean = np.where(kinds == hollow.CAP, -1.0, lean)
-        self.shell_verts, self.shell_faces, self.shell_kind, self.shell_lean = verts, faces, kinds, lean
+        return lean
+
+    def _colour_field(self, O):
+        """Colours by a function: its value at each point of the outer face O (K, N, 2) at the grid's heights,
+        with the same variables as your own function's - or None."""
+        if self.colour_fn is None:
+            return None
+        K, N = O.shape[:2]
+        theta = np.mod(np.arctan2(O[..., 1], O[..., 0]), TAU)
+        phi = self.frame if self.frame is not None and self.frame.shape == (K, N) else theta
+        z = self.z[:, None]
+        v = self.colour_fn(theta=theta, phi=phi, z=z, h=z / self.H, r=np.hypot(O[..., 0], O[..., 1]),
+                           H=np.float64(self.H))
+        v = np.broadcast_to(np.asarray(v, dtype=float), (K, N)).copy()
+        if not np.isfinite(v).all():
+            self.warnings.append("Your colour function isn't a number everywhere: filament 1 is used there.")
+            v = np.where(np.isfinite(v), v, 0.0)
+        return v
+
+    def _colour_parts(self, V):
+        """Colours by a function: the pot as a closed part per filament, [(filament, verts, faces, kinds)]. The
+        value V at each grid point, rounded down, is the filament less one; each part is the pot with the rest
+        cut away as holes are, so neighbouring parts meet along the same edge. The floor, and a closed top's
+        point, are each one part, in the colour most of the wall has where it meets them."""
+        zs, Os, Is, fs, kb, kr, sw = self.pot_rows
+        n = max(1, min(int(self.p.colours_used), 4))
+        V = np.where(np.abs(V - np.round(V)) < 1e-6, V + 2e-6, V)     # never exactly on a change of colour
+        idx = np.clip(np.floor(V), 0, n - 1).astype(int)
+        mm = 1.0 / np.maximum(_colour_rate(zs, Os, V), 1e-3)          # colour steps into mm, as the holes' are
+        lo, hi = (0 if kb is None else kb), (len(zs) - 1 if kr is None else kr)
+        wall = fs.copy()                          # the parts' ends meet the floor and the top all the way round
+        for k in {lo, hi}:
+            wall[k] = np.minimum(wall[k], -1e-9)
+        parts = []
+
+        def add(fil, rows, f, **ends):
+            v, fc, kinds = hollow.pot(zs[rows], Os[rows], Is[rows], f[rows], swell=sw[rows], **ends)
+            if len(fc):
+                parts.append((fil, v, fc, kinds))
+
+        if kb is not None:
+            add(1 + int(np.bincount(idx[kb], minlength=n).argmax()), slice(0, kb + 1), fs, floor_row=kb,
+                floor_hole=self.floor_hole)
+        for c in range(n):
+            # how far outside this filament's part each point is, in mm: cut away as holes are. Away from the
+            # holes it is the colour alone, so the cut lands just where the colour changes, however long the
+            # grid's cells; near a hole, whichever cuts more
+            g = np.full(V.shape, -1e6)
+            if c > 0:
+                g = np.maximum(g, (c - V) * mm)
+            if c < n - 1:
+                g = np.maximum(g, (V - (c + 1)) * mm)
+            f = np.where(wall < -0.5, g, np.maximum(wall, g))
+            if (f[lo:hi + 1] <= 0).any():
+                add(c + 1, slice(lo, hi + 1), f)
+        if kr is not None:
+            add(1 + int(np.bincount(idx[kr], minlength=n).argmax()), slice(kr, len(zs)), fs, roof_row=0)
+        return parts
 
     def _holes(self, O, zb):
         """The hole pattern on the grid: how far inside a hole each point is (mm, below nought in the wall),
@@ -931,6 +1029,8 @@ class VaseDesign:
             return self.band_parts()
         if self.pot_rows is None:
             return self._loft_parts()
+        if self.colour_parts is not None:
+            return [(fil, v, f) for fil, v, f, _ in self.colour_parts]
         zs, Os, Is, fs, kb, kr, swollen = self.pot_rows
         floor = kb is not None
         # bands start on top of the floor, and the solid point of a closed top is one with the band below it
@@ -1014,6 +1114,8 @@ class VaseDesign:
         self.shell_faces = np.concatenate([walls, caps])
         self.shell_kind = None
         self.shell_lean = np.concatenate([lean_angles(verts, walls), np.full(len(caps), -1.0)])
+        self.show_verts, self.show_faces, self.show_lean, self.show_fil = (self.shell_verts, self.shell_faces,
+                                                                          self.shell_lean, None)
         if self.normal:                               # what is exported, and what the panel counts
             self.triangles = len(self.shell_faces)
 
@@ -1106,6 +1208,7 @@ class VaseDesign:
         along = np.arange(self.N) * (TAU / self.N)
         frame = (np.broadcast_to(along, P.shape[:2]) if p.texture_twist
                  else np.mod(np.arctan2(P[..., 1], P[..., 0]), TAU))
+        self.frame = np.broadcast_to(frame, P.shape[:2])
         out = sections.normals(P)
         tex = env[:, None] * self._texture(frame, self.z, float(R0.mean()))
         if self.fn is not None:
@@ -1280,6 +1383,10 @@ class VaseDesign:
         self.gradient = colour_style_of(p) == GRADIENT
         self.gradient_fils = list(range(1, used + 1))
 
+    def colour_filaments(self) -> list:
+        """Colours by a function: the filaments its parts are in."""
+        return sorted({k for k, *_ in self.colour_parts or ()})
+
     def filament_of(self, k: int) -> str:
         return getattr(self.p, f"color{k}").upper()
 
@@ -1363,6 +1470,11 @@ class VaseDesign:
         if self.gradient:
             lines.append(f"Print with one gradient spool (one colour cycle every {p.gradient_length:g} m).")
             return "\n".join(lines)
+        if self.colour_parts is not None:
+            fils = ", ".join(f"{k} ({self.filament_of(k)})" for k in self.colour_filaments())
+            lines.append(f"Coloured by a function: the 3MF holds a part for each of filaments {fils}, so the slicer "
+                         "changes filament itself - there are no colour changes to make by hand.")
+            return "\n".join(lines)
         lines.append(f"Start with filament {self.bands[0][1]} ({self.filament_of(self.bands[0][1])})")
         for layer, ztop, fil in self.colour_changes(first_layer):
             lines.append(f"Layer {layer} ({ztop:.2f} mm): change to filament {fil} ({self.filament_of(fil)})")
@@ -1371,6 +1483,10 @@ class VaseDesign:
     # ------------------------------------------------------------ advice
     def _advice(self):
         p = self.p
+        if colour_style_of(p) == BY_FUNCTION and self.colour_parts is None:
+            self.notes.append("Type a colour function to colour it by (Advanced ▸ Colours): it is one colour for now."
+                              if self.rows is None else
+                              "Low-poly facets are one colour: colours by a function need a smooth wall.")
         if self.worst > p.max_overhang + TOLERANCE:
             if p.soften:
                 self.warnings.append(
@@ -1558,6 +1674,15 @@ def box_shape(p: VaseParams) -> VaseParams:
     q.eyes, q.nose, q.mouth, q.straps = NO_EYES, NO_NOSE, NO_MOUTH, False
     q.vase_mode = FAKE_VASE
     return q
+
+
+def _colour_rate(z, O, V):
+    """Colours by a function: how fast its value V (K, N) changes at each point, per mm up and round the wall
+    O (K, N, 2) at heights z."""
+    across = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(O, axis=1), axis=2).mean(axis=0))])
+    up = np.gradient(V, z, axis=0) if len(z) > 1 else 0.0
+    round_ = np.gradient(V, across, axis=1) if len(across) > 1 else 0.0
+    return np.hypot(up, round_)
 
 
 def ledge_lean(p: VaseParams) -> float:

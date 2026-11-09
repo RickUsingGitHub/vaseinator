@@ -37,6 +37,7 @@ LOCKS = {
         "stripe_height",
         "gradient_length",
         "look",
+        "colour_expression",
     ),
 }
 MATERIAL_KEYS = ("max_flow", "density", "filament_d", "speed")

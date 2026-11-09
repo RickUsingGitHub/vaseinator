@@ -48,6 +48,13 @@ def info_html(d, errors, warnings) -> str:
             cycles = d.metres / max(p.gradient_length, 0.05)
             html.append(f"<p class='k'>One gradient spool: about {cycles:.1f} colour cycles over the "
                         f"{d.metres:.1f} m this vase uses. The view shows where each colour lands.</p>")
+        elif d.colour_parts is not None:
+            fils = d.colour_filaments()
+            html.append("<p>" + " ".join(f"{_chip(d, k)} filament {k}" for k in fils) + "</p>"
+                        "<p class='k'>Coloured by your colour function. <b>Export 3MF</b> makes each colour its "
+                        "own part, set to its filament - the floor" + (" and the closed top" if p.closed_top else "")
+                        + " too, in the colour of the wall where it meets them - so the slicer changes filament "
+                        "itself.</p>")
         elif len(d.bands) == 1:
             f0 = d.bands[0][1]
             html.append(f"<p>{_chip(d, f0)} filament {f0}</p>")
@@ -99,6 +106,10 @@ def print_steps(d, path: str, parts: int, where: str = "your slicer") -> str:
                f"It comes as <b>{parts} parts</b>, one for each band of colour, already set to filaments "
                f"{', '.join(str(k) for k in sorted({f for _, f in d.bands}))}: load those colours in those "
                "slots, or change them in the slicer.")
+    if d.colour_parts is not None and parts > 1:
+        colours = (f"It comes as <b>{parts} parts</b>, coloured by your colour function, already set to filaments "
+                   f"{', '.join(str(k) for k in d.colour_filaments())}: load those colours in those slots, or "
+                   "change them in the slicer.")
     edge = ""
     if p.worn or p.around < 360.0 or p.open_bottom:
         edge = ("<li>Add a <b>brim</b>: it stands on a thin edge" + (", a mask on its chin" if p.around < 360.0
@@ -221,13 +232,24 @@ ABOUT = (f"<h3>{APP_NAME} {__version__}</h3>"
         "<a href='https://ko-fi.com/rickapps'>buy me a coffee</a>.</p>")
 
 
-def function_help() -> str:
-    """What a formula can use, with tips."""
+def function_help(colour: bool = False) -> str:
+    """What a formula can use, with tips - for your own function, or the colour function."""
     rows = "".join(f"<tr><td><code>{k}</code></td><td>{v}</td></tr>" for k, v in VARIABLES.items())
     funcs = "".join(f"<tr><td><code>{k}</code></td><td>{v}</td></tr>" for k, v in FUNCTION_HELP)
-    return ("<style>td{padding:2px 8px;vertical-align:top;} code{color:#f0a356;}</style>"
-            "<p>Type a formula in millimetres; it is <b>added to the radius</b> everywhere on the vase. "
-            "The vase is still softened afterwards, so even a wild formula prints without supports.</p>"
+    intro = (
+        "<p>Type a formula for the <b>filament</b> at each point of the wall: below 1 is filament 1, 1 to 2 "
+        "filament 2, 2 to 3 filament 3, and 3 and over filament 4 - rounded down. Below 0 counts as filament 1, "
+        "and with fewer filaments in use (Advanced ▸ Colours ▸ Filaments) the last one takes everything above "
+        "it. So for four filaments, make it run from 0 to just under 4: <code>2 + 2*tri(2*pi*z/25)</code>.</p>"
+        "<p>To <b>colour a texture</b>, use your own function's terms: the Zigzag ribs, "
+        "<code>1.2 * tri(12*theta + 3*tri(2*pi*z/25))</code>, zigzag up the vase by "
+        "<code>tri(2*pi*z/25)</code>, so <code>2 + 2*tri(2*pi*z/25)</code> colours them in bands that follow "
+        "the zigzag. Each colour is printed as its own part, cut along the formula's whole numbers, so the "
+        "colours follow it exactly; the floor (and a closed top) take the colour of the wall where it meets "
+        "them.</p>" if colour else
+        "<p>Type a formula in millimetres; it is <b>added to the radius</b> everywhere on the vase. "
+        "The vase is still softened afterwards, so even a wild formula prints without supports.</p>")
+    return ("<style>td{padding:2px 8px;vertical-align:top;} code{color:#f0a356;}</style>" + intro +
             f"<h4>Variables</h4><table>{rows}<tr><td><code>pi tau e</code></td><td>the constants</td></tr></table>"
             f"<h4>Functions</h4><table>{funcs}</table>"
             "<h4>Tips</h4><ul>"
@@ -246,4 +268,7 @@ def function_help() -> str:
             "<li>For seamless noise, feed it the angle as a circle: "
             "<code>noise(4*cos(theta), 4*sin(theta), z/15)</code>.</li>"
             "<li><code>h</code> runs 0 to 1 up the vase, so <code>sin(pi*h)</code> is 0 at the ends and 1 in "
-            "the middle - good for fading things in and out.</li></ul>")
+            "the middle - good for fading things in and out.</li>"
+            + ("" if colour else "<li>To colour a texture to match it, choose Advanced ▸ Colours ▸ Colours: "
+               "<b>By a function</b>, and give it a formula for the filament made from the same terms.</li>")
+            + "</ul>")

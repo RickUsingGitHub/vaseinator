@@ -21,7 +21,7 @@ from vaseinator import sections  # noqa: E402
 from vaseinator.presets import GALLERY, slug  # noqa: E402
 from vaseinator.simple_panel import PATTERNS, SHAPES_FROM_ABOVE, asset  # noqa: E402
 from vaseinator.geometry import edge_check, mesh_volume  # noqa: E402
-from vaseinator.params import (BANDS, CIRCLE, DRAWN, FAKE_VASE, FLOWER, GRADIENT, NO_HOLES, ONE_COLOUR, OWN,  # noqa: E402
+from vaseinator.params import (BANDS, BY_FUNCTION, CIRCLE, DRAWN, FAKE_VASE, FLOWER, GRADIENT, NO_HOLES, ONE_COLOUR, OWN,  # noqa: E402
                                VORONOI, ALMOND_EYES, CHIN_MOUTH,
                                OWN_PROFILE, POLYGON, REAL_VASE, SAME, STAR, SWING, TISSUE_ROUND, VaseParams, load_design)
 from vaseinator.stl import read_stl  # noqa: E402
@@ -201,7 +201,7 @@ def saving(t):
     choose("colour_style", BANDS)
     win.widgets["band_count"].setValue(3)
     choose("colours_used", 3)
-    check("a fake one offers bands and stripes, and walls", win.widgets["colour_style"].count() == 4
+    check("a fake one offers bands, stripes and colours by a function, and walls", win.widgets["colour_style"].count() == 5
           and win._wanted("walls") and win._wanted("band_count") and "walls" in win.info.toPlainText())
     win.export_3mf()
     parts = read_3mf(out["3mf"])
@@ -217,6 +217,26 @@ def saving(t):
     check("... and switching to fake again brings its bands back", len(win.design.bands) == 3)
     win.copy_colour_plan()
     check("the colour plan goes to the clipboard", "Vaseinator" in QApplication.clipboard().text())
+
+
+def colours(t):
+    """Colours by a function: a formula picks the filament; the view and the 3MF follow it."""
+    qapp, win, tmp, out, shown, check, settle, choose = t
+    win.use_plain()
+    win.set_simple_mode(False, remember=False)
+    settle()
+    choose("colour_style", BY_FUNCTION)
+    check("By a function starts a formula, and shows it", win._wanted("colour_expression")
+          and win.widgets["colour_expression"].toPlainText() == "3 * h" and win.params.vase_mode == FAKE_VASE)
+    win._set_expression("2 + 2*sin(8*phi)", "colour_expression")
+    choose("colours_used", 4)
+    check("... the view shows each part in its filament", win.viewer.colmode == 4 and win.design.colour_filaments()
+          == [1, 2, 3, 4] and "Coloured by your colour function" in win.info.toPlainText())
+    win.export_3mf()
+    parts = read_3mf(out["3mf"])
+    check("... and the 3MF is a closed part per colour, and the floor, set to their filaments",
+          sorted({p[3] for p in parts}) == [1, 2, 3, 4] and len(parts) == 5 and all(edge_check(p[2])[0] for p in parts))
+    choose("colour_style", ONE_COLOUR)
 
 
 def drawn(t):
@@ -583,7 +603,7 @@ def function(t):
     settle()
 
 
-SECTIONS = [edits, gallery, morph, views, saving, drawn, simple, holes, masks, box, look, function]
+SECTIONS = [edits, gallery, morph, views, saving, colours, drawn, simple, holes, masks, box, look, function]
 
 
 def main(argv):

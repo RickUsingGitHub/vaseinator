@@ -20,10 +20,10 @@ import numpy as np
 from vaseinator import __version__, sections
 from vaseinator.choices import (COLOURS, MANY_COLOURS, NO_PATTERN, PATTERNS, SHAPES_FROM_ABOVE, TISSUE_HOLES, pattern_of,
                                 twist_words)
-from vaseinator.expr import EXAMPLES
+from vaseinator.expr import EXAMPLES, FORMULAS
 from vaseinator.geometry import TOLERANCE, VaseDesign, fit_head, require_exportable
 from vaseinator.lid import Lid
-from vaseinator.params import (CIRCLE, DRAWN, EVENLY, FAKE_VASE, FILE_FORMAT, FILE_VERSION, ONE_COLOUR, OWN,
+from vaseinator.params import (BY_FUNCTION, CIRCLE, DRAWN, EVENLY, FAKE_VASE, FILE_FORMAT, FILE_VERSION, ONE_COLOUR, OWN,
                                OWN_PROFILE, POLYGON, REAL_VASE, SAME, TISSUE_OVAL, TISSUE_ROUND, VaseParams)
 from vaseinator.presets import GALLERY, PRINTER_KEYS, gallery_design, plain_design, slug, surprise
 from vaseinator.report import ABOUT, DRAWING_HELP, PRINTING_HELP, function_help, info_html, lid_steps, print_steps
@@ -109,10 +109,11 @@ def start() -> str:
         real_colour_styles=[[v, t] for v, t in REAL_COLOUR_STYLES],
         outlines=[dict(name=n, points=[list(q) for q in pts], repeat=r) for n, pts, r in sections.OUTLINES],
         examples=[[n, f] for n, f in EXAMPLES],
+        formulas={k: [[n, f] for n, f in v] for k, v in FORMULAS.items()},
         shape_labels={str(k): list(v) for k, v in SHAPE_LABELS.items()},
-        help=dict(printing=PRINTING_HELP, drawing=DRAWING_HELP, about=ABOUT, function=function_help()),
+        help=dict(printing=PRINTING_HELP, drawing=DRAWING_HELP, about=ABOUT, function=function_help(), colour=function_help(colour=True)),
         constants=dict(SAME=SAME, CIRCLE=CIRCLE, POLYGON=POLYGON, DRAWN=DRAWN, OWN=OWN, OWN_PROFILE=OWN_PROFILE,
-                       EVENLY=EVENLY, REAL_VASE=REAL_VASE, FAKE_VASE=FAKE_VASE, ONE_COLOUR=ONE_COLOUR,
+                       EVENLY=EVENLY, REAL_VASE=REAL_VASE, FAKE_VASE=FAKE_VASE, ONE_COLOUR=ONE_COLOUR, BY_FUNCTION=BY_FUNCTION,
                        TISSUE_OVAL=TISSUE_OVAL, TISSUE_ROUND=TISSUE_ROUND),
         defaults=VaseParams().to_dict(),
         plain=plain_design().to_dict(),
@@ -204,10 +205,10 @@ def build(text: str, draft: bool):
     if d.errors:
         meta["report"] = _report(None, d.errors, d.warnings)
         return json.dumps(meta), b"", b"", b"", b""
-    verts = np.asarray(d.shell_verts, dtype=np.float64)
-    faces = np.asarray(d.shell_faces, dtype=np.int64)
+    verts = np.asarray(d.show_verts, dtype=np.float64)
+    faces = np.asarray(d.show_faces, dtype=np.int64)
     lean = np.full(len(verts), -1.0)
-    np.maximum.at(lean, faces.ravel(), np.repeat(np.asarray(d.shell_lean, dtype=float), 3))
+    np.maximum.at(lean, faces.ravel(), np.repeat(np.asarray(d.show_lean, dtype=float), 3))
     fz, fa = np.asarray(d.filament_z, dtype=float), np.asarray(d.filament_at, dtype=float)
     pick = np.unique(np.linspace(0, len(fz) - 1, min(len(fz), 300)).astype(int))
     meta.update(
@@ -220,7 +221,11 @@ def build(text: str, draft: bool):
         limit=float(d.p.max_overhang), report=_report(d, [], d.warnings), plan=d.colour_plan(), plots=_plots(d),
         printing=dict(z=np.round(fz[pick], 3).tolist(), at=np.round(fa[pick], 2).tolist(), layers=int(d.layers),
                       seconds=float(d.seconds), grams=float(d.grams)))
-    colours = _colours(d, verts[:, 2]).astype(np.float32)
+    if d.show_fil is not None:                    # colours by a function: each part, in its filament
+        cols = d.p.colors()
+        colours = np.array([cols[k] for k in (1, 2, 3, 4)], dtype=np.float32)[d.show_fil - 1]
+    else:
+        colours = _colours(d, verts[:, 2]).astype(np.float32)
     return (json.dumps(meta), verts.astype(np.float32).tobytes(), faces.astype(np.uint32).tobytes(),
             colours.tobytes(), lean.astype(np.float32).tobytes())
 

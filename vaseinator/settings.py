@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from . import sections
 from .geometry import box_shape
-from .params import (ALMOND_EYES, BANDS, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, GLOSSY,
+from .params import (ALMOND_EYES, BANDS, BY_FUNCTION, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, EASE, ELLIPSE, EVENLY, FAKE_VASE, GLOSSY,
                      GRADIENT, GRILLE_MOUTH, LID_FIRM, LID_GENTLE, LID_SNUG, MATTE, NO_EYES, NO_HOLES, NO_MOUTH, NO_NOSE, NO_TISSUE, ONE_COLOUR,
                      OPEN_MOUTH, OWN, OWN_PROFILE, PEBBLE, RAISED_NOSE, REAL_VASE, ROUND, ROUND_EYES, SAME, SHAPES,
                      SILK, SLOTS, SLOW_DOWN, SPEED_UP, STRIPES, SWING, TISSUE_OVAL, TISSUE_ROUND, TISSUE_SLOT,
@@ -23,7 +23,7 @@ MORPH_STYLES = [(EVENLY, "Evenly"), (EASE, "Eases in and out"), (SLOW_DOWN, "Mos
                 (SPEED_UP, "Mostly near the top"), (SWING, "Back and forth"), (OWN, "Your own curve")]
 STRENGTHS = list(strength_names().items())
 COLOUR_STYLES = [(ONE_COLOUR, "One colour"), (BANDS, "Bands up the vase"), (STRIPES, "Stripes"),
-                 (GRADIENT, "Gradient spool")]
+                 (GRADIENT, "Gradient spool"), (BY_FUNCTION, "By a function")]
 LOOKS = [(MATTE, "Matte"), (SILK, "Silk"), (GLOSSY, "Glossy"), (TRANSLUCENT, "Translucent")]
 VASE_MODES = [(FAKE_VASE, "Normal print - walls, any colours"),
               (REAL_VASE, "Seamless - spiral vase mode, one colour")]
@@ -268,7 +268,15 @@ SPEC = [
          "One colour; bands of colour up the vase; thin stripes; or a gradient spool (one\n"
          "filament that changes colour along its length - shown as it will come out, by\n"
          "how much filament each height uses).\n"
-         "Bands and stripes need a normal print: each band is its own part in the 3MF."),
+         "By a function: a formula picks the filament at each point of the wall.\n"
+         "Bands, stripes and colours by a function need a normal print: each colour is its own\n"
+         "part in the 3MF."),
+        ("colour_expression", "", "expr", None, None, None, "",
+         "The filament at each point of the wall: a formula with the same variables and\n"
+         "functions as Your own function. Below 1 is filament 1, 1 to 2 filament 2, and so\n"
+         "on - rounded down; below 0 counts as filament 1, and the top filament in use takes\n"
+         "everything above it. Use the texture's own terms to colour it: for the Zigzag\n"
+         "ribs, 2 + 2*tri(2*pi*z/25) follows their zigzag up the vase."),
         ("colours_used", "Filaments", "choice", USED, None, None, "", "How many filaments the colours go through, from 1."),
         ("band_count", "Bands", "int", 2, 64, 1, "", "How many bands of colour, bottom to top."),
         ("band_spacing", "Band sizes", "slider", -1.0, 1.0, 0.01, "",
@@ -322,7 +330,7 @@ SPEC = [
 REMEMBERED = ("line_width", "layer_height", "bottom", "printer_height", "bed_x", "bed_y", "speed", "max_flow",
               "filament_d", "density", "max_overhang")
 LIVE_KEYS = {"band_spacing"}            # sliders: follow the hand with quick draft builds
-TEXT_KEYS = {"expression"}
+TEXT_KEYS = {"expression", "colour_expression"}
 
 
 def widest(p: VaseParams) -> float:
@@ -398,6 +406,8 @@ def wanted(p, key) -> bool:
         show = colour_style_of(p) == STRIPES
     elif key == "gradient_length":
         show = colour_style_of(p) == GRADIENT
+    elif key == "colour_expression":
+        show = colour_style_of(p) == BY_FUNCTION
     elif key.startswith("color") and key[-1] in "1234":
         show = int(key[-1]) <= (1 if colour_style_of(p) == ONE_COLOUR else p.colours_used)
     elif key == "walls":
@@ -495,6 +505,9 @@ def change(p: VaseParams, key: str, value) -> tuple[list, str]:
     elif key == "colour_style" and value != ONE_COLOUR and p.colours_used < 2:
         p.colours_used = 3
         touched.append("colours_used")
+    if key == "colour_style" and value == BY_FUNCTION and not p.colour_expression.strip():
+        p.colour_expression = f"{p.colours_used} * h"                     # a start: bands up the vase
+        touched.append("colour_expression")
     elif key in ("repeat1", "repeat2"):
         # the drawn piece narrows or widens to fit: one lobe stays one lobe, as deep as before
         k = key[-1]
