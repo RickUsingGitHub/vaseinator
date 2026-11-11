@@ -579,6 +579,16 @@ def look(t):
     check("... and both go back", abs(QApplication.font().pointSizeF() - pt) < 0.01
           and QApplication.palette().color(QPalette.Window).lightness() < 80)
     win.set_simple_mode(False, remember=False)
+    # a group of Advanced settings folds away under its heading, and stays folded next time
+    box = next(b for b, _ in win._groups if b.title == "Surface")
+    shown_before = box.body.isVisibleTo(box)
+    box.head.click()
+    check("clicking a group's heading folds it away, its arrow pointing along",
+          shown_before and not box.body.isVisibleTo(box) and box.head.text().startswith("▸")
+          and win.settings.value("folded/Surface", False, type=bool))
+    box.head.click()
+    check("... and clicking it again opens it", box.body.isVisibleTo(box) and box.head.text().startswith("▾")
+          and not win.settings.value("folded/Surface", True, type=bool))
 
 
 def function(t):

@@ -133,6 +133,41 @@ def make_app_icon() -> QIcon:
     return QIcon()
 
 
+class FoldingGroup(QGroupBox):
+    """A group of settings under a heading with an arrow: click it to fold the group away, and again to open it."""
+    opened = Signal(bool)
+
+    def __init__(self, title: str, open_: bool = True):
+        super().__init__()
+        self.setObjectName("fold")
+        self.title = title
+        v = QVBoxLayout(self)
+        v.setContentsMargins(2, 2, 2, 2)
+        v.setSpacing(0)
+        self.head = QPushButton()
+        self.head.setObjectName("foldHead")
+        self.head.setCheckable(True)
+        self.head.setCursor(Qt.PointingHandCursor)
+        self.head.setToolTip("Click to fold these settings away, or to open them again")
+        self.head.toggled.connect(self.set_open)
+        self.body = QWidget()
+        v.addWidget(self.head)
+        v.addWidget(self.body)
+        self.head.setChecked(open_)
+        self.set_open(open_)
+
+    def is_open(self) -> bool:
+        return self.head.isChecked()
+
+    def set_open(self, open_: bool):
+        self.head.blockSignals(True)
+        self.head.setChecked(open_)
+        self.head.blockSignals(False)
+        self.head.setText(("▾  " if open_ else "▸  ") + self.title)
+        self.body.setVisible(open_)
+        self.opened.emit(open_)
+
+
 class FunctionEdit(QPlainTextEdit):
     """Your own function's box. It says when the typing is done: on leaving the box, or Ctrl+Enter."""
     done = Signal()
@@ -300,10 +335,11 @@ class MainWindow(QMainWindow):
         self._rows = {}
         self._groups = []
         for title, items in SPEC:
-            box = QGroupBox(title)
-            form = QFormLayout(box)
+            box = FoldingGroup(title, not self.settings.value(f"folded/{title}", False, type=bool))
+            box.opened.connect(lambda o, t=title: self.settings.setValue(f"folded/{t}", not o))
+            form = QFormLayout(box.body)
             form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            form.setContentsMargins(8, 12, 8, 8)
+            form.setContentsMargins(8, 2, 8, 8)
             form.setHorizontalSpacing(10)
             form.setVerticalSpacing(5)
             for key, label, kind, lo, hi, step, extra, tip in items:
@@ -1745,6 +1781,10 @@ def apply_theme(app: QApplication, light: bool = False, scale: float = 1.0):
         QGroupBox { font-weight: 600; border: 1px solid #3b4049; border-radius: 6px;
                     margin-top: 12px; padding-top: 4px; }
         QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #f0a356; }
+        QGroupBox#fold { margin-top: 4px; padding-top: 0px; }
+        QPushButton#foldHead { text-align: left; font-weight: 600; color: #f0a356; border: none;
+                              background: transparent; padding: 5px 6px; }
+        QPushButton#foldHead:hover { background: #2b2e34; border-radius: 4px; }
         QTextBrowser { border: none; }
         QToolBar { border: none; spacing: 4px; padding: 3px; }
         QSplitter::handle { background: #2b2e34; }
@@ -1786,6 +1826,10 @@ def _light_theme(app: QApplication):
         QGroupBox { font-weight: 600; border: 1px solid #c4c9d1; border-radius: 6px;
                     margin-top: 12px; padding-top: 4px; }
         QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #b45f12; }
+        QGroupBox#fold { margin-top: 4px; padding-top: 0px; }
+        QPushButton#foldHead { text-align: left; font-weight: 600; color: #b45f12; border: none;
+                              background: transparent; padding: 5px 6px; }
+        QPushButton#foldHead:hover { background: #e4e7ec; border-radius: 4px; }
         QTextBrowser { border: none; }
         QToolBar { border: none; spacing: 4px; padding: 3px; }
         QSplitter::handle { background: #d5d9df; }

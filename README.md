@@ -240,7 +240,8 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail (0.2 mm; saving simplifies the mesh, so the file stays small). |
 
 The mouse wheel scrolls the panel: a drop-down list only changes with it once it is dropped down, a number
-box only over its arrows, and a slider never.
+box only over its arrows, and a slider never. Click a group's heading – ▾ Size, ▾ Shape and so on – to fold
+it away (▸) and keep the panel short; it stays folded next time, in the app and in the web version.
 
 **3D view:** left-drag turns it, right-drag or shift-drag moves it, the wheel zooms, double-click or F goes
 back to the chosen view. **S** spins it, **F5** watches it print, **Ctrl+1–4** switch views, **Ctrl+R**
