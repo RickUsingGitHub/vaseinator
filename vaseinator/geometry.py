@@ -48,6 +48,7 @@ LEDGE_LEAN = 35.0        # ... and the steep side they catch on, from upright: a
                          # with room for a pattern's own lean
 LEDGE_CLEAR = 13.0       # a cover's holes keep this far from its rim, clear of the lid's tabs (mm)
 TISSUE_MARGIN = 8.0      # the tissue hole keeps at least this much of the cover's top round it (mm)
+TISSUE_EDGE = 1.2        # ... and its edge is rounded this much (mm): the top thickens round it to twice that
 TISSUE_WORDS = {1: "a slot", 2: "an oval", 3: "a round hole"}
 # what grows with a design sized for a head: its height and the face, in mm
 HEAD_SCALED = ("height", "eye_width", "eye_height", "eye_apart", "eye_up", "nose_width", "nose_length",
@@ -386,6 +387,7 @@ class VaseDesign:
         self.head_fit = 0.0
         self.ceiling = 0.0
         self.floor_hole = None                    # a tissue box cover's hole through its top, on the bed
+        self.floor_edge = None                    # ... and the shape of its rounded edge
         self.tissue = None                        # ... its length and width (mm)
         self.fn = None
         self.colour_fn = None                     # colours by a function: the formula ...
@@ -783,6 +785,7 @@ class VaseDesign:
         kr = self._roof(zs, Os, kb) if p.closed_top else None
         if p.box and p.tissue_hole != NO_TISSUE and kb is not None:
             self.floor_hole = self._tissue_hole(Is[kb])
+            self.floor_edge = tissue_edge(zb, p.max_overhang)
         if not self.draft:
             # leave out the rows and columns that lie in line with their neighbours: far fewer triangles where the
             # wall is flat or straight, every one kept where a pattern, a hole or a curve needs it
@@ -799,7 +802,7 @@ class VaseDesign:
             kb = None if kb is None else int(np.searchsorted(rk, kb))
             kr = None if kr is None else int(np.searchsorted(rk, kr))
         verts, faces, kinds = hollow.pot(zs, Os, Is, fs, floor_row=kb, roof_row=kr, swell=b,
-                                         floor_hole=self.floor_hole)
+                                         floor_hole=self.floor_hole, floor_edge=self.floor_edge)
         kinds, self.bridge, side_worst = hollow.bridges(verts, faces, kinds, p.max_overhang,
                                                         longest=max(8.0, self.bridge_allowed + 1.0))
         self.pot_rows = (zs, Os, Is, fs, kb, kr, np.zeros_like(fs) if b is None else b)
@@ -934,7 +937,7 @@ class VaseDesign:
 
         if kb is not None:
             add(1 + int(np.bincount(idx[kb], minlength=n).argmax()), slice(0, kb + 1), fs, floor_row=kb,
-                floor_hole=self.floor_hole)
+                floor_hole=self.floor_hole, floor_edge=self.floor_edge)
         for c in range(n):
             # how far outside this filament's part each point is, in mm: cut away as holes are. Away from the
             # holes it is the colour alone, so the cut lands just where the colour changes, however long the
@@ -1048,7 +1051,8 @@ class VaseDesign:
             verts, faces, _ = hollow.pot(z2[rows], O2[rows], I2[rows], f2[rows],
                                          floor_row=kb2 if (floor and a == 0) else None,
                                          roof_row=kr2 - a if (kr2 is not None and b == len(z2) - 1) else None,
-                                         swell=s2[rows], floor_hole=self.floor_hole if a == 0 else None)
+                                         swell=s2[rows], floor_hole=self.floor_hole if a == 0 else None,
+                                         floor_edge=self.floor_edge)
             parts.append((fil, verts, faces))
         return parts
 
@@ -1559,7 +1563,8 @@ class VaseDesign:
                              f"{BOX_TOP_ROOM:g} mm over it",
                 "Tissues come out of": (f"{TISSUE_WORDS[p.tissue_hole]} {self.tissue[0]:.0f}"
                                         + ("" if p.tissue_hole == TISSUE_ROUND else f" × {self.tissue[1]:.0f}")
-                                        + " mm, through its bottom layers") if self.tissue else "nowhere: no hole",
+                                        + f" mm, through its bottom layers, its edge rounded {TISSUE_EDGE:g} mm both "
+                                          "sides for the tissues to slide over") if self.tissue else "nowhere: no hole",
                 "Printed": "upside down, as it is shown - the hole on the bed, the open top for the box to go "
                            "in: nothing needs supports. Turn it over to put it on."} if p.box else {}),
             "Holds": ("nothing: it goes only part way round" if p.around < 360.0 else
@@ -1683,6 +1688,26 @@ def _colour_rate(z, O, V):
     up = np.gradient(V, z, axis=0) if len(z) > 1 else 0.0
     round_ = np.gradient(V, across, axis=1) if len(across) > 1 else 0.0
     return np.hypot(up, round_)
+
+
+def tissue_edge(floor: float, limit: float, r: float = TISSUE_EDGE, steps: int = 8):
+    """The shape of a tissue box cover's tissue hole's edge, as it prints - upside down, the cover's top on the
+    bed: [(how far out from the hole, how far up from the bed)], from the bed to the top of the floor.
+
+    A round edge, both sides, for the tissues to slide over. A round's very bottom would lie flat over the hole,
+    so on the bed's side it is a chamfillet: from the bed a chamfer leaning no more than the wall may, then the
+    round from where it is that steep. The floor thickens round the hole to the round's height, and slopes back
+    down to the floor gently, facing up."""
+    lean = math.radians(max(min(limit - 2.0, 45.0), 20.0))
+    top = max(2.0 * r, floor)                     # the edge's height: the round's, or the floor's if thicker
+    # the round's bottom half, from the steepest it may lean to straight up, then its top half, round to flat
+    low = [(r - r * math.cos(a), r - r * math.sin(a)) for a in np.linspace(lean, 0.0, steps)]
+    high = [(r - r * math.cos(a), top - r + r * math.sin(a)) for a in np.linspace(0.0, 0.5 * math.pi, steps + 2)]
+    s0, z0 = low[0]
+    shape = [(s0 + z0 * math.tan(lean), 0.0)] + low + high[1 if top - r <= r + 1e-9 else 0:]
+    if top > floor + 1e-6:                        # the thickening, back down to the floor
+        shape.append((r + 3.0 * (top - floor), floor))
+    return shape
 
 
 def ledge_lean(p: VaseParams) -> float:

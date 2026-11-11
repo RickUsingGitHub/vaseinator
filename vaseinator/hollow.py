@@ -530,7 +530,7 @@ def zip_rings(outer_ids, outer_xy, inner_ids, inner_xy):
                     np.stack([o[oi], i[np.minimum(ii + 1, m)], i[ii]], 1))
 
 
-def pot(z, O, I, f, floor_row=None, roof_row=None, swell=None, floor_hole=None):
+def pot(z, O, I, f, floor_row=None, roof_row=None, swell=None, floor_hole=None, floor_edge=None):
     """The hollow pot from rows at heights z (K,): the outer face O and inner face I (K, N, 2), and the hole
     field f (K, N), below nought in the wall.
 
@@ -540,7 +540,8 @@ def pot(z, O, I, f, floor_row=None, roof_row=None, swell=None, floor_hole=None):
     swell (K, N): how far the wall swells out and in at each point, mm each side (see ``swell``); the holes'
     edges stay where the faces were, so each swell curves down to meet its hole's side.
     floor_hole (n, 2): a hole right through the floor, anticlockwise round the middle - a tissue box cover's,
-    printed upside down.
+    printed upside down. floor_edge [(out, up)]: the shape of its edge, from the bed to the floor's top - each
+    point how far the edge is out from the hole, and how far above the bed (a straight cut if not given).
     Returns (verts (V, 3), faces (F, 3), kind of each face).
     """
     K, N = f.shape
@@ -591,10 +592,15 @@ def pot(z, O, I, f, floor_row=None, roof_row=None, swell=None, floor_hole=None):
     if floor_hole is not None and floor_row is not None:
         hole_xy = np.asarray(floor_hole, dtype=float)
         nh = len(hole_xy)
-        for zh in (z[0], z[kb]):                            # its edge on the bed, and up on the floor's top
-            pts.append(np.concatenate([hole_xy, np.full((nh, 1), zh)], axis=1))
-        h_bed, h_top = count + np.arange(nh), count + nh + np.arange(nh)
-        count += 2 * nh
+        edge = floor_edge if floor_edge is not None else [(0.0, 0.0), (0.0, z[kb] - z[0])]
+        out = sections.normals(hole_xy)                     # away from the hole, into the floor
+        rings = []                                          # its edge: a loop for each point of its shape
+        for s, up in edge:
+            pts.append(np.concatenate([hole_xy + out * s, np.full((nh, 1), z[0] + up)], axis=1))
+            rings.append(count + np.arange(nh))
+            count += nh
+        h_bed, h_top = rings[0], rings[-1]
+        bed_xy, top_xy = hole_xy + out * edge[0][0], hole_xy + out * edge[-1][0]
     verts = np.concatenate(pts)
     faces, kinds = [], []
 
@@ -680,10 +686,11 @@ def pot(z, O, I, f, floor_row=None, roof_row=None, swell=None, floor_hole=None):
         caps.append(vo[0][sections.triangulate(Ow[0])][:, ::-1])
         caps.append(vi[kb][sections.triangulate(Iw[kb])])
     else:                                                   # the floor round the hole, and the hole's side
-        caps.append(zip_rings(vo[0], Ow[0], h_bed, hole_xy)[:, ::-1])
-        caps.append(zip_rings(vi[kb], Iw[kb], h_top, hole_xy))
+        caps.append(zip_rings(vo[0], Ow[0], h_bed, bed_xy)[:, ::-1])
+        caps.append(zip_rings(vi[kb], Iw[kb], h_top, top_xy))
         k1 = np.roll(np.arange(nh), -1)
-        side = np.concatenate([np.stack([h_bed, h_top, h_top[k1]], 1), np.stack([h_bed, h_top[k1], h_bed[k1]], 1)])
+        side = np.concatenate([np.concatenate([np.stack([a, b, b[k1]], 1), np.stack([a, b[k1], a[k1]], 1)])
+                               for a, b in zip(rings[:-1], rings[1:])])
         faces.append(side)
         kinds.append(np.full(len(side), SIDE))
     caps = np.concatenate(caps)

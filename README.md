@@ -85,7 +85,8 @@ ready to slice.
   it, with a little room to spare (more inside rounded corners, so a square-cornered box still fits). Pick
   the hole the tissues come out of – a long **slot**, an **oval** or a **round** hole – and any pattern,
   holes or colours. It is made the way it prints: **upside down**, the hole through its first layers on the
-  bed and the open end at the top, so nothing needs supports. Turn it over to put it on. Its ribs, bumps
+  bed and the open end at the top, so nothing needs supports. The hole's edge is **rounded**, both sides,
+  for the tissues to slide over. Turn it over to put it on. Its ribs, bumps
   and lumps are spread **evenly round the wall**, as close together on the long sides as round the ends.
 * **A lid for a tissue box cover**, printed on its own – with the cover, or later: a flat frame (or a
   solid plate) the shape of the rim, which the cover stands on. Inside each end of the cover is a small
@@ -397,7 +398,12 @@ each side (more where a rounded corner has to clear a square one, and more for p
 and as tall as the box with a little over it plus the solid bottom, which is the cover's top. The hole
 for the tissues – a slot with round ends, an oval or a circle, kept clear of the walls – is cut through
 that bottom: the floor is filled between the wall and the hole, row by row round the middle, on the bed
-and on its top, with the hole's side between them, so the mesh stays closed. Everything else – holes in
+and on its top, with the hole's side between them, so the mesh stays closed. That side is rounded, 1.2 mm
+each side: the floor thickens round the hole to 2.4 mm and the round runs over its top. On the bed's side
+the round's bottom would lie flat over the hole, so it is a chamfillet – from the bed a chamfer leaning no
+more than the wall may (43°), then the round from where it is that steep – and the thickening slopes back
+down to the floor, facing up, so the edge prints without supports. The opening is the size set where it is
+narrowest, halfway up the round. Everything else – holes in
 the wall, rounded edges, colour bands – works as on any vase. **Evenly round the wall** lays the patterns
 out by how far along the wall each point is, as a share of the way round, rather than by its angle from the
 middle – which on a box would crowd them along the middles of the long sides.

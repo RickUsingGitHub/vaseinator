@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vaseinator import sections  # noqa: E402
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
-from vaseinator.geometry import (BOX_ROOM, BOX_TOP_ROOM, TOLERANCE, VORONOI_LONGEST, VaseDesign,  # noqa: E402
+from vaseinator.geometry import (BOX_ROOM, BOX_TOP_ROOM, TISSUE_EDGE, TOLERANCE, VORONOI_LONGEST, VaseDesign,  # noqa: E402
                                  edge_check, face_normals, fit_head, lean_angles, mesh_volume)
 from vaseinator import hollow  # noqa: E402
 from vaseinator.lid import LID_PLATE, Lid  # noqa: E402
@@ -385,7 +385,7 @@ def test_tissue_box_covers():
         # the hole goes through the bottom layers, on the bed, and nowhere else
         long_side = max(L, W)
         hx, hy = np.abs(d.floor_hole).max(axis=0)
-        assert (hx > hy) == (L > W) and d.tissue is not None and d.info()["Tissues come out of"].endswith("bottom layers")
+        assert (hx > hy) == (L > W) and d.tissue is not None and "bottom layers, its edge rounded" in d.info()["Tissues come out of"]
         bed = verts[np.abs(verts[:, 2]) < 1e-9]
         assert np.hypot(bed[:, 0], bed[:, 1]).min() < 0.6 * long_side / 2
         assert "Holds" not in d.info() and d.info()["Fits over"].startswith(f"a box of tissues {L / 10:g} × {W / 10:g}")
@@ -394,12 +394,22 @@ def test_tissue_box_covers():
         assert all(edge_check(f)[0] for _, _, f in parts)
         # (a band's edge through a hole cuts the hole's edge a hair differently: a few millionths)
         assert abs(sum(mesh_volume(v, f) for _, v, f in parts) - whole) < 1e-5 * whole
-    # a slot 130 x 36 mm takes its area out of the 1.2 mm bottom
+    # a slot 130 x 36 mm goes through the 1.2 mm bottom, its edge rounded both sides: 36 mm across where it is
+    # narrowest, halfway up the round; wider on the bed, where a chamfer leans no more than the limit; and the
+    # top thickened round it, to the round's height
     d = VaseDesign(plain(**box))
+    assert d.tissue == (130.0, 36.0) and layer_loops(d, 0.5 * d.zb) == 2
+
+    def across(zc):                               # how wide the slot is at height zc, across its middle
+        seg = d.contour(zc)[:, :, :2].reshape(-1, 2)
+        return 2.0 * np.abs(seg[(np.abs(seg[:, 0]) < 2.0) & (np.abs(seg[:, 1]) < 30.0), 1]).min()
+
+    assert abs(across(TISSUE_EDGE) - 36.0) < 0.05 and across(0.01) > 36.0 + 1.0, (across(TISSUE_EDGE), across(0.01))
+    assert d.worst <= limit and d.floor_edge[-1] == (TISSUE_EDGE + 3.0 * (2.0 * TISSUE_EDGE - d.zb), d.zb)
     slot = (130.0 - 36.0) * 36.0 + math.pi * 18.0 ** 2
     cut = mesh_volume(*flat.print_mesh()) - mesh_volume(*d.print_mesh())
-    assert abs(cut - slot * d.zb) < 0.02 * slot * d.zb, (cut, slot * d.zb)
-    assert d.tissue == (130.0, 36.0) and layer_loops(d, 0.5 * d.zb) == 2
+    assert 0.5 * slot * d.zb < cut < slot * d.zb, (cut, slot * d.zb)       # the round's thickening puts some back
+    assert "edge rounded" in d.info()["Tissues come out of"]
     # a hole bigger than the top leaves a margin round it; the hole picked brings a size that suits the box
     d = VaseDesign(plain(**box, tissue_length=900.0, tissue_width=900.0))
     assert d.tissue[0] < 220.0 and any("made smaller" in n for n in d.notes)
