@@ -20,9 +20,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vaseinator import sections  # noqa: E402
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
 from vaseinator.geometry import (BOX_ROOM, BOX_TOP_ROOM, TISSUE_EDGE, TOLERANCE, VORONOI_LONGEST, VaseDesign,  # noqa: E402
-                                 edge_check, face_normals, fit_head, lean_angles, mesh_volume)
+                                 edge_check, face_normals, fit_head, lean_angles, ledge_heights, mesh_volume)
 from vaseinator import hollow  # noqa: E402
-from vaseinator.lid import LID_PLATE, Lid  # noqa: E402
+from vaseinator.lid import LID_PLATE, LID_PRESS, Lid  # noqa: E402
 from vaseinator.params import (ALMOND_EYES, BANDS, BY_FUNCTION, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, ELLIPSE, EVENLY,  # noqa: E402
                                FAKE_VASE, FLOWER, GEAR, GRADIENT, GRILLE_MOUTH, LID_FIRM, LID_GENTLE, LID_SNUG,
                                NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN,
@@ -489,8 +489,9 @@ def test_colours_by_a_function():
 
 def test_tissue_box_lids():
     """A lid for a cover's open end, made from its design: closed, flat on the bed, the rim's shape with a pull tab,
-    hooks at one end and latches at the other. On, every part of it is clear of the cover's real wall; pulled
-    down a millimetre, each tab's bump runs into the ledge inside the cover's end. A frame or a solid plate."""
+    hooks at one end and latches at the other. On, it is clear of the cover's real wall but where each tab's bump
+    presses a little into the ledge's steep side, holding it firm; pulled down a millimetre, each bump runs into
+    the ledge inside the cover's end. A frame or a solid plate."""
     for title, open_, grip in (("Tissue Box Cover", True, LID_SNUG), ("Tissue Box Cover", False, LID_FIRM),
                                ("Lace Tissue Cube", True, LID_GENTLE)):
         p = gallery_design(title)
@@ -519,9 +520,19 @@ def test_tissue_box_lids():
             xc = a[:, 0] + (b[:, 0] - a[:, 0]) * ya / np.where(cross, ya - yb, 1.0)
             return bool(np.sum(cross & (xc > x)) % 2), gap
 
+        # on: clear of the wall everywhere but where each bump presses into the ledge's steep side - by no more
+        # than it is made to, so the tab bends in a little and holds the lid firm against the rim
+        _, _, h2, h3 = ledge_heights(d.p)
+        pressing = 0
         for x, y, z in tabs:
             inside, gap = in_wall(x, y, z)
-            assert not inside and gap > 0.05, (title, x, y, z, gap)
+            at_ledge = h2 - 1.0 < z - LID_PLATE < h3 + 0.5        # the bump, on the ledge's steep side
+            if inside:
+                assert at_ledge and gap < LID_PRESS + 0.05, (title, x, y, z, gap)
+                pressing += 1
+            else:
+                assert at_ledge or gap > 0.05, (title, x, y, z, gap)
+        assert pressing >= lid.tabs, (title, pressing)          # each tab presses, at least at one end
         caught = sum(in_wall(x, y, z - 1.0)[0] for x, y, z in tabs if z - 1.0 > LID_PLATE + 0.1)
         assert caught >= 2 * lid.tabs, (title, caught)
         info = lid.info()

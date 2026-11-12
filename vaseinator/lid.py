@@ -2,11 +2,13 @@
 
 It is a flat plate, the shape of the cover's rim, that the cover stands on, with tabs standing up from it just
 inside each end. Inside each end of the cover is a ledge (see geometry.ledges); each tab has a bump on its
-outside that sits just behind it. At one end the tabs are stiff hooks: tilted, the lid goes in by that end
-first, and the hooks swing over the ledge. At the other, by the pull tab, they are springy latches: pressed up,
-they bend in over the ramp of the ledge and click in behind it. Pulled by its tab, the latches let go and the lid
-swings out off its hooks again. Loose guides on the long sides keep it from sliding about. It is made from the
-cover's own design - the wall where each tab goes is measured. Nothing here needs Qt.
+outside that sits behind it, made a little into its steep side: on, each tab stays bent in a little and presses
+out on it, pulling the lid tight against the rim, so it is firm and doesn't rattle. At one end the tabs are stiff
+hooks: tilted, the lid goes in by that end first, and the hooks swing over the ledge. At the other, by the pull
+tab, they are springy latches: pressed up, they bend in over the ramp of the ledge and click in behind it. Pulled
+by its tab, the latches let go and the lid swings out off its hooks again. Close guides on the long sides keep it
+from shifting sideways. It is made from the cover's own design - the wall where each tab goes is measured.
+Nothing here needs Qt.
 """
 
 from __future__ import annotations
@@ -26,13 +28,15 @@ LID_LATCH_THICK = 1.0         # ... a latch's thickness: springy (the slicer mak
 LID_HOOK_THICK = 1.6          # ... and a hook's: stiff
 LID_HOOK = 0.7                # how far a hook's bump reaches out over the ledge
 LID_GAP = 0.3                 # between a tab and the wall where the wall comes nearest it
-LID_PLAY = 0.3                # between a bump and the ledge it sits behind, up and down
+LID_PRESS = 0.3               # how far each bump is made down into the ledge's steep side: on, its tab bends in a
+                              # little and presses out on it all the time, pulling the lid tight to the rim - firm,
+                              # with no play to rattle
 LID_FLAT = 0.6                # the flat on a bump's outside
 LID_SINK = 0.3                # how far the tabs go down into the plate, to be one with it
 LID_GUIDE_TALL = 5.0          # the guides on the long sides: how tall
 LID_GUIDE_WIDE = 20.0         # ... how wide
 LID_GUIDE_THICK = 1.2         # ... how thick
-LID_GUIDE_GAP = 0.6           # ... and how far from the wall: loose, so they need no lining up
+LID_GUIDE_GAP = 0.3           # ... and how far from the wall: close, so the lid can't shift sideways, but not touching
 LID_PULL = 9.0                # how far the pull tab sticks out past the rim
 LID_PULL_WIDE = 26.0          # ... and how wide it is
 LID_GRIP = {LID_GENTLE: 0.5, LID_SNUG: 0.7, LID_FIRM: 0.9}     # how far each latch's bump reaches out over the ledge
@@ -164,8 +168,13 @@ class Lid:
                     ledge = nearest(h1, h2)                       # the ledge, at its innermost
                     out = min(ledge + reach, nearest(h3, tall) - LID_GAP)    # the bump, behind it, clear of the wall
                     e = out - face
-                    # the bump's underside lies along the ledge's steep side, just behind it
-                    bump = h2 + (out - ledge) / slope + LID_PLAY
+                    # the bump's underside lies along the ledge's steep side, a little into it: put on, the tab
+                    # bends in that much and presses out on it. Where the steep side is: as measured, where the
+                    # wall comes out to the bump's outside on its way back from the ledge
+                    hs = np.linspace(h2, h3, 60)
+                    ws = np.interp(hs, h, wall)
+                    catch = float(hs[np.argmax(ws >= out)]) if (ws >= out).any() else h2 + (out - ledge) / slope
+                    bump = catch - LID_PRESS
                     tall = bump + LID_FLAT + e + 0.5
                 worst = max(worst, e)
                 profile = np.array([[face - t, -LID_SINK], [face, -LID_SINK], [face, bump - e / slope],

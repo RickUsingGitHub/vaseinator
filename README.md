@@ -419,8 +419,11 @@ way in from the corners of its straight part (one in the middle, if the end is s
 1.6 mm thick, at the far end, and springy **latches**, 1 mm thick, by the pull tab. For each tab the inside
 of the wall is measured across the tab's width at every row up from the rim – swollen round any holes – and
 the tab stands 0.3 mm clear of where it comes nearest. Its bump reaches out behind the ledge – a hook's by
-0.7 mm, a latch's by the grip, 0.5, 0.7 or 0.9 mm – with its underside along the ledge's steep side, 0.3 mm
-above it. A loose guide stands in the middle of each long side, so the lid can't slide about.
+0.7 mm, a latch's by the grip, 0.5, 0.7 or 0.9 mm – with its underside along the ledge's steep side, made
+0.3 mm down into it, where the measured wall comes out to it: put on, each tab bends in about 0.2 mm and
+presses out on the steep side all the time, which pulls the lid tight against the rim, so it is firm, with
+no play to rattle. A guide stands in the middle of each long side, 0.3 mm from the wall, so the lid can't
+shift sideways.
 
 The **pot** is built on the grid, then the rows and columns that lie within 0.02 mm of the straight line
 between their neighbours are left out – on a box most of them, on a twisting vase few – and **saving**
@@ -471,7 +474,8 @@ closed top comes to a point over a small ceiling (drawn and banded too), a wall 
 it should, a face's holes and nose are where they should be and print without support, and a design sized
 for a head fits it – the masks and helmet a head 57 cm round; that a tissue box cover clears its box of
 tissues by the room to spare everywhere inside, with its hole through the bottom layers alone, holes and
-bands and all, and that its lid is closed, clear of the cover's printed wall everywhere when it is on, and
+bands and all, and that its lid is closed, clear of the cover's printed wall when it is on but where each
+tab's bump presses into the ledge by the little it is made to, and
 caught by the ledges when it is pulled down a millimetre; that colours by a function come as closed
 parts, one per filament, each just where the formula puts it and together the plastic of the whole – on a
 plain box, a textured twist and Voronoi lace – and that a seamless vase or facets stay one colour; and that
