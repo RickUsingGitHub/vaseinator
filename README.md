@@ -416,13 +416,16 @@ have 2 mm more room inside for the lid's tabs, and holes keep 13 mm clear of the
 Its **lid** is made from the cover as built: the plate is the outline of the rim, turned over as the cover
 is to go on, with a pull tab added at the end of the long way. Two tabs stand at each end, a quarter of the
 way in from the corners of its straight part (one in the middle, if the end is short): stiff **hooks**,
-1.6 mm thick, at the far end, and springy **latches**, 1 mm thick, by the pull tab. For each tab the inside
+3.2 mm thick, at the far end, and **latches**, 2 mm thick – strong, and still springy enough to click in – by
+the pull tab. For each tab the inside
 of the wall is measured across the tab's width at every row up from the rim – swollen round any holes – and
 the tab stands 0.3 mm clear of where it comes nearest. Its bump reaches out behind the ledge – a hook's by
-0.7 mm, a latch's by the grip, 0.5, 0.7 or 0.9 mm – with its underside along the ledge's steep side, made
+1 mm, a latch's by the grip, 0.5, 0.7 or 0.9 mm – with its underside along the ledge's steep side, made
 0.3 mm down into it, where the measured wall comes out to it: put on, each tab bends in about 0.2 mm and
 presses out on the steep side all the time, which pulls the lid tight against the rim, so it is firm, with
-no play to rattle. A guide stands in the middle of each long side, 0.3 mm from the wall, so the lid can't
+no play to rattle. The tabs at each end are all one shape – a textured wall measures a little differently
+at each, so they take the shallowest bump and the lowest – each just inside the wall where it stands. A
+guide stands in the middle of each long side, 0.3 mm from the wall, so the lid can't
 shift sideways.
 
 The **pot** is built on the grid, then the rows and columns that lie within 0.02 mm of the straight line
