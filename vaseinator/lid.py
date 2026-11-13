@@ -24,10 +24,11 @@ from .params import LID_FIRM, LID_GENTLE, LID_SNUG
 LID_PLATE = 1.6               # how thick the plate is (mm)
 LID_FRAME = 12.0              # an open lid: how wide its frame is, in from the edge
 LID_TAB_WIDE = 10.0           # how wide each tab is, along the wall
-LID_LATCH_THICK = 2.0         # ... a latch's thickness: strong, and still springy enough to click in
-LID_HOOK_THICK = 3.2          # ... and a hook's: stiff - it goes in tilted, so it needn't bend
-LID_HOOK = 1.0                # how far a hook's bump reaches out over the ledge
+LID_TAB_THICK = 2.0           # ... and how thick: every tab, hook and latch alike - strong, and still springy
+                              # enough to click in
 LID_GAP = 0.3                 # between a tab and the wall where the wall comes nearest it
+LID_TOP_GAP = 0.05            # ... and between a bump and the wall above the ledge: only just clear, so it
+                              # reaches out behind the ledge as far as the ledge is deep
 LID_PRESS = 0.3               # how far each bump is made down into the ledge's steep side: on, its tab bends in a
                               # little and presses out on it all the time, pulling the lid tight to the rim - firm,
                               # with no play to rattle
@@ -39,7 +40,7 @@ LID_GUIDE_THICK = 1.2         # ... how thick
 LID_GUIDE_GAP = 0.3           # ... and how far from the wall: close, so the lid can't shift sideways, but not touching
 LID_PULL = 9.0                # how far the pull tab sticks out past the rim
 LID_PULL_WIDE = 26.0          # ... and how wide it is
-LID_GRIP = {LID_GENTLE: 0.5, LID_SNUG: 0.7, LID_FIRM: 0.9}     # how far each latch's bump reaches out over the ledge
+LID_GRIP = {LID_GENTLE: 0.75, LID_SNUG: 0.95, LID_FIRM: 1.15}  # how far each latch's bump reaches out over the ledge
 GRIP_WORDS = {LID_GENTLE: "gently", LID_SNUG: "snugly", LID_FIRM: "firmly"}
 
 
@@ -132,6 +133,7 @@ class Lid:
                                "wider (Advanced ▸ Holes and openings ▸ Plain rim).")
             return
         worst = 0.0
+        tabs = []
         for side, hook in ((U, False), (-U, True), (V, None), (-V, None)):
             Vs = np.array([-side[1], side[0]])
             u, v = rim @ side, rim @ Vs
@@ -144,8 +146,6 @@ class Lid:
                 places = [lo + 0.25 * (hi - lo), lo + 0.75 * (hi - lo)]
             else:
                 places = [0.5 * (lo + hi)]
-            reach = LID_HOOK if hook else grip
-            t = LID_HOOK_THICK if hook else LID_LATCH_THICK
             fits = []                                     # each tab's fit to the wall where it stands
             for c in places:
                 across = np.linspace(c - half, c + half, 9)
@@ -166,7 +166,7 @@ class Lid:
                 for _ in range(3):
                     face = nearest(0.0, tall) - LID_GAP           # the tab's outside, clear of the wall all the way up
                     ledge = nearest(h1, h2)                       # the ledge, at its innermost
-                    out = min(ledge + reach, nearest(h3, tall) - LID_GAP)    # the bump, behind it, clear of the wall
+                    out = min(ledge + grip, nearest(h3, tall) - LID_TOP_GAP)    # the bump, behind it, clear of the wall
                     e = out - face
                     # the bump's underside lies along the ledge's steep side, a little into it: put on, the tab
                     # bends in that much and presses out on it. Where the steep side is: as measured, where the
@@ -176,17 +176,19 @@ class Lid:
                     catch = float(hs[np.argmax(ws >= out)]) if (ws >= out).any() else h2 + (out - ledge) / slope
                     bump = catch - LID_PRESS
                     tall = bump + LID_FLAT + e + 0.5
-                fits.append((c, nearest, e, bump))
-            if not fits:
-                continue
-            # every tab at this end the same shape - a textured wall measures a little differently at each - each
-            # just inside the wall where it stands: no bump out so far it meets the wall above, and none so high
-            # that it doesn't press on the ledge
-            e = min(f[2] for f in fits)
-            bump = min(f[3] for f in fits)
+                fits.append((side, Vs, hook, c, nearest, e, bump))
+            tabs += fits
+        # every tab the same shape, at both ends - a textured wall measures a little differently at each - each just
+        # inside the wall where it stands: no bump out so far it meets the wall above, and none so high that it
+        # doesn't press on the ledge
+        if tabs:
+            e = min(f[5] for f in tabs)
+            bump = min(f[6] for f in tabs)
             tall = bump + LID_FLAT + e + 0.5
-            worst = max(worst, e)
-            for c, nearest, _, _ in fits:
+            worst = e
+            t = LID_TAB_THICK
+            half = 0.5 * LID_TAB_WIDE
+            for side, Vs, hook, c, nearest, _, _ in tabs:
                 face = nearest(0.0, tall) - LID_GAP
                 profile = np.array([[face - t, -LID_SINK], [face, -LID_SINK], [face, bump - e / slope],
                                     [face + e, bump], [face + e, bump + LID_FLAT], [face, bump + LID_FLAT + e],
@@ -195,11 +197,10 @@ class Lid:
                 self.tabs += 1
                 self.hooks += bool(hook)
                 self.latches += not hook
-            room = d.box_room + BOX_END_ROOM              # inside the cover's end, between the wall and the box
+            room = d.box_room + BOX_END_ROOM              # inside the cover's ends, between the wall and the box
             if LEDGE_DEPTH + LID_GAP + t > room + 0.05:
-                self.notes.append(f"The {'hooks' if hook else 'latches'} stand {LEDGE_DEPTH + LID_GAP + t:.1f} mm in "
-                                  f"from the wall, more than the {room:.1f} mm left for the box of tissues: they may "
-                                  "press on its end.")
+                self.notes.append(f"The tabs stand {LEDGE_DEPTH + LID_GAP + t:.1f} mm in from the wall, more than "
+                                  f"the {room:.1f} mm left for the box of tissues: they may press on its ends.")
         if not (self.hooks and self.latches):
             self.errors.append("The cover is too small for a lid's tabs.")
             return

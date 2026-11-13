@@ -537,16 +537,16 @@ def test_tissue_box_lids():
         assert caught >= 2 * lid.tabs, (title, caught)
         info = lid.info()
         assert ("frame" in info) == open_ and "2 hooks" in info and "2 latches" in info
-    # on a lumpy wall, which measures differently at each tab, the tabs at each end are still all one shape: as
-    # tall, and as deep, bump and all - each just inside the wall where it stands
+    # on a lumpy wall, which measures differently at each tab, the tabs are still all one shape, hooks and latches
+    # alike: as thick, as tall, and as deep, bump and all - each just inside the wall where it stands
     p = gallery_design("Tissue Box Cover")
     p.ring_count, p.organic_depth = 0, 2.0
     lid = Lid(VaseDesign(p))
     tabs = lid.verts[(lid.verts[:, 2] > LID_PLATE + 0.01) & (np.abs(lid.verts[:, 0]) > 40.0)]
-    for end in (-1, 1):
-        shapes = {(round(float(np.ptp(q[:, 0])), 3), round(float(q[:, 2].max()), 3))
-                  for q in (tabs[(np.sign(tabs[:, 0]) == end) & (np.sign(tabs[:, 1]) == s)] for s in (-1, 1))}
-        assert len(shapes) == 1, (end, shapes)
+    shapes = {(round(float(np.ptp(q[:, 0])), 3), round(float(q[:, 2].max()), 3))
+              for q in (tabs[(np.sign(tabs[:, 0]) == end) & (np.sign(tabs[:, 1]) == s)]
+                        for end in (-1, 1) for s in (-1, 1))}
+    assert len(shapes) == 1, shapes
     assert Lid(VaseDesign(plain())).errors
     # the cover's holes keep clear of the lid's tabs, however near the rim they are asked for
     p = gallery_design("Lace Tissue Cube")
