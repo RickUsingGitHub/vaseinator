@@ -39,14 +39,21 @@ SIMPLIFY_ERROR = 1e-3    # how far saving may simplify the mesh: pyfqmr's lossle
 SIMPLIFY_MM = 0.02       # ... and in the web version, meshoptimizer's (mm)
 BOX_ROOM = 2.0           # mm to spare each side between a tissue box cover and the box of tissues inside it
 BOX_TOP_ROOM = 3.0       # ... and over the box's top
-BOX_END_ROOM = 2.0       # ... and more inside each end, for the lid's tabs
-LEDGE_DEPTH = 1.2        # a cover's ledges, inside each end at the rim, that its lid clicks in behind (mm)
-LEDGE_FROM = 4.0         # ... how far in from the rim each starts, the cover on
-LEDGE_RAMP = 3.5         # ... the gentle slope the lid's tabs ride over, going on
-LEDGE_FLAT = 0.4         # ... its flat
-LEDGE_LEAN = 35.0        # ... and the steep side they catch on, from upright: an overhang as the cover prints,
-                         # with room for a pattern's own lean
-LEDGE_CLEAR = 13.0       # a cover's holes keep this far from its rim, clear of the lid's tabs (mm)
+BOX_END_ROOM = 2.0       # ... and more inside each end, for the lid's latch and stop
+BOX_SIDE_ROOM = 4.6      # ... and at least this much inside each long side, for the lid's hooks
+# a cover's rails: four short ledges inside its long sides, by the corners - where a thin wall is stiff - that its
+# lid's hooks slide in behind (mm)
+RAIL_DEPTH = 1.6         # how far each stands in from the wall
+RAIL_FROM = 3.0          # ... how far in from the rim it starts, the cover on: flat there, as the cover prints
+RAIL_FACE = 1.2          # ... how tall its upright face is
+RAIL_LEAN = 40.0         # ... and the sloping side the hooks bear on, from upright: an overhang as the cover
+                         # prints, with room for a pattern's own lean
+RAIL_STEP = 0.1          # ... how far up its rim side steps in: as good as flat
+RAIL_IN = 9.0            # how far along the side from the corner each rail is: as near as lets the hooks in
+RAIL_LONG = 8.0          # ... how long
+RAIL_END = 1.0           # ... and how long the slope at each of its ends
+RAIL_CLEAR = 13.0        # a cover's holes keep this far from its rim, clear of the rails and the lid's hooks (mm)
+RAIL_PLAIN = 8.5         # ... and their rounded edges' swell this far, so the wall there is plain
 TISSUE_MARGIN = 8.0      # the tissue hole keeps at least this much of the cover's top round it (mm)
 TISSUE_EDGE = 1.2        # ... and its edge is rounded this much (mm): the top thickens round it to twice that
 TISSUE_WORDS = {1: "a slot", 2: "an oval", 3: "a round hole"}
@@ -770,18 +777,21 @@ class VaseDesign:
         else:
             zs, rows, at = hollow.insert_rows(self.z, rows, [zb])
             kb = at[zb]
-        if p.box:                                 # the ledges a lid clicks in behind
-            heights = ledge_heights(p)
-            zs, rows, _ = hollow.insert_rows(zs, rows, [self.H - h for h in heights])
+        railed = p.box and rail_places(p) is not None      # the rails a lid's hooks slide in behind
+        if railed:
+            h0, h1, h2 = rail_heights(p)
+            zs, rows, _ = hollow.insert_rows(zs, rows, [self.H - h for h in (h0 - RAIL_STEP, h0, h1, h2)])
         Os, Is, fs = rows[:3]
         V = None if V is None else rows[3]
-        if p.box:
-            Is = ledges(zs, Is, self.H, heights)
+        if railed:
+            Is = rails(zs, Is, self.H, p)
         b = None
         if p.hole_swell > 0 and (fs > 0).any():
             # rounded edges: the wall swells out and in round every hole, curving from outside to in
             far = max(6.0, 0.5 * p.hole_size) if p.holes != NO_HOLES else 6.0
             b = hollow.swell(fs, zs, p.hole_swell, far, 0.6 * math.tan(math.radians(p.max_overhang)))
+            if railed:                            # ... but not by the rim, where the lid's hooks need the wall plain
+                b = b * np.clip((self.H - zs - RAIL_PLAIN) / (RAIL_CLEAR - RAIL_PLAIN - 1.5), 0.0, 1.0)[:, None]
         kr = self._roof(zs, Os, kb) if p.closed_top else None
         if p.box and p.tissue_hole != NO_TISSUE and kb is not None:
             self.floor_hole = self._tissue_hole(Is[kb])
@@ -1001,7 +1011,7 @@ class VaseDesign:
         start = along[np.arange(K), c0]
         t = np.mod((along - start[:, None]) / L[:, None], 1.0)
         z_lo = zb + max(p.hole_foot, 0.0)
-        z_hi = (self.dome_from if p.closed_top else self.H) - max(p.hole_rim, LEDGE_CLEAR if p.box else 0.0)
+        z_hi = (self.dome_from if p.closed_top else self.H) - max(p.hole_rim, RAIL_CLEAR if p.box else 0.0)
         f, spans = hollow.hole_field(p.holes, t, self.z, L, p.hole_size, p.hole_strut, p.hole_jitter, p.hole_seed,
                                      z_lo, z_hi, room, 0.85 * math.tan(math.radians(p.max_overhang)),
                                      min(VORONOI_BRIDGE * p.hole_size, VORONOI_LONGEST))
@@ -1659,16 +1669,26 @@ def box_room(p: VaseParams) -> float:
     return max(BOX_ROOM, corner - (corner - BOX_ROOM) / math.sqrt(2.0)) + inward
 
 
+def box_outline(p: VaseParams):
+    """A tissue box cover seen from above, outside: half its length, half its width, and its corners' radius (mm).
+    Inside, it clears the box of tissues by box_room all round; by BOX_END_ROOM more at each end, for the lid's
+    latch and stop; and along each long side by at least BOX_SIDE_ROOM clear of anything that reaches in, for the
+    lid's hooks."""
+    wall = p.line_width * max(int(p.walls), 1)
+    room = box_room(p)
+    corner = max(p.box_corner - wall, 1.0)
+    inward = room - max(BOX_ROOM, corner - (corner - BOX_ROOM) / math.sqrt(2.0))
+    a = 0.5 * max(p.box_length, p.box_width) + room + BOX_END_ROOM + wall
+    b = 0.5 * min(p.box_length, p.box_width) + max(room, inward + BOX_SIDE_ROOM) + wall
+    return a, b, min(max(p.box_corner, wall + 1.0), b)
+
+
 def box_shape(p: VaseParams) -> VaseParams:
     """A tissue box cover's own shape, from the box of tissues it goes over: a rectangle seen from above with
     rounded corners, straight up. It is made upside down, as it prints - the top, with the hole for the tissues,
     is the floor on the bed, and the rim is the open bottom the box goes in by - so nothing needs supports."""
     q = p.copy()
-    wall = q.line_width * max(int(q.walls), 1)
-    room = box_room(q)
-    a = 0.5 * max(q.box_length, q.box_width) + room + BOX_END_ROOM + wall   # half its length and width, outside
-    b = 0.5 * min(q.box_length, q.box_width) + room + wall
-    c = min(max(q.box_corner, wall + 1.0), b)
+    a, b, c = box_outline(q)                                # half its length and width, outside
     reach = math.hypot(a - c, b - c) + c                    # to the furthest point, round a corner
     q.shape1, q.depth1, q.sharp1, q.shape2 = RECTANGLE, min(1.0 - b / a, 0.9), c / b, SAME
     q.turn1 = 90.0 if q.box_width > q.box_length else 0.0
@@ -1710,39 +1730,53 @@ def tissue_edge(floor: float, limit: float, r: float = TISSUE_EDGE, steps: int =
     return shape
 
 
-def ledge_lean(p: VaseParams) -> float:
-    """How far a cover's ledges' steep sides lean from upright (degrees): LEDGE_LEAN, or less, as the wall may."""
-    return max(min(LEDGE_LEAN, p.max_overhang - 10.0), 10.0)
+def rail_lean(p: VaseParams) -> float:
+    """How far a cover's rails' sloping sides lean from upright (degrees): RAIL_LEAN, or less, as the wall may."""
+    return max(min(RAIL_LEAN, p.max_overhang - 5.0), 10.0)
 
 
-def ledge_heights(p: VaseParams):
-    """Where a cover's ledges change, measured up from the rim with the cover on: the foot of the ramp, the top
-    of the ramp and the end of the flat, both LEDGE_DEPTH in, and the top of the steep side."""
-    h0 = LEDGE_FROM
-    h1 = h0 + LEDGE_RAMP
-    h2 = h1 + LEDGE_FLAT
-    return h0, h1, h2, h2 + LEDGE_DEPTH / math.tan(math.radians(ledge_lean(p)))
+def rail_heights(p: VaseParams):
+    """Where a cover's rails change, measured up from the rim with the cover on: where each starts, the top of its
+    upright face - both RAIL_DEPTH in from a plain wall, more where a pattern takes the wall out - and the top of
+    its sloping side, back at a plain wall."""
+    h0 = RAIL_FROM
+    h1 = h0 + RAIL_FACE
+    return h0, h1, h1 + RAIL_DEPTH / math.tan(math.radians(rail_lean(p)))
 
 
-def ledges(z, I, H: float, heights):
-    """The inside of a cover's wall I (K, N, 2) at heights z, with a ledge across each end - the straight part of
-    the end, on the long way - standing in from the wall near the rim at H, for its lid's tabs to click in
-    behind. As the cover prints, upside down, the ramp faces up and the steep side down, no steeper than a wall
-    may lean, so nothing needs supports."""
-    h0, h1, h2, h3 = heights
+def rail_places(p: VaseParams):
+    """Where a cover's rails are along each long side, measured from the middle: (from, to) for the one towards
+    each end - the other end's the same, mirrored - or None if the straight part of the side is too short."""
+    a, _, c = box_outline(p)
+    to = a - c - RAIL_IN                          # the side is straight as far as its corner begins, at a - c
+    start = to - RAIL_LONG
+    return (start, to) if start - RAIL_END >= 2.0 else None
+
+
+def rails(z, I, H: float, p: VaseParams):
+    """The inside of a cover's wall I (K, N, 2) at heights z, with its four rails: short ledges standing in from
+    each long side near the rim at H, RAIL_IN along from each corner - there a thin wall is held stiff by the
+    corner, where the middle of a side or an end bows out at a touch. The lid's hooks slide in behind them.
+    As the cover prints, upside down, each rail's flat side faces up and its sloping side down, no steeper than a
+    wall may lean, so nothing needs supports."""
+    h0, h1, _ = rail_heights(p)
     h = H - np.asarray(z, dtype=float)
-    depth = LEDGE_DEPTH * np.interp(h, [h0, h1, h2, h3], [0.0, 1.0, 1.0, 0.0], left=0.0, right=0.0)
-    rim = I[-1]
-    X, Y = np.abs(rim).max(axis=0)
-    U = np.array([1.0, 0.0]) if X >= Y else np.array([0.0, 1.0])
+    X, Y = np.abs(I[-1]).max(axis=0)
+    U = np.array([1.0, 0.0]) if X >= Y else np.array([0.0, 1.0])     # the long way
     V = np.array([-U[1], U[0]])
-    u, v = rim @ U, rim @ V
-    flat = v[np.abs(u) >= np.abs(u).max() - 0.05]
-    half = max(0.5 * float(flat.max() - flat.min()) - 1.0, 12.0)     # the straight part of each end, or its middle
-    across = np.clip((half - np.abs(I @ V)) / 3.0, 0.0, 1.0)         # each ledge tapers off at its ends ...
-    on_end = np.abs(I @ U) > 0.5 * np.abs(u).max()                   # ... and is only on the ends
-    off = depth[:, None] * across * on_end
-    return I - sections.normals(I) * off[..., None]
+    start, to = rail_places(p)
+    a, _, c = box_outline(p)
+    u, v = np.abs(I @ U), I @ V                   # the ends and the corners are further along than any rail
+    # the rails' upright faces are straight, whatever the wall does - a hook can't slide along a wavy one: one
+    # line each side, RAIL_DEPTH in from where the wall comes furthest in where the hooks go in and slide
+    way = (u >= start - RAIL_END - 0.5) & (u <= a - c - 1.0) & (h <= RAIL_PLAIN)[:, None]
+    face = float(np.abs(v)[way].min()) - RAIL_DEPTH if way.any() else 0.0
+    # each rail fills the wall in as far as its shape: upright from h0 to h1, then sloping back out to the wall
+    shape = face + np.maximum(h - h1, 0.0) * math.tan(math.radians(rail_lean(p)))
+    rise = np.interp(h, [h0 - RAIL_STEP, h0], [0.0, 1.0])            # its flat side, towards the rim
+    along = np.clip(np.minimum(u - (start - RAIL_END), (to + RAIL_END) - u) / RAIL_END, 0.0, 1.0)
+    fill = np.maximum(np.abs(v) - shape[:, None], 0.0) * rise[:, None] * along
+    return I - (np.sign(v) * fill)[..., None] * V
 
 
 # ================================================================ sizing for a head

@@ -1,14 +1,20 @@
 """A lid for a tissue box cover's open end, printed on its own - after the cover, if wanted.
 
-It is a flat plate, the shape of the cover's rim, that the cover stands on, with tabs standing up from it just
-inside each end. Inside each end of the cover is a ledge (see geometry.ledges); each tab has a bump on its
-outside that sits behind it, made a little into its steep side: on, each tab stays bent in a little and presses
-out on it, pulling the lid tight against the rim, so it is firm and doesn't rattle. At one end the tabs are stiff
-hooks: tilted, the lid goes in by that end first, and the hooks swing over the ledge. At the other, by the pull
-tab, they are springy latches: pressed up, they bend in over the ramp of the ledge and click in behind it. Pulled
-by its tab, the latches let go and the lid swings out off its hooks again. Close guides on the long sides keep it
-from shifting sideways. It is made from the cover's own design - the wall where each tab goes is measured.
-Nothing here needs Qt.
+A thin-walled cover is stiff only by its corners: the middle of a side or an end bows out at a touch, so a
+catch there lets go as soon as a box of tissues leans on the lid. This lid holds on where the cover is stiff,
+with nothing that has to bend to hold:
+
+* The cover has four short **rails** inside its long sides, by the corners (see geometry.rails). The lid has four
+  rigid **hooks**. It is laid on the rim a little way along from where it belongs - the hooks go in beside the
+  rails - and slid along, like a battery cover: each hook's claw slides in behind its rail. The claws' undersides
+  rise a little towards their leading ends, so the lid is drawn tight against the rim as it comes home.
+* The hooks stand on a **fence** along each long side, which keeps the plate stiff under the box of tissues; a
+  lower fence across the far end is the **stop** that says the lid is home.
+* By the pull tab, the plate's end bar is a flat spring - printed flat, the strong way - with a ridge on it, the
+  **latch**: it springs up inside the cover's end as the lid comes home, and the lid can't slide back. Lifting the
+  tab bends the bar away, and the lid slides out.
+
+It is made from the cover's own design - the wall where each part goes is measured. Nothing here needs Qt.
 """
 
 from __future__ import annotations
@@ -18,30 +24,38 @@ import math
 import numpy as np
 
 from . import hollow, sections
-from .geometry import BOX_END_ROOM, LEDGE_DEPTH, edge_check, ledge_heights, ledge_lean, mesh_volume
+from .geometry import (RAIL_END, RAIL_IN, box_outline, edge_check, mesh_volume, rail_heights, rail_lean,
+                       rail_places)
 from .params import LID_FIRM, LID_GENTLE, LID_SNUG
 
 LID_PLATE = 1.6               # how thick the plate is (mm)
 LID_FRAME = 12.0              # an open lid: how wide its frame is, in from the edge
-LID_TAB_WIDE = 10.0           # how wide each tab is, along the wall
-LID_TAB_THICK = 2.0           # ... and how thick: every tab, hook and latch alike - strong, and still springy
-                              # enough to click in
-LID_GAP = 0.3                 # between a tab and the wall where the wall comes nearest it
-LID_TOP_GAP = 0.05            # ... and between a bump and the wall above the ledge: only just clear, so it
-                              # reaches out behind the ledge as far as the ledge is deep
-LID_PRESS = 0.3               # how far each bump is made down into the ledge's steep side: on, its tab bends in a
-                              # little and presses out on it all the time, pulling the lid tight to the rim - firm,
-                              # with no play to rattle
-LID_FLAT = 0.6                # the flat on a bump's outside
-LID_SINK = 0.3                # how far the tabs go down into the plate, to be one with it
-LID_GUIDE_TALL = 5.0          # the guides on the long sides: how tall
-LID_GUIDE_WIDE = 20.0         # ... how wide
-LID_GUIDE_THICK = 1.2         # ... how thick
-LID_GUIDE_GAP = 0.3           # ... and how far from the wall: close, so the lid can't shift sideways, but not touching
+LID_SLIDE = RAIL_IN - RAIL_END    # how far the lid slides along the cover to lock
+LID_HOOK_IN = 1.0             # how far each hook stops short of its rail's ends
+LID_POST = 2.4                # how thick each hook's post is
+LID_POST_GAP = 0.3            # between a post and the face of its rail
+LID_TIP_GAP = 0.35            # between a claw's tip and the wall
+LID_CLAW = 1.6                # how thick each claw is at its tip, at the least
+LID_TAPER = 0.5               # how much higher each claw's underside is at its leading end: the lid is drawn tight
+#                               against the rim over the last of its slide
+LID_GRIP = {LID_GENTLE: 0.15, LID_SNUG: 0.0, LID_FIRM: -0.15}   # between a claw and its rail when the lid is home:
+#                               less than nothing squeezes them together
+GRIP_WORDS = {LID_GENTLE: "gently", LID_SNUG: "snugly", LID_FIRM: "firmly"}
+LID_FENCE = 2.0               # the fence along each long side: how thick
+LID_FENCE_TALL = 5.0          # ... how tall
+LID_FENCE_BACK = 0.1          # ... and how far back it stands from the hooks' posts
+LID_STOP_TALL = 2.0           # the stop across the far end: how tall - low, to pass over the box as the lid slides
+LID_STOP_GAP = 0.15           # ... and how far from the cover's end it stops the lid
+LID_LATCH_TALL = 1.8          # the latch's ridge, by the pull tab: how tall
+LID_LATCH_FLAT = 0.6          # ... the flat on its top
+LID_LATCH_RAMP = 3.0          # ... how long the slope the cover's rim rides up as the lid slides on
+LID_LATCH_GAP = 0.35          # ... how far inside the cover's end it springs up
+LID_LATCH_LONG = 30.0         # ... and how long it is, across the end - or 0.3 of the end, if that is less
+LID_BAR_SHORT = 0.8           # the latch's bar stops this far short of the box of tissues, which mustn't lean on it
+LID_END_MIN = 45.0            # the straight part of an end must be this long for the latch's bar to bend
+LID_SINK = 0.3                # how far everything on the plate goes down into it, to be one with it
 LID_PULL = 9.0                # how far the pull tab sticks out past the rim
 LID_PULL_WIDE = 26.0          # ... and how wide it is
-LID_GRIP = {LID_GENTLE: 0.75, LID_SNUG: 0.95, LID_FIRM: 1.15}  # how far each latch's bump reaches out over the ledge
-GRIP_WORDS = {LID_GENTLE: "gently", LID_SNUG: "snugly", LID_FIRM: "firmly"}
 
 
 def _anticlockwise(loop):
@@ -71,12 +85,13 @@ def _reach(loop, U, V, vs):
     return u.max(axis=1)
 
 
-def _prism(profile, U, V, v0: float, v1: float, z0: float):
-    """A closed solid: the profile (n, 2) of (out along U, up) points, anticlockwise, made into a bar from
-    v0 to v1 along V, standing at z0. Its caps are fans from the profile's first point."""
-    n = len(profile)
+def _loft(first, last, U, V, v0: float, v1: float, z0: float):
+    """A closed solid: a bar from v0 to v1 along V, standing at z0, whose section is the profile ``first`` (n, 2)
+    of (out along U, up) points at v0 and ``last`` at v1 - each anticlockwise, with as many points. Its caps are
+    fans from each profile's first point."""
+    n = len(first)
     ends = []
-    for v in (v0, v1):
+    for profile, v in ((first, v0), (last, v1)):
         xy = profile[:, :1] * U + v * V
         ends.append(np.column_stack([xy, z0 + profile[:, 1]]))
     verts = np.concatenate(ends)
@@ -89,19 +104,54 @@ def _prism(profile, U, V, v0: float, v1: float, z0: float):
     return verts, faces
 
 
+def _prism(profile, U, V, v0: float, v1: float, z0: float):
+    """A closed solid: the profile (n, 2) of (out along U, up) points, anticlockwise, made into a bar from
+    v0 to v1 along V, standing at z0."""
+    profile = np.asarray(profile, dtype=float)
+    return _loft(profile, profile, U, V, v0, v1, z0)
+
+
+def _slab(loop, z0: float, z1: float):
+    """A closed solid: the loop (n, 2), anticlockwise round the middle, from z0 up to z1."""
+    n = len(loop)
+    k = np.arange(n)
+    nxt = (k + 1) % n
+    mid = loop.mean(axis=0)
+    verts = np.concatenate([np.column_stack([loop, np.full(n, z0)]), np.column_stack([loop, np.full(n, z1)]),
+                            [[mid[0], mid[1], z0], [mid[0], mid[1], z1]]])
+    faces = np.concatenate([np.stack([np.full(n, 2 * n), nxt, k], 1),               # underneath
+                            np.stack([np.full(n, 2 * n + 1), n + k, n + nxt], 1),   # on top
+                            np.stack([k, nxt, n + nxt], 1), np.stack([k, n + nxt, n + k], 1)])
+    return verts, faces
+
+
 class Lid:
     """The lid for a tissue box cover's design ``d`` (a VaseDesign, built in full): verts, faces - flat on the
-    bed, the tabs up, as it prints and as it goes on - and its sums."""
+    bed, the hooks up, as it prints and as it goes on, in the place it is in when it is home - and its sums.
+    ``along`` is the way to the pull tab's end (x, y): the lid goes on ``slide`` mm that way from home, and slides
+    back to lock."""
 
     def __init__(self, d):
         p = d.p
         self.errors: list[str] = []
         self.notes: list[str] = []
         self.verts = self.faces = None
-        self.tabs = self.hooks = self.latches = 0
+        self.hooks = self.latches = 0
         self.closed = False
+        self.slide = LID_SLIDE
         if not p.box or d.pot_rows is None or d.errors:
             self.errors.append("A lid is made for a tissue box cover.")
+            return
+        places = rail_places(p)
+        a, b, c = box_outline(p)
+        side, end = a - c, b - c                  # half the straight part of each long side, and of each end
+        if places is None:
+            self.errors.append("The cover is too short for a lid: its hooks need long sides with more that is "
+                               "straight. Make the box longer, or the corners less round.")
+            return
+        if 2.0 * end < LID_END_MIN:
+            self.errors.append("The cover's ends are too round for a lid: its latch needs an end with "
+                               f"{LID_END_MIN:g} mm that is straight. Make the corners less round.")
             return
         zs, Os, Is, fs, _, _, swell = d.pot_rows
         Is = Is - sections.normals(Is) * swell[..., None]        # the wall inside, swollen round any holes
@@ -113,100 +163,110 @@ class Lid:
         rim = _dense(used(Os[-1]))
         grip = LID_GRIP.get(p.lid_grip, LID_GRIP[LID_SNUG])
         top = LID_PLATE
-        # the pull tab, on the end of the long way: the latches' end
         X, Y = np.abs(rim).max(axis=0)
-        U = np.array([1.0, 0.0]) if X >= Y else np.array([0.0, 1.0])
-        V = np.array([-U[1], U[0]])
-        outline = self._pull_tab(rim, U, V)
-        parts = [self._plate(outline, rim if p.lid_open else None)]
+        T = np.array([1.0, 0.0]) if X >= Y else np.array([0.0, 1.0])     # the long way, to the pull tab's end
+        V = np.array([-T[1], T[0]])
+        self.along = T
+        h0, h1, h2 = rail_heights(p)
+        slope = math.tan(math.radians(rail_lean(p)))             # out, for each mm up a rail's sloping side
+        tall = h2 + LID_TAPER + LID_CLAW + 1.0                   # as tall as a hook may come to
         heights = H - zs                                          # how far above the rim each row is, the cover on
-        h0, h1, h2, h3 = ledge_heights(p)
-        slope = math.tan(math.radians(ledge_lean(p)))            # out, for each mm up the ledge's steep side
-        rows = np.arange(max(int(np.nonzero(heights <= h3 + 8.0)[0].min()) - 1, 0), len(zs))
+        rows = np.arange(max(int(np.nonzero(heights <= tall + 6.0)[0].min()) - 1, 0), len(zs))
         inner = [used(Is[k]) for k in rows]
-        h = heights[rows]
-        order = np.argsort(h)
-        h = h[order]
-        holed = heights[(fs > 0).any(axis=1)]
-        if len(holed) and holed.min() < h3 + 3.0:
-            self.errors.append("The holes come too near the rim for a lid's tabs to hold on: make the plain rim "
-                               "wider (Advanced ▸ Holes and openings ▸ Plain rim).")
-            return
-        worst = 0.0
-        tabs = []
-        for side, hook in ((U, False), (-U, True), (V, None), (-V, None)):
-            Vs = np.array([-side[1], side[0]])
-            u, v = rim @ side, rim @ Vs
-            flat = v[u >= u.max() - 0.05]
-            lo, hi = float(flat.min()), float(flat.max())
-            half = 0.5 * (LID_GUIDE_WIDE if hook is None else LID_TAB_WIDE)
-            if hook is None:
-                places = [0.5 * (lo + hi)]                        # a loose guide in the middle of each long side
-            elif hi - lo >= 4.0 * LID_TAB_WIDE:
-                places = [lo + 0.25 * (hi - lo), lo + 0.75 * (hi - lo)]
-            else:
-                places = [0.5 * (lo + hi)]
-            fits = []                                     # each tab's fit to the wall where it stands
-            for c in places:
-                across = np.linspace(c - half, c + half, 9)
-                # how near the wall comes, over the tab's width, at each row's height above the rim
-                wall = np.array([_reach(loop, side, Vs, across).min() for loop in inner])[order]
+        order = np.argsort(heights[rows])
+        h = heights[rows][order]
 
-                def nearest(a, b, wall=wall):
-                    s = np.concatenate([[a, b], h[(h > a) & (h < b)]])
-                    return float(np.interp(s, h, wall).min())
+        def wall(O, A, lo, hi):
+            """How near the wall comes, going out along O, at each row's height above the rim - anywhere from
+            lo to hi along A."""
+            at = np.linspace(lo, hi, max(int(math.ceil((hi - lo) / 0.8)) + 1, 3))
+            return np.array([_reach(loop, O, A, at).min() for loop in inner])[order]
 
-                if hook is None:
-                    face = nearest(0.0, LID_GUIDE_TALL) - LID_GUIDE_GAP
-                    profile = np.array([[face - LID_GUIDE_THICK, -LID_SINK], [face, -LID_SINK],
-                                        [face, LID_GUIDE_TALL], [face - LID_GUIDE_THICK, LID_GUIDE_TALL]])
-                    parts.append(_prism(profile, side, Vs, c - half, c + half, top))
-                    continue
-                tall = h3 + 3.0
-                for _ in range(3):
-                    face = nearest(0.0, tall) - LID_GAP           # the tab's outside, clear of the wall all the way up
-                    ledge = nearest(h1, h2)                       # the ledge, at its innermost
-                    out = min(ledge + grip, nearest(h3, tall) - LID_TOP_GAP)    # the bump, behind it, clear of the wall
-                    e = out - face
-                    # the bump's underside lies along the ledge's steep side, a little into it: put on, the tab
-                    # bends in that much and presses out on it. Where the steep side is: as measured, where the
-                    # wall comes out to the bump's outside on its way back from the ledge
-                    hs = np.linspace(h2, h3, 60)
-                    ws = np.interp(hs, h, wall)
-                    catch = float(hs[np.argmax(ws >= out)]) if (ws >= out).any() else h2 + (out - ledge) / slope
-                    bump = catch - LID_PRESS
-                    tall = bump + LID_FLAT + e + 0.5
-                fits.append((side, Vs, hook, c, nearest, e, bump))
-            tabs += fits
-        # every tab the same shape, at both ends - a textured wall measures a little differently at each - each just
-        # inside the wall where it stands: no bump out so far it meets the wall above, and none so high that it
-        # doesn't press on the ledge
-        if tabs:
-            e = min(f[5] for f in tabs)
-            bump = min(f[6] for f in tabs)
-            tall = bump + LID_FLAT + e + 0.5
-            worst = e
-            t = LID_TAB_THICK
-            half = 0.5 * LID_TAB_WIDE
-            for side, Vs, hook, c, nearest, _, _ in tabs:
-                face = nearest(0.0, tall) - LID_GAP
-                profile = np.array([[face - t, -LID_SINK], [face, -LID_SINK], [face, bump - e / slope],
-                                    [face + e, bump], [face + e, bump + LID_FLAT], [face, bump + LID_FLAT + e],
-                                    [face, tall], [face - t, tall], [face - t, bump]])
-                parts.append(_prism(profile[[8, 0, 1, 2, 3, 4, 5, 6, 7]], side, Vs, c - half, c + half, top))
-                self.tabs += 1
-                self.hooks += bool(hook)
-                self.latches += not hook
-            room = d.box_room + BOX_END_ROOM              # inside the cover's ends, between the wall and the box
-            if LEDGE_DEPTH + LID_GAP + t > room + 0.05:
-                self.notes.append(f"The tabs stand {LEDGE_DEPTH + LID_GAP + t:.1f} mm in from the wall, more than "
-                                  f"the {room:.1f} mm left for the box of tissues: they may press on its ends.")
-        if not (self.hooks and self.latches):
-            self.errors.append("The cover is too small for a lid's tabs.")
+        def nearest(w, lo, hi):
+            s = np.concatenate([[lo, hi], h[(h > lo) & (h < hi)]])
+            return float(np.interp(s, h, w).min())
+
+        # the plate: the rim's outline with the pull tab; a frame, its bar at the tab's end narrow - the latch's
+        # spring, which the box of tissues mustn't lean on; solid, a panel fills the frame but for a slit there
+        bar = min(max(a - 0.5 * max(p.box_length, p.box_width) - LID_BAR_SHORT, 4.0), LID_FRAME - 2.0)
+
+        def towards_tab(loop, by):
+            return loop + np.where((loop @ T > 0.0)[:, None], by * T, 0.0)
+
+        hole = towards_tab(_anticlockwise(sections.inset(rim, LID_FRAME)), LID_FRAME - bar)
+        parts = [self._plate(self._pull_tab(rim, T, V), hole)]
+        if not p.lid_open:
+            panel = towards_tab(_anticlockwise(sections.inset(rim, LID_FRAME - 0.5)), LID_FRAME - bar - 1.5)
+            parts.append(_slab(panel, 0.0, LID_PLATE))
+
+        # the hooks: one behind each rail when the lid is home. Each is measured where it stands, where it goes
+        # in, and all the way between
+        start, to = places
+        homes = [(start + LID_HOOK_IN, to - LID_HOOK_IN), (-(to - LID_HOOK_IN), -(start + LID_HOOK_IN))]
+        fits = []
+        for O in (V, -V):
+            for u0, u1 in homes:
+                home = wall(O, T, u0, u1)
+                rail = nearest(home, h0, h1)                      # the face of the rail
+                plain = min(nearest(wall(O, T, u0 + LID_SLIDE, u1 + LID_SLIDE), 0.0, tall),
+                            nearest(wall(O, T, u0, u1 + LID_SLIDE), h2 + 0.3, tall))
+                fits.append([O, u0, u1, home, rail - LID_POST_GAP, plain - LID_TIP_GAP])
+        # every hook the same shape: as deep a claw as the shallowest
+        depth = min(tip - post for *_, post, tip in fits)
+        if depth < 0.6:
+            self.errors.append("The wall inside the cover goes in and out too much by its rim for a lid's hooks.")
             return
-        if worst > 2.5:
-            self.notes.append("The wall goes in and out near the rim, so the tabs' bumps stand out a long way: "
-                              "the lid may be stiff to put on.")
+        for fit in fits:
+            O, u0, u1, home, post, _ = fit
+            # where the rail's sloping side comes out to the claw's tip, as measured
+            hs = np.linspace(h1, h2 + 0.5, 80)
+            ws = np.interp(hs, h, home)
+            fit.append(float(hs[np.argmax(ws >= post + depth)]) if (ws >= post + depth).any()
+                       else h1 + (depth - LID_POST_GAP) / slope)
+        crown = max(fit[6] for fit in fits) + LID_TAPER + max(grip, 0.0) + LID_CLAW      # every hook as tall
+        posts = {1: [], -1: []}
+        for O, u0, u1, home, post, _, catch in fits:
+            def profile(gap):
+                # from the claw's root round: its tip, the top, the back of the post, down into the plate
+                return np.array([[post, catch - depth / slope + gap], [post + depth, catch + gap],
+                                 [post + depth, crown], [post - LID_POST, crown],
+                                 [post - LID_POST, -LID_SINK], [post, -LID_SINK]])
+
+            # the leading end, towards the far end of the lid, is the higher: the claw tightens as it slides home
+            parts.append(_loft(profile(grip + LID_TAPER), profile(grip), O, T, u0, u1, top))
+            posts[1 if O @ V > 0 else -1].append(post)
+            self.hooks += 1
+
+        # the fences, one along each long side between its hooks and past them: they keep the plate stiff under
+        # the box of tissues. Each stops short of the tab's end by the slide, to go in clear of the corner
+        f0, f1 = -side + 2.0, side - LID_SLIDE - 1.5
+        for O in (V, -V):
+            face = min(nearest(wall(O, T, f0, f1 + LID_SLIDE), 0.0, LID_FENCE_TALL + 0.3) - LID_POST_GAP,
+                       min(posts[1 if O @ V > 0 else -1])) - LID_FENCE_BACK
+            parts.append(_prism([[face - LID_FENCE, -LID_SINK + 0.05], [face, -LID_SINK + 0.05],
+                                 [face, LID_FENCE_TALL], [face - LID_FENCE, LID_FENCE_TALL]], O, T, f0, f1, top))
+        # the stop, across the far end: it meets the inside of the cover's end when the lid is home
+        s1 = end - 2.0
+        face = nearest(wall(-T, V, -s1, s1), 0.0, LID_STOP_TALL + 0.3) - LID_STOP_GAP
+        parts.append(_prism([[face - LID_FENCE, -LID_SINK + 0.05], [face, -LID_SINK + 0.05],
+                             [face, LID_STOP_TALL], [face - LID_FENCE, LID_STOP_TALL]], -T, V, -s1, s1, top))
+        # the latch, on the bar at the tab's end: a ridge that springs up just inside the cover's end. The rim
+        # rides up its slope as the lid slides on; its upright side then faces the wall
+        r1 = 0.5 * min(LID_LATCH_LONG, 0.6 * end)
+        face = nearest(wall(T, V, -r1, r1), 0.0, LID_LATCH_TALL + 0.3) - LID_LATCH_GAP
+        reach = (LID_LATCH_TALL + LID_SINK) / LID_LATCH_TALL
+        room = face - (float((rim @ T).max()) - bar) - 0.2 - LID_LATCH_FLAT     # on the bar, all of it
+        ramp = min(LID_LATCH_RAMP * reach, room)
+        if ramp < 1.0:
+            self.errors.append("There is too little room inside the cover's end for a lid's latch.")
+            return
+        parts.append(_prism([[face - LID_LATCH_FLAT - ramp, -LID_SINK], [face, -LID_SINK], [face, LID_LATCH_TALL],
+                             [face - LID_LATCH_FLAT, LID_LATCH_TALL]], T, V, -r1, r1, top))
+        self.latches = 1
+        if 2.0 * (b - LID_FRAME) < 70.0:                          # the bar, from one long side of the frame to the other
+            self.notes.append("The cover's end is short, so the latch's bar is stiff: lift the pull tab firmly, "
+                              "and no further than it takes.")
+
         verts, faces, n = [], [], 0
         for v_, f_ in parts:
             verts.append(v_)
@@ -248,23 +308,10 @@ class Lid:
         return np.concatenate([rim[:i0], tab, rim[i1 + 1:]])
 
     @staticmethod
-    def _plate(outline, rim=None):
-        """The flat plate: the outline, LID_PLATE thick - with the middle open, a frame LID_FRAME wide, if the
-        rim is given."""
-        n = len(outline)
-        if rim is None:
-            ring = np.arange(n)
-            k = np.arange(n)
-            nxt = (k + 1) % n
-            verts = np.concatenate([np.column_stack([outline, np.zeros(n)]),
-                                    np.column_stack([outline, np.full(n, LID_PLATE)]),
-                                    [[0.0, 0.0, 0.0], [0.0, 0.0, LID_PLATE]]])
-            faces = np.concatenate([np.stack([np.full(n, 2 * n), nxt, k], 1),               # underneath
-                                    np.stack([np.full(n, 2 * n + 1), n + k, n + nxt], 1),   # on top
-                                    np.stack([k, nxt, n + nxt], 1), np.stack([k, n + nxt, n + k], 1)])
-            return verts, faces
-        hole = _anticlockwise(sections.inset(rim, LID_FRAME))
-        m = len(hole)
+    def _plate(outline, hole):
+        """The flat plate, LID_PLATE thick: a frame, from the outline in to the hole (each anticlockwise round
+        the middle)."""
+        n, m = len(outline), len(hole)
         loops = np.concatenate([outline, hole])
         verts = np.concatenate([np.column_stack([loops, np.zeros(n + m)]),
                                 np.column_stack([loops, np.full(n + m, LID_PLATE)])])
@@ -281,5 +328,5 @@ class Lid:
     def info(self) -> str:
         """A line about it, for the panel and the steps."""
         return (f"{self.size[0]:.0f} × {self.size[1]:.0f} mm, {'a frame open in the middle' if self.open else 'solid'},"
-                f" with {self.hooks} hooks at one end and {self.latches} latches by the pull tab, that hold it on "
-                f"{self.grip}")
+                f" with {self.hooks} hooks that slide in behind the cover's rails and fit them {self.grip}, and a "
+                "latch by the pull tab")

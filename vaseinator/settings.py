@@ -241,10 +241,11 @@ SPEC = [
          "How wide the hole is, across the box - a round hole, from side to side."),
         ("lid_grip", "Lid grip", "choice", LID_GRIPS, None, None, "",
          "A lid for the open end, printed on its own with Save the lid for printing - after the cover, if you\n"
-         "like. It hooks in behind a ledge inside one end of the cover and clicks in behind the ledge at the\n"
-         "other, and a pull tab takes it off to change the tissues.\n"
-         "How far its latches reach in behind the ledge: if the lid falls off, print it again a step firmer;\n"
-         "if it is hard to take off, a step gentler."),
+         "like. It goes on like a battery cover: its hooks slide in behind rails inside the cover, by the\n"
+         "corners, and a latch by its pull tab clicks it shut. Lift the tab and slide it off to change the\n"
+         "tissues.\n"
+         "How tightly its hooks fit the rails: if the lid is loose, print it again a step firmer; if it is\n"
+         "hard to slide home, a step gentler."),
         ("lid_open", "Lid open in the middle", "bool", None, None, None, "",
          "The lid as a frame round the edge, which the box of tissues stands on: quicker to print and lighter.\n"
          "Off: a solid plate, closed underneath."),

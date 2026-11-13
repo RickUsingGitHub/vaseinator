@@ -541,8 +541,8 @@ def box(t):
     words = " ".join(lab.text() for lab in win.steps.findChildren(QLabel))
     [(name, v3, f3, fil, pos)] = read_3mf(out["3mf"])
     check("Save a lid writes the lid, closed, and says how to print it and put it on", name.endswith(" lid")
-          and edge_check(f3)[0] and v3[:, 2].max() < 20.0 and win.steps.isVisible() and "latches click" in words
-          and "2 hooks" in words)
+          and edge_check(f3)[0] and v3[:, 2].max() < 20.0 and win.steps.isVisible() and "till it clicks" in words
+          and "4 hooks" in words)
     win.steps.close()
     win.set_simple_mode(False, remember=False)
     check("Advanced shows the box's settings, not the ones it sets itself", win._wanted("box_corner")

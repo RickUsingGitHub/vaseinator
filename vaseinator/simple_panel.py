@@ -390,8 +390,8 @@ class SimplePanel(QWidget):
         v.addWidget(save)
         self.lid = QPushButton("Save a lid for it…")
         self.lid.setObjectName("bigButton")
-        self.lid.setToolTip("A lid for the cover's open end, printed on its own - now or later. It hooks in at one\n"
-                            "end and clicks in at the other, and a pull tab takes it off to change the tissues.")
+        self.lid.setToolTip("A lid for the cover's open end, printed on its own - now or later. It slides on like a\n"
+                            "battery cover and clicks shut; lift its tab and slide it off to change the tissues.")
         self.lid.clicked.connect(self.save_lid)
         v.addWidget(self.lid)
         more = QPushButton("More settings (Advanced)…")
