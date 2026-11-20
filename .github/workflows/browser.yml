@@ -1,0 +1,36 @@
+name: Browser check
+
+# The end-to-end test of the web version (tests/test_browser.cjs). It loads Pyodide and three.js from
+# their CDNs, so it runs on pull requests only and doesn't hold up a Pages deploy.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build the site
+        run: python tools/build_web.py
+      - name: Playwright
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw" && npm init -y >/dev/null && npm install playwright@1.49.1
+          npx playwright install --with-deps chromium
+          echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
+      - name: Serve the site and run the test
+        run: |
+          mkdir -p work-temp
+          python -m http.server 8765 -d site &
+          sleep 2
+          node tests/test_browser.cjs
