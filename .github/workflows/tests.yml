@@ -20,3 +20,18 @@ jobs:
       - run: python -m tests.test_vase
       - run: python -m unittest tests.test_workspace -v
       - run: node tests/test_web_state.cjs
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Libraries Qt needs without a screen
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - run: python -m pip install -r requirements.txt
+      - run: python -m tests.test_app
+      - run: python -m unittest tests.test_design_tools -v
