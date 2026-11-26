@@ -38,22 +38,29 @@ HEAD_ROOM = 10.0         # mm more round the inside of a mask or helmet than rou
 SIMPLIFY_ERROR = 1e-3    # how far saving may simplify the mesh: pyfqmr's lossless error, a few hundredths of a mm
 SIMPLIFY_MM = 0.02       # ... and in the web version, meshoptimizer's (mm)
 BOX_ROOM = 2.0           # mm to spare each side between a tissue box cover and the box of tissues inside it
-BOX_TOP_ROOM = 3.0       # ... and over the box's top
-BOX_END_ROOM = 2.0       # ... and more inside each end, for the lid's latch and stop
-BOX_SIDE_ROOM = 4.6      # ... and at least this much inside each long side, for the lid's hooks
-# a cover's rails: four short ledges inside its long sides, by the corners - where a thin wall is stiff - that its
-# lid's hooks slide in behind (mm)
-RAIL_DEPTH = 1.6         # how far each stands in from the wall
-RAIL_FROM = 3.0          # ... how far in from the rim it starts, the cover on: flat there, as the cover prints
-RAIL_FACE = 1.2          # ... how tall its upright face is
-RAIL_LEAN = 40.0         # ... and the sloping side the hooks bear on, from upright: an overhang as the cover
-                         # prints, with room for a pattern's own lean
-RAIL_STEP = 0.1          # ... how far up its rim side steps in: as good as flat
-RAIL_IN = 9.0            # how far along the side from the corner each rail is: as near as lets the hooks in
-RAIL_LONG = 8.0          # ... how long
-RAIL_END = 1.0           # ... and how long the slope at each of its ends
-RAIL_CLEAR = 13.0        # a cover's holes keep this far from its rim, clear of the rails and the lid's hooks (mm)
-RAIL_PLAIN = 8.5         # ... and their rounded edges' swell this far, so the wall there is plain
+BOX_SIDE_ROOM = 4.6      # ... and at least this much inside each long side, clear of the lid's catches and fences
+# a cover's catches: four inside its long sides, by the corners, that its lid's ears slide in under, like a
+# bayonet. Each is a tooth, a pocket under a bridge, and a stop, in that order the way the lid slides to lock.
+# Heights are measured up from the rim, the cover on (mm)
+LID_PLATE = 1.6          # how thick the lid's plate is - and its ears
+CATCH_LIP = 2.0          # each bridge: how far up from the rim its flat underside is - the ears rest on it, so the
+                         # lid sits this far up inside the cover, clear of the table
+CATCH_IN = 2.2           # ... how far in from the wall the bridges and the stops stand
+CATCH_GAP = 0.4          # between the lid and the wall: its ears reach out to here
+CATCH_TOOTH = CATCH_LIP + LID_PLATE + 0.2   # each tooth: how far up from the rim it reaches, past the ear beside it
+CATCH_TOOTH_IN = 1.4     # ... how far in from the wall it stands
+CATCH_TOOTH_LONG = 3.0   # ... and how long it is, along the side
+CATCH_STOP = 8.0         # each stop: how far up it reaches, past an ear pushed in as far as it goes
+CATCH_STOP_LONG = 2.5    # ... and how long it is
+CATCH_EAR = 6.0          # how long the lid's ears are, along the side
+CATCH_PLAY = 0.3         # ... with this much to spare at each end of their pockets
+CATCH_CORNER = 1.0       # the catches keep this far from where the corners begin
+CATCH_LEAN = 40.0        # the teeth's and stops' undersides slope back to the wall at this from upright, at the most:
+                         # an overhang as the cover prints, so nothing needs supports
+CATCH_STEP = 0.1         # an upright face or a flat underside is a step this wide: as good as sharp
+CATCH_SLIDE = CATCH_TOOTH_LONG + CATCH_EAR + 2.0 * CATCH_PLAY     # how far the lid slides along to lock
+CATCH_CLEAR = 15.5       # a cover's holes keep this far from its rim, clear of the catches and the lid (mm)
+CATCH_PLAIN = 11.0       # ... and their rounded edges' swell this far, so the wall there is plain
 TISSUE_MARGIN = 8.0      # the tissue hole keeps at least this much of the cover's top round it (mm)
 TISSUE_EDGE = 1.2        # ... and its edge is rounded this much (mm): the top thickens round it to twice that
 TISSUE_WORDS = {1: "a slot", 2: "an oval", 3: "a round hole"}
@@ -777,21 +784,22 @@ class VaseDesign:
         else:
             zs, rows, at = hollow.insert_rows(self.z, rows, [zb])
             kb = at[zb]
-        railed = p.box and rail_places(p) is not None      # the rails a lid's hooks slide in behind
-        if railed:
-            h0, h1, h2 = rail_heights(p)
-            zs, rows, _ = hollow.insert_rows(zs, rows, [self.H - h for h in (h0 - RAIL_STEP, h0, h1, h2)])
+        caught = p.box and catch_places(p) is not None     # the catches a lid's ears slide in under
+        self.catch_wall = None
+        if caught:
+            zs, rows, _ = hollow.insert_rows(zs, rows, [self.H - h for h in catch_rows(p)])
+            rows = hollow.insert_cols(rows, catch_columns(rows[1][-1], p))
         Os, Is, fs = rows[:3]
         V = None if V is None else rows[3]
-        if railed:
-            Is = rails(zs, Is, self.H, p)
+        if caught:
+            Is, self.catch_wall = catches(zs, Is, self.H, p)
         b = None
         if p.hole_swell > 0 and (fs > 0).any():
             # rounded edges: the wall swells out and in round every hole, curving from outside to in
             far = max(6.0, 0.5 * p.hole_size) if p.holes != NO_HOLES else 6.0
             b = hollow.swell(fs, zs, p.hole_swell, far, 0.6 * math.tan(math.radians(p.max_overhang)))
-            if railed:                            # ... but not by the rim, where the lid's hooks need the wall plain
-                b = b * np.clip((self.H - zs - RAIL_PLAIN) / (RAIL_CLEAR - RAIL_PLAIN - 1.5), 0.0, 1.0)[:, None]
+            if caught:                            # ... but not by the rim, where the lid needs the wall plain
+                b = b * np.clip((self.H - zs - CATCH_PLAIN) / (CATCH_CLEAR - CATCH_PLAIN - 1.5), 0.0, 1.0)[:, None]
         kr = self._roof(zs, Os, kb) if p.closed_top else None
         if p.box and p.tissue_hole != NO_TISSUE and kb is not None:
             self.floor_hole = self._tissue_hole(Is[kb])
@@ -1011,7 +1019,7 @@ class VaseDesign:
         start = along[np.arange(K), c0]
         t = np.mod((along - start[:, None]) / L[:, None], 1.0)
         z_lo = zb + max(p.hole_foot, 0.0)
-        z_hi = (self.dome_from if p.closed_top else self.H) - max(p.hole_rim, RAIL_CLEAR if p.box else 0.0)
+        z_hi = (self.dome_from if p.closed_top else self.H) - max(p.hole_rim, CATCH_CLEAR if p.box else 0.0)
         f, spans = hollow.hole_field(p.holes, t, self.z, L, p.hole_size, p.hole_strut, p.hole_jitter, p.hole_seed,
                                      z_lo, z_hi, room, 0.85 * math.tan(math.radians(p.max_overhang)),
                                      min(VORONOI_BRIDGE * p.hole_size, VORONOI_LONGEST))
@@ -1569,8 +1577,8 @@ class VaseDesign:
             **({"Fits a head": f"up to {self.head_fit / 10.0:.1f} cm round (round the forehead, above the ears)"}
                if p.worn and self.head_fit > 0 else {}),
             **({"Fits over": f"a box of tissues {p.box_length / 10.0:g} × {p.box_width / 10.0:g} × "
-                             f"{p.box_height / 10.0:g} cm, with {self.box_room:.1f} mm to spare each side and "
-                             f"{BOX_TOP_ROOM:g} mm over it",
+                             f"{p.box_height / 10.0:g} cm, with {self.box_room:.1f} mm to spare each side, and "
+                             f"{lid_room(p):.1f} mm more inside the rim for the lid",
                 "Tissues come out of": (f"{TISSUE_WORDS[p.tissue_hole]} {self.tissue[0]:.0f}"
                                         + ("" if p.tissue_hole == TISSUE_ROUND else f" × {self.tissue[1]:.0f}")
                                         + f" mm, through its bottom layers, its edge rounded {TISSUE_EDGE:g} mm both "
@@ -1671,14 +1679,13 @@ def box_room(p: VaseParams) -> float:
 
 def box_outline(p: VaseParams):
     """A tissue box cover seen from above, outside: half its length, half its width, and its corners' radius (mm).
-    Inside, it clears the box of tissues by box_room all round; by BOX_END_ROOM more at each end, for the lid's
-    latch and stop; and along each long side by at least BOX_SIDE_ROOM clear of anything that reaches in, for the
-    lid's hooks."""
+    Inside, it clears the box of tissues by box_room all round, and along each long side by at least BOX_SIDE_ROOM
+    clear of anything that reaches in, for the lid's catches and fences."""
     wall = p.line_width * max(int(p.walls), 1)
     room = box_room(p)
     corner = max(p.box_corner - wall, 1.0)
     inward = room - max(BOX_ROOM, corner - (corner - BOX_ROOM) / math.sqrt(2.0))
-    a = 0.5 * max(p.box_length, p.box_width) + room + BOX_END_ROOM + wall
+    a = 0.5 * max(p.box_length, p.box_width) + room + wall
     b = 0.5 * min(p.box_length, p.box_width) + max(room, inward + BOX_SIDE_ROOM) + wall
     return a, b, min(max(p.box_corner, wall + 1.0), b)
 
@@ -1692,7 +1699,7 @@ def box_shape(p: VaseParams) -> VaseParams:
     reach = math.hypot(a - c, b - c) + c                    # to the furthest point, round a corner
     q.shape1, q.depth1, q.sharp1, q.shape2 = RECTANGLE, min(1.0 - b / a, 0.9), c / b, SAME
     q.turn1 = 90.0 if q.box_width > q.box_length else 0.0
-    q.height = round(q.box_height + BOX_TOP_ROOM + max(q.bottom, q.layer_height), 3)
+    q.height = round(q.box_height + lid_room(q) + max(q.bottom, q.layer_height), 3)
     q.profile, q.silhouette = 1, [[0.0, round(2.0 * reach, 3)], [1.0, round(2.0 * reach, 3)]]
     q.twist, q.twist_style, q.lattice, q.facets = 0.0, EVENLY, False, False
     q.open_bottom, q.closed_top, q.around, q.worn = False, False, 360.0, False
@@ -1730,53 +1737,118 @@ def tissue_edge(floor: float, limit: float, r: float = TISSUE_EDGE, steps: int =
     return shape
 
 
-def rail_lean(p: VaseParams) -> float:
-    """How far a cover's rails' sloping sides lean from upright (degrees): RAIL_LEAN, or less, as the wall may."""
-    return max(min(RAIL_LEAN, p.max_overhang - 5.0), 10.0)
+def catch_lean(p: VaseParams) -> float:
+    """How far a cover's teeth's and stops' undersides lean from upright (degrees): CATCH_LEAN, or less, as the
+    wall may."""
+    return max(min(CATCH_LEAN, p.max_overhang - 5.0), 10.0)
 
 
-def rail_heights(p: VaseParams):
-    """Where a cover's rails change, measured up from the rim with the cover on: where each starts, the top of its
-    upright face - both RAIL_DEPTH in from a plain wall, more where a pattern takes the wall out - and the top of
-    its sloping side, back at a plain wall."""
-    h0 = RAIL_FROM
-    h1 = h0 + RAIL_FACE
-    return h0, h1, h1 + RAIL_DEPTH / math.tan(math.radians(rail_lean(p)))
+def catch_dip(p: VaseParams) -> float:
+    """How far a lid must be pushed in from home to pass under a cover's teeth (mm): till its ears, reaching out to
+    CATCH_GAP from the wall, are past the teeth's sloping undersides, with 0.3 mm to spare."""
+    clear = CATCH_TOOTH + (CATCH_TOOTH_IN - CATCH_GAP) / math.tan(math.radians(catch_lean(p))) + 0.3
+    return clear - CATCH_LIP
 
 
-def rail_places(p: VaseParams):
-    """Where a cover's rails are along each long side, measured from the middle: (from, to) for the one towards
-    each end - the other end's the same, mirrored - or None if the straight part of the side is too short."""
+def lid_room(p: VaseParams) -> float:
+    """How much deeper a tissue box cover is inside than the box of tissues (mm): room for its lid, up inside the
+    rim, to be pushed in past the teeth, with 0.5 mm to spare."""
+    return CATCH_LIP + LID_PLATE + catch_dip(p) + 0.5
+
+
+def catch_places(p: VaseParams):
+    """Where a cover's catches are along each long side, measured from the middle the long way, the lid sliding
+    the + way to lock: for the catch towards each end, - then +, (the tooth's two ends, the stop's two ends) - the
+    pocket is between them. The catch towards the - end stands further from its corner, by as far as the lid is
+    laid on short of home. None if the straight part of the side is too short for them."""
     a, _, c = box_outline(p)
-    to = a - c - RAIL_IN                          # the side is straight as far as its corner begins, at a - c
-    start = to - RAIL_LONG
-    return (start, to) if start - RAIL_END >= 2.0 else None
+    s = a - c                                     # the side is straight as far as its corner begins
+    pocket = CATCH_EAR + 2.0 * CATCH_PLAY
+    t0 = -s + CATCH_CORNER + CATCH_EAR + CATCH_PLAY
+    first = (t0, t0 + CATCH_TOOTH_LONG, t0 + CATCH_TOOTH_LONG + pocket,
+             t0 + CATCH_TOOTH_LONG + pocket + CATCH_STOP_LONG)
+    s1 = s - CATCH_CORNER
+    second = (s1 - CATCH_STOP_LONG - pocket - CATCH_TOOTH_LONG, s1 - CATCH_STOP_LONG - pocket,
+              s1 - CATCH_STOP_LONG, s1)
+    if second[0] - CATCH_EAR - CATCH_PLAY - 2.0 < first[3]:        # where its ear is laid on is clear of the first
+        return None
+    return [first, second]
 
 
-def rails(z, I, H: float, p: VaseParams):
-    """The inside of a cover's wall I (K, N, 2) at heights z, with its four rails: short ledges standing in from
-    each long side near the rim at H, RAIL_IN along from each corner - there a thin wall is held stiff by the
-    corner, where the middle of a side or an end bows out at a touch. The lid's hooks slide in behind them.
-    As the cover prints, upside down, each rail's flat side faces up and its sloping side down, no steeper than a
-    wall may lean, so nothing needs supports."""
-    h0, h1, _ = rail_heights(p)
+def catch_reach(u, h, p: VaseParams):
+    """How far in from the wall a cover's catches stand (mm) at places u along a long side, measured from the
+    middle, and heights h up from the rim: below nought where their undersides slope back out past the wall,
+    -inf where there are none. Every bridge stands CATCH_IN in from the rim to CATCH_LIP, flat underneath; then
+    each tooth CATCH_TOOTH_IN to CATCH_TOOTH, and each stop CATCH_IN to CATCH_STOP, sloping back from there."""
+    lean = math.tan(math.radians(catch_lean(p)))
+    u = np.asarray(u, dtype=float)
+    h = np.broadcast_to(np.asarray(h, dtype=float), u.shape)
+    e = 0.02
+    tooth = np.where(h <= CATCH_LIP, CATCH_IN,
+                     np.where(h <= CATCH_TOOTH, np.maximum(CATCH_IN - (h - CATCH_LIP) * lean, CATCH_TOOTH_IN),
+                              CATCH_TOOTH_IN - (h - CATCH_TOOTH) * lean))
+    stop = np.where(h <= CATCH_STOP, CATCH_IN, CATCH_IN - (h - CATCH_STOP) * lean)
+    out = np.full(u.shape, -np.inf)
+    for t0, t1, s0, s1 in catch_places(p):
+        out = np.where((u >= t0 - e) & (u <= t1 + e), tooth, out)
+        out = np.where((u > t1 + e) & (u < s0 - e) & (h <= CATCH_LIP + e), CATCH_IN, out)
+        out = np.where((u >= s0 - e) & (u <= s1 + e), stop, out)
+    return out
+
+
+def catch_rows(p: VaseParams):
+    """The heights up from the rim where a cover's catches change: rows go in there."""
+    lean = math.tan(math.radians(catch_lean(p)))
+    return (CATCH_LIP, CATCH_LIP + CATCH_STEP, CATCH_LIP + (CATCH_IN - CATCH_TOOTH_IN) / lean, CATCH_TOOTH,
+            CATCH_TOOTH + CATCH_TOOTH_IN / lean, CATCH_TOOTH + (CATCH_TOOTH_IN + 1.0) / lean, CATCH_STOP,
+            CATCH_STOP + CATCH_IN / lean, CATCH_STOP + (CATCH_IN + 1.0) / lean)
+
+
+def _long_way(I):
+    X, Y = np.abs(I.reshape(-1, 2)).max(axis=0)
+    U = np.array([1.0, 0.0]) if X >= Y else np.array([0.0, 1.0])
+    return U, np.array([-U[1], U[0]])
+
+
+def catch_columns(rim, p: VaseParams):
+    """Where columns go in round a cover's inner wall at its rim ``rim`` (N, 2), so that each of its catches'
+    upright faces is a step CATCH_STEP wide, on both long sides: fractional places, i + t."""
+    U, V = _long_way(rim)
+    u, v = rim @ U, rim @ V
+    j = (np.arange(len(u)) + 1) % len(u)
+    a, _, c = box_outline(p)
+    straight = (np.abs(u) <= a - c) & (np.abs(u[j]) <= a - c) & (np.sign(v) == np.sign(v[j])) & (u != u[j])
+    at = []
+    for t0, t1, s0, s1 in catch_places(p):
+        for x in (t0 - CATCH_STEP, t0, t1, t1 + CATCH_STEP, s0 - CATCH_STEP, s0, s1, s1 + CATCH_STEP):
+            for i in np.nonzero(straight & (np.minimum(u, u[j]) <= x) & (np.maximum(u, u[j]) > x))[0]:
+                at.append(i + (x - u[i]) / (u[j[i]] - u[i]))
+    return at
+
+
+def catches(z, I, H: float, p: VaseParams):
+    """The inside of a cover's wall I (K, N, 2) at heights z, with its four catches: a tooth, a pocket under a
+    bridge, and a stop inside each long side by each corner, flush with the rim at H - there a thin wall is held
+    stiff by the corner. The lid's ears slide in under the teeth and spring up into the pockets, resting on the
+    bridges' flat undersides, so the weight on the lid presses along the wall, never out. As the cover prints,
+    upside down, each bridge is printed as a bridge between its tooth and its stop, and their undersides slope
+    no more than a wall may lean, so nothing needs supports. Returns the wall, and how far from the middle across
+    the cover the long sides' inner faces come in, at the most, by the rim: the catches stand in from there, in
+    straight lines whatever a pattern does to the wall behind them."""
     h = H - np.asarray(z, dtype=float)
-    X, Y = np.abs(I[-1]).max(axis=0)
-    U = np.array([1.0, 0.0]) if X >= Y else np.array([0.0, 1.0])     # the long way
-    V = np.array([-U[1], U[0]])
-    start, to = rail_places(p)
+    U, V = _long_way(I[-1])
     a, _, c = box_outline(p)
-    u, v = np.abs(I @ U), I @ V                   # the ends and the corners are further along than any rail
-    # the rails' upright faces are straight, whatever the wall does - a hook can't slide along a wavy one: one
-    # line each side, RAIL_DEPTH in from where the wall comes furthest in where the hooks go in and slide
-    way = (u >= start - RAIL_END - 0.5) & (u <= a - c - 1.0) & (h <= RAIL_PLAIN)[:, None]
-    face = float(np.abs(v)[way].min()) - RAIL_DEPTH if way.any() else 0.0
-    # each rail fills the wall in as far as its shape: upright from h0 to h1, then sloping back out to the wall
-    shape = face + np.maximum(h - h1, 0.0) * math.tan(math.radians(rail_lean(p)))
-    rise = np.interp(h, [h0 - RAIL_STEP, h0], [0.0, 1.0])            # its flat side, towards the rim
-    along = np.clip(np.minimum(u - (start - RAIL_END), (to + RAIL_END) - u) / RAIL_END, 0.0, 1.0)
-    fill = np.maximum(np.abs(v) - shape[:, None], 0.0) * rise[:, None] * along
-    return I - (np.sign(v) * fill)[..., None] * V
+    u, v = I @ U, I @ V
+    side = np.abs(u) <= a - c - 0.5               # the long sides: the ends and corners are further along
+    # by the rim, every column stands straight up, where it is at the rim - a pattern that swells the wall out
+    # and in from the middle moves it along the side too - so the catches' faces are upright
+    near = side & (h <= CATCH_PLAIN + 1.0)[:, None]
+    shift = np.where(near, (I[-1] @ U)[None, :] - u, 0.0)
+    I, u = I + shift[..., None] * U, u + shift
+    wall = float(np.abs(v)[side & (h <= CATCH_PLAIN)[:, None]].min())
+    reach = np.where(side, catch_reach(u, h[:, None], p), -np.inf)
+    fill = np.maximum(np.abs(v) - (wall - reach), 0.0)
+    return I - (np.sign(v) * fill)[..., None] * V, wall
 
 
 # ================================================================ sizing for a head

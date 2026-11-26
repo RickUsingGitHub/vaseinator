@@ -509,6 +509,27 @@ def insert_rows(z, arrays, zs):
     return z, arrays, index
 
 
+def insert_cols(arrays, at):
+    """The columns with more columns put in at the fractional places ``at`` (i + t: t of the way from column i to
+    the next, round to the first again), each part of ``arrays`` (K, N, ...) straight between its neighbours."""
+    arrays = [np.asarray(a) for a in arrays]
+    N = arrays[0].shape[1]
+    at = np.array(sorted({round(float(x), 9) for x in at}), dtype=float)
+    frac = at - np.floor(at)
+    at = at[(frac > 1e-6) & (frac < 1.0 - 1e-6)]
+    if not len(at):
+        return arrays
+    xs = np.sort(np.concatenate([np.arange(N, dtype=float), at]))
+    i = np.floor(xs).astype(int) % N
+    t = xs - np.floor(xs)
+    j = (i + 1) % N
+    out = []
+    for a in arrays:
+        w = t.reshape((1, -1) + (1,) * (a.ndim - 2))
+        out.append(a[:, i] * (1.0 - w) + a[:, j] * w)
+    return out
+
+
 def zip_rings(outer_ids, outer_xy, inner_ids, inner_xy):
     """Triangles, facing up, filling the ring between two loops round the middle (each anticlockwise, the inner
     one wholly inside the outer): each joins a side of one loop to a corner of the other, in order round."""

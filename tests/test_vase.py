@@ -19,10 +19,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vaseinator import sections  # noqa: E402
 from vaseinator.expr import ExprError, compile_expression  # noqa: E402
-from vaseinator.geometry import (BOX_ROOM, BOX_TOP_ROOM, RAIL_DEPTH, RAIL_FROM, TISSUE_EDGE, TOLERANCE, VORONOI_LONGEST, VaseDesign,  # noqa: E402
-                                 box_outline, edge_check, face_normals, fit_head, lean_angles, mesh_volume, rail_places)
+from vaseinator.geometry import (BOX_ROOM, CATCH_IN, CATCH_LIP, CATCH_STOP, CATCH_TOOTH, CATCH_TOOTH_IN, TISSUE_EDGE,  # noqa: E402
+                                 TOLERANCE, VORONOI_LONGEST, VaseDesign, box_outline, catch_dip, catch_places, edge_check,
+                                 face_normals, fit_head, lean_angles, lid_room, mesh_volume)
 from vaseinator import hollow  # noqa: E402
-from vaseinator.lid import LID_FENCE_TALL, LID_LATCH_TALL, LID_PLATE, LID_SLIDE, Lid  # noqa: E402
+from vaseinator.lid import LID_PLATE, LID_SLIDE, Lid  # noqa: E402
 from vaseinator.params import (ALMOND_EYES, BANDS, BY_FUNCTION, CHIN_MOUTH, CIRCLE, DIAMOND, DRAWN, ELLIPSE, EVENLY,  # noqa: E402
                                FAKE_VASE, FLOWER, GEAR, GRADIENT, GRILLE_MOUTH, LID_FIRM, LID_GENTLE, LID_SNUG,
                                NO_HOLES, ONE_COLOUR, OPEN_MOUTH, OWN,
@@ -374,7 +375,7 @@ def test_tissue_box_covers():
         verts, faces = d.print_mesh()
         assert not d.errors and d.normal and edge_check(faces)[0] and d.worst <= limit, (extra, d.errors, d.worst)
         assert d.p.shape1 == RECTANGLE and d.p.twist == 0.0 and not d.p.open_bottom and d.capacity == 0.0
-        assert abs(d.H - (p.box_height + BOX_TOP_ROOM + p.bottom)) < 1e-6
+        assert abs(d.H - (p.box_height + lid_room(d.p) + p.bottom)) < 1e-3
         # inside, every point of the wall is at least the room to spare clear of the box of tissues
         L, W = p.box_length, p.box_width
         for zz, a, r in d.inner_rows:
@@ -488,12 +489,12 @@ def test_colours_by_a_function():
 
 
 def test_tissue_box_lids():
-    """A tissue box cover has four rails inside its long sides, by its corners, and its lid - made from its design,
-    closed, flat on the bed, the rim's shape with a pull tab - goes on like a battery cover. Tried against the
-    cover as it prints: the lid goes in beside the rails, and lifts off again there; it slides home clear of
-    everything but its latch, which the rim pushes down; and home, it is caught by all four rails when pulled
-    down, by the latch when pushed back, by the stop when pushed on, and by the rails either way sideways. A
-    frame or a solid plate; a gentle grip clear of the rails, a firm one squeezed onto them."""
+    """A tissue box cover has four catches inside its long sides, by its corners - a tooth, a pocket under a flat
+    bridge, and a stop - and its lid, made from its design, closed and flat on the bed, goes in like a bayonet.
+    Tried against the cover as it prints: the lid is laid in short of home, clear of everything; pushed in past
+    the teeth, it slides home touching nothing; and home, it is held by the bridges if pulled out, by the teeth if
+    slid back without being pushed in, by the stops if slid on, even pushed in, and by the walls sideways. A frame
+    or a solid plate; a plain, lacy or lumpy cover."""
     for title, open_, grip, lumps in (("Tissue Box Cover", True, LID_SNUG, 0.0), ("Tissue Box Cover", False, LID_FIRM, 0.0),
                                       ("Lace Tissue Cube", True, LID_GENTLE, 0.0),
                                       ("Tissue Box Cover", True, LID_SNUG, 2.0)):      # ... and a lumpy wall
@@ -504,103 +505,97 @@ def test_tissue_box_lids():
         d = VaseDesign(p)
         lid = Lid(d)
         assert not lid.errors and lid.closed and edge_check(lid.faces)[0], (title, lid.errors)
-        assert lid.hooks == 4 and lid.latches == 1 and lid.slide == LID_SLIDE
-        assert abs(lid.verts[:, 2].min()) < 1e-9 and lid.size[2] < 12.0 and lid.grams > 5.0
-        a, b, c = box_outline(d.p)
-        assert np.allclose(np.sort(lid.size[:2]), np.sort([2 * a + 9.0, 2 * b]), atol=0.5), (lid.size, a, b)
-        # the cover's rails: at their upright faces the wall stands RAIL_DEPTH in, by each corner and nowhere else
+        assert lid.ears == 4 and lid.springs == 4 and lid.slide == LID_SLIDE and lid.grams > 5.0
+        # its springs' posts reach past the box of tissues' bottom, set against the cover's top: they press on it
+        dip = catch_dip(d.p)
+        assert abs(lid.verts[:, 2].min()) < 1e-9 and lid.size[2] > lid_room(d.p) - CATCH_LIP + 0.5
+        # the cover's catches: in from the wall's inner face by the rim, in straight lines, by each corner
         zs, _, Is = d.pot_rows[:3]
         H, T = float(zs[-1]), lid.along
-        row = Is[int(np.argmin(np.abs(H - zs - (RAIL_FROM + 0.6))))] * [1.0, -1.0]
-        u, v = row @ T, np.abs(row @ [-T[1], T[0]])
-        start, to = rail_places(d.p)
-        on_rail = (np.abs(u) > start + 0.5) & (np.abs(u) < to - 0.5)
-        between = np.abs(u) < start - 2.0
-        # - their faces straight, even where the wall behind them is lumpy
-        assert on_rail.sum() >= 8 and np.ptp(v[on_rail]) < 0.3
+        across = np.array([-T[1], T[0]])
+
+        def stands_in(h):
+            row = Is[int(np.argmin(np.abs(H - zs - h)))] * [1.0, -1.0]
+            return row @ T, d.catch_wall - np.abs(row @ across)
+
+        (t0, t1, s0, s1), (t0b, t1b, s0b, s1b) = catch_places(d.p)
+        for u_, v_ in (stands_in(1.0), stands_in(CATCH_LIP + 0.6), stands_in(CATCH_STOP - 0.5)):
+            assert np.ptp(v_[(np.abs(u_ - 0.5 * (s0b + s1b)) < 0.8)]) < 0.05
+        u_, v_ = stands_in(1.0)                   # the bridges, from tooth to stop
+        assert abs(v_[(u_ > t0 + 0.3) & (u_ < s1 - 0.3)].min() - CATCH_IN) < 0.05
+        u_, v_ = stands_in(CATCH_TOOTH - 0.2)     # the teeth, and the pockets under the bridges
+        tooth, pocket = (u_ > t0b + 0.3) & (u_ < t1b - 0.3), (u_ > t1b + 0.3) & (u_ < s0b - 0.3)
+        assert abs(v_[tooth].min() - CATCH_TOOTH_IN) < 0.05 and v_[pocket].max() < 0.05 + (0.9 if lumps else 0.0)
         if not lumps:
-            assert abs((v[between].min() - v[on_rail].max()) - RAIL_DEPTH) < 0.15 and np.ptp(v[between]) < 0.6
-        # the cover, turned over and stood on the plate: where its wall crosses the height of each point of the lid
+            assert abs(v_[(u_ > s0b + 0.3) & (u_ < s1b - 0.3)].min() - CATCH_IN) < 0.05     # the stops
+            assert v_[np.abs(u_) < 30.0].max() < 0.05                                       # plain between
+        # the cover, turned over, the lid's underside CATCH_LIP above its rim: where its wall crosses each height
         cuts = {}
 
         def in_wall(q):
             """Whether a point of the lid is in the cover's plastic, and how far it is from the wall's face."""
             x, y, z = q
-            h = z - LID_PLATE
+            h = z + CATCH_LIP
             if h <= 0.0:
                 return False, 9.0
             key = round(h, 3)
             if key not in cuts:
                 cuts[key] = d.contour(H - h)[:, :, :2] * [1.0, -1.0]
             seg = cuts[key]
-            s0, s1 = seg[:, 0], seg[:, 1]
+            s0_, s1_ = seg[:, 0], seg[:, 1]
             pt = np.array([x, y])
-            t = np.clip(np.einsum("ij,ij->i", pt - s0, s1 - s0)
-                        / np.maximum(np.einsum("ij,ij->i", s1 - s0, s1 - s0), 1e-12), 0, 1)
-            gap = np.linalg.norm(s0 + t[:, None] * (s1 - s0) - pt, axis=1).min()
-            ya, yb = s0[:, 1] - y, s1[:, 1] - y                     # in the plastic: an odd number of crossings
+            t = np.clip(np.einsum("ij,ij->i", pt - s0_, s1_ - s0_)
+                        / np.maximum(np.einsum("ij,ij->i", s1_ - s0_, s1_ - s0_), 1e-12), 0, 1)
+            gap = np.linalg.norm(s0_ + t[:, None] * (s1_ - s0_) - pt, axis=1).min()
+            ya, yb = s0_[:, 1] - y, s1_[:, 1] - y                     # in the plastic: an odd number of crossings
             cross = (ya > 0) != (yb > 0)
-            xc = s0[:, 0] + (s1[:, 0] - s0[:, 0]) * ya / np.where(cross, ya - yb, 1.0)
+            xc = s0_[:, 0] + (s1_[:, 0] - s0_[:, 0]) * ya / np.where(cross, ya - yb, 1.0)
             return bool(np.sum(cross & (xc > x)) % 2), gap
 
-        # every corner of everything that stands on the plate, and the middle of every edge
+        # every corner of the lid, and the middle of every edge
         edges = np.concatenate([lid.faces[:, [0, 1]], lid.faces[:, [1, 2]], lid.faces[:, [2, 0]]])
         mids = 0.5 * (lid.verts[edges[:, 0]] + lid.verts[edges[:, 1]])
         pts = np.unique(np.round(np.concatenate([lid.verts, mids]), 4), axis=0)
-        pts = pts[pts[:, 2] > LID_PLATE + 0.05]
-        along, across = pts[:, :2] @ T, pts[:, :2] @ [-T[1], T[0]]
-        latch = (along > along.max() - 6.0) & (pts[:, 2] < LID_PLATE + LID_LATCH_TALL + 0.01) & (np.abs(across) < 16.0)
-        # the hooks' claws: above where the rails begin, and as far along as the rails are
-        hooks = (pts[:, 2] > LID_PLATE + RAIL_FROM + 0.3) & (np.abs(along) > start) & (np.abs(along) < to)
 
-        def deepest(move, which=None):
+        def deepest(move, which=pts):
             """How deep in the cover's plastic the lid's points go, moved so - and how many of them are in it."""
-            found = [gap for inside, gap in map(in_wall, (pts if which is None else pts[which]) + move) if inside]
+            found = [gap for inside, gap in map(in_wall, which + move) if inside]
             return (max(found), len(found)) if found else (0.0, 0)
 
-        def slid(by):
-            return np.array([T[0] * by, T[1] * by, 0.0])
+        def moved(along, up=0.15, side=0.0):
+            """Slid along the way it locks, pushed up into the cover, and sideways (mm)."""
+            return np.array([*(T * along + across * side), up])
 
-        side = np.array([-T[1], T[0], 0.0])
-        home = deepest(slid(0.0))[0]
-        assert (home == 0.0 if grip == LID_GENTLE else home < 0.1 if grip == LID_SNUG else 0.1 < home < 0.3), (title, home)
-        # it goes in, and lifts off, where it is laid on; and slides home touching nothing but by its latch
-        assert deepest(slid(LID_SLIDE))[1] == 0 and deepest(slid(LID_SLIDE) + [0.0, 0.0, -4.0])[1] == 0, title
-        for to_go in (8.0, 6.0, 4.0, 2.0):
-            assert deepest(slid(to_go), ~latch)[1] == 0, (title, to_go)
-        assert deepest(slid(2.0), latch)[1] > 0                    # the rim rides over the latch, pushing it down
-        # home, it is held every way: each hook is caught by its rail if the lid is pulled down ...
-        for end in (-1, 1):
-            for flank in (-1, 1):
-                hook = hooks & (np.sign(along) == end) & (np.sign(across) == flank)
-                depth, count = deepest(slid(0.0) + [0.0, 0.0, -1.0], hook)
-                assert count >= 4 and depth > 0.6, (title, end, flank, depth, count)
-        # ... the latch meets the cover's end if it is pushed back, the stop if it is pushed on, the rails sideways
-        # (a lumpy end meets the stop at its nearest lump, between the points tried)
-        assert deepest(slid(1.5), latch)[0] > 0.4 and deepest(slid(-0.5))[0] > (0.1 if lumps else 0.3), title
-        assert deepest(0.5 * side)[0] > 0.3 and deepest(-0.5 * side)[0] > 0.3, title
+        # it is laid in short of home, clear of everything, and comes in from outside there
+        assert deepest(moved(-LID_SLIDE))[1] == 0 and deepest(moved(-LID_SLIDE, -1.0))[1] == 0, title
+        # pushed in past the teeth, it slides home touching nothing; and home, it sits on the bridges, clear
+        for to_go in (LID_SLIDE, 7.0, 5.0, 3.0, 1.0, 0.0):
+            assert deepest(moved(-to_go, dip + 0.05))[1] == 0, (title, to_go)
+        assert deepest(moved(0.0))[1] == 0, title
+        # home, it is held every way: by the bridges if pulled out, by the teeth if slid back without being pushed
+        # in, by the stops if slid on - even pushed in as far as it goes - and by the walls sideways
+        assert deepest(moved(0.0, -0.5))[0] > 1.0, title
+        assert deepest(moved(-1.0))[0] > 0.6 and deepest(moved(-2.0, dip - 1.5))[0] > 0.6, title
+        assert deepest(moved(0.8))[0] > 0.3 and deepest(moved(0.8, dip + 0.5))[0] > 0.3, title
+        assert deepest(moved(0.0, 0.15, 0.6))[0] > 0.1 and deepest(moved(0.0, 0.15, -0.6))[0] > 0.1, title
+        # it goes in only one way round: turned round, a plain cover's catches are in its ears' way
+        if not lumps:
+            turned = pts * [-1.0, -1.0, 1.0]
+            assert all(deepest(moved(-go), turned)[1] for go in np.arange(0.0, LID_SLIDE + 0.01, 0.8)), title
         info = lid.info()
-        assert ("frame" in info) == open_ and "4 hooks" in info and "latch" in info
-    # on a lumpy wall, which measures differently at each hook, the hooks are still all one shape: as tall, as deep
-    p = gallery_design("Tissue Box Cover")
-    p.ring_count, p.organic_depth = 0, 2.0
-    lid = Lid(VaseDesign(p))
-    tall = lid.verts[lid.verts[:, 2] > LID_PLATE + LID_FENCE_TALL + 0.5]
-    shapes = {(round(float(np.ptp(q[:, 1])), 3), round(float(q[:, 2].max()), 3))
-              for q in (tall[(np.sign(tall[:, 0]) == end) & (np.sign(tall[:, 1]) == s)]
-                        for end in (-1, 1) for s in (-1, 1))}
-    assert not lid.errors and lid.closed and len(shapes) == 1, (lid.errors, shapes)
+        assert ("frame" in info) == open_ and "4 ears" in info and "4 springs" in info
     assert Lid(VaseDesign(plain())).errors
-    # the cover's holes keep clear of the rails and the lid's hooks, however near the rim they are asked for
+    # the cover's holes keep clear of the catches and the lid, however near the rim they are asked for
     p = gallery_design("Lace Tissue Cube")
     p.hole_rim = 0.0
     assert not Lid(VaseDesign(p)).errors
-    # a cover too short for rails has none, and no lid; nor has one whose ends are too round for the latch
-    d = VaseDesign(plain(box=True, box_length=44.0, box_width=40.0, box_height=60.0, tissue_hole=NO_TISSUE,
-                         colour_style=ONE_COLOUR))
-    assert not d.errors and d.closed and rail_places(d.p) is None and "too short" in Lid(d).errors[0]
-    d = VaseDesign(plain(box=True, box_corner=58.0, colour_style=ONE_COLOUR))
-    assert not d.errors and d.closed and "too round" in Lid(d).errors[0]
+    # a cover too short for catches has none, and no lid; one with very round corners has both - nothing needs
+    # its ends straight
+    d = VaseDesign(plain(box=True, colour_style=ONE_COLOUR, box_length=44.0, box_width=40.0, box_height=60.0,
+                         tissue_hole=NO_TISSUE))
+    assert not d.errors and d.closed and catch_places(d.p) is None and "too short" in Lid(d).errors[0]
+    lid = Lid(VaseDesign(plain(box=True, colour_style=ONE_COLOUR, box_corner=58.0)))
+    assert not lid.errors and lid.closed and lid.ears == 4
 
 
 def test_fine_meshes_stay_light():

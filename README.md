@@ -89,13 +89,14 @@ ready to slice.
   for the tissues to slide over. Turn it over to put it on. Its ribs, bumps
   and lumps are spread **evenly round the wall**, as close together on the long sides as round the ends.
 * **A lid for a tissue box cover**, printed on its own – with the cover, or later: a flat frame (or a
-  solid plate) the shape of the rim, which the cover stands on. It goes on like a **battery cover**: laid on
-  the rim 8 mm along from home, then pushed along till it clicks. Four rigid **hooks** slide in behind
-  short **rails** inside the cover's long sides, by its corners – where a thin wall is stiff – and draw the
-  lid tight; a **latch** by the pull tab springs up inside the cover's end. Nothing has to bend to hold it,
-  so a box of tissues can't lever it off when the cover is carried. Lift the **pull tab** and slide it back to
-  change the tissues. **Gentle**, **Snug** or **Firm** sets how tightly the hooks fit. It is made from the
-  cover's own design; a cover printed before 1.16 has no rails.
+  solid plate) that sits 2 mm up inside the rim. It goes in like a **bayonet**: laid in short of home,
+  pressed in about 3 mm and slid along till it clicks. Four **ears** on its long edges pass under **teeth**
+  inside the cover's long sides, by its corners, and spring up into pockets under short **bridges** – flat
+  ledges, printed as bridges – against **stops**. The weight on the lid presses along the walls, never out,
+  and it can't slide back unless it is pressed in first, which the box of tissues' weight works against.
+  Four **springs** cut in the plate press on the box of tissues to keep it shut whichever way up the cover
+  is. Press it in and slide it back to change the tissues. **Gentle**, **Snug** or **Firm** sets how firmly
+  the springs press. It is made from the cover's own design; a cover printed before 1.17 has no catches.
 * **A fine mesh, a light file**: the surface is built every 0.2 mm, and **saving for the slicer simplifies
   it** – triangles are merged wherever that moves the surface by no more than a few hundredths of a
   millimetre – so the file stays small and the slicer opens it quickly. A box's flat sides need only a
@@ -237,7 +238,7 @@ curve is drawn upright and mirrored instead, like the vase from the side.
 | **Low-poly** | Flat facets: how many round and up, and how rough the cut. |
 | **Holes and openings** | The **holes** – none, Voronoi, round, diamonds or slots – their size, the wall between them, how irregular the Voronoi cells are and their pattern, how much plain wall to keep at the foot and the rim, and **rounded edges** round them; **open at the bottom**; **closed at the top**; and how far the wall **goes round**. Holes, an open bottom and a wall part way round are printed normally. |
 | **Masks and helmets** | **For a head** and its **head size**; the **eyes** – almond or round, their size, how far apart, how high and tilted; a raised **nose** – its width, length, how far it sticks out and how high its tip is; the **mouth** – open, a grille of slots (how many, and how much they smile) or open down to the chin; and **strap slots**. Sizes and heights are in millimetres along the face, from the bottom. |
-| **Tissue box** | **Tissue box cover**; the **box** of tissues it goes over – its length, width and height; how **rounded** the cover's corners are; and the **tissue hole** – a long slot, an oval, a round hole or none – and its length and width; and its **lid** (File ▸ Save the lid for printing): how tightly its hooks fit the cover's rails, and whether it is a frame open in the middle or a solid plate. |
+| **Tissue box** | **Tissue box cover**; the **box** of tissues it goes over – its length, width and height; how **rounded** the cover's corners are; and the **tissue hole** – a long slot, an oval, a round hole or none – and its length and width; and its **lid** (File ▸ Save the lid for printing): how firmly its springs press it shut, and whether it is a frame open in the middle or a solid plate. |
 | **Your own function** | A formula added to the radius. **Examples** has eight to try; **Help…** lists the variables and functions. |
 | **Colours** | The colour, or – printed normally – a palette or four filament colours, and how they go on the vase: one colour, bands, stripes, a gradient spool, or by a function – a formula for the filament at each point, with examples and help. How it looks: matte, silk, glossy, translucent. |
 | **Printing** | **Print as**: a normal print (walls, any colours – the usual) or seamless (spiral vase mode, one colour). For a normal print, how many **walls**. The steepest overhang allowed and **Soften to fit**; the line width and layer height; the solid bottom; the printer's height and bed; speed and flow (for the print time); filament diameter and density (for the weight); and the mesh detail (0.2 mm; saving simplifies the mesh, so the file stays small). |
@@ -397,7 +398,7 @@ whole design until that is the head asked for.
 A **tissue box cover** is a vase too, upside down: a **rectangle** cross-section – its corners quarter
 circles – straight up, sized from the box of tissues: as wide and long inside as the box with room to spare
 each side (more where a rounded corner has to clear a square one, and more for patterns that reach in),
-and as tall as the box with a little over it plus the solid bottom, which is the cover's top. The hole
+and as tall as the box with room for the lid inside its rim plus the solid bottom, which is the cover's top. The hole
 for the tissues – a slot with round ends, an oval or a circle, kept clear of the walls – is cut through
 that bottom: the floor is filled between the wall and the hole, row by row round the middle, on the bed
 and on its top, with the hole's side between them, so the mesh stays closed. That side is rounded, 1.2 mm
@@ -411,38 +412,45 @@ out by how far along the wall each point is, as a share of the way round, rather
 middle – which on a box would crowd them along the middles of the long sides.
 
 A thin-walled cover is stiff only by its corners: the middle of a side or an end bows out under a newton or
-so, and a catch there – on a sloping face, as any ledge inside a cover printed upside down must be – lets go
-as soon as a box of tissues leans on the lid. So the cover has four **rails**, short ledges inside its long
-sides, 9 mm along from each corner and 8 mm long: from 3 mm above the rim (the cover on) an upright face
-1.2 mm tall, 1.6 mm in from the wall, then a side sloping back out to the wall at 40° from upright. Printed
-upside down, the flat side faces up and the sloping side down, so they need no supports. The rails' faces
-are straight – each rail fills the wall in as far as one line each side, 1.6 mm in from where the wall comes
-furthest in over the hooks' way – whatever a pattern does to the wall behind them. The long sides have at
-least 4.6 mm of room inside for the lid's hooks, the ends 2 mm more than the sides' usual; holes keep 13 mm
-clear of the rim, and their rounded edges' swell 8.5 mm.
+so. And any ledge inside a cover printed upside down has to slope, so a lid hanging on ledges pushes the walls
+apart under a box of tissues and lets go. So the lid hangs on flat faces, by the corners, and loads the walls
+only along themselves. The cover has four **catches** inside its long sides, by its corners, flush with the
+rim; going the way the lid slides to lock, each is:
 
-Its **lid** is made from the cover as built: the plate is the outline of the rim, turned over as the cover
-is to go on, with a pull tab added at one end of the long way. It goes on 8 mm along from home, towards the
-tab, and slides back to lock:
+* a **tooth**, 3 mm long, standing 1.4 mm in from the wall from the rim to 3.8 mm up (the cover on);
+* a **pocket**, 6.6 mm long, under a **bridge** that stands 2.2 mm in from the rim to 2 mm up. Its underside
+  is flat: printed upside down, it is a bridge between the tooth and the stop, which both reach further up;
+* a **stop**, 2.5 mm long, standing 2.2 mm in to 8 mm up.
 
-* Four **hooks**, one behind each rail when the lid is home. Each is a post 2.4 mm thick, 0.3 mm in from its
-  rail's face, with a claw reaching out over the rail to 0.35 mm from the wall; the claw's underside lies
-  along the rail's sloping side. Where the lid is laid on there is no rail, and the hooks pass up beside the
-  wall. Each claw's underside is 0.5 mm higher at its leading end, so the lid is drawn tight against the rim
-  over the last of its slide; the grip is the gap left at home – 0.15, 0 or −0.15 mm, the last squeezing claw
-  and rail together. For each hook the inside of the wall is measured at every row up from the rim, where it
-  stands, where it goes in and all the way between; the hooks are then all one shape.
-* A **fence** along each long side, 2 mm thick and 5 mm tall, which the hooks stand on: it keeps the plate from
-  sagging under the box of tissues between the hooks. A lower one across the far end is the **stop**: it meets
-  the inside of the cover's end, 0.15 mm off, when the lid is home.
-* The **latch**: the plate's bar at the tab's end is narrow, clear of the box of tissues, and bends like a
-  flat spring – printed flat, the strong way. On it is a ridge 1.8 mm tall, upright towards the cover's end and
-  sloping the other way. As the lid slides on, the cover's rim rides up the slope, pressing the bar down, and
-  the ridge springs up 0.35 mm inside the end: the lid can't slide back. Lifting the pull tab bends the bar
-  away and frees it. A solid lid is the frame with a panel in it, a slit left between the panel and this bar.
+The teeth's and stops' undersides slope back to the wall at no more than 40° from upright (5° less than the
+steepest overhang allowed), so nothing needs supports; their faces are upright, steps 0.1 mm wide, with rows
+and columns put in for them. The catch towards one end stands 1 mm from where its corner begins; the other
+stands further from its corner by as far as the lid is laid in short of home. Their faces are straight - each
+fills the wall in as far as straight lines, from where the wall comes furthest in by the rim - whatever a
+pattern does to the wall behind them; there the wall's columns stand straight up, so a pattern that swells it
+out and in can't skew them. The long sides have at least 4.6 mm of room inside; holes keep 15.5 mm clear of
+the rim, and their rounded edges' swell 11 mm. The cover is deeper inside than the box of tissues by the room
+the lid needs: 2 mm up to the bridges, 1.6 mm of plate, 3.3 mm to push it in past the teeth, and 0.5 mm to
+spare - 7.4 mm.
 
-So the lid hangs from rigid hooks on sloping faces that only wedge tighter, on the stiffest parts of the
-cover; it is kept from sliding by the stop and the latch; and nothing that holds it has to bend.
+Its **lid** is made from the cover as built, the inside of its rim measured. It is a plate 1.6 mm thick, in
+from the long sides clear of the catches and 0.4 mm in from the ends, and 9.6 mm shorter than the inside, the
+length it slides to lock:
+
+* Four **ears**, 6 mm long, reaching out to 0.4 mm from the wall: one in each pocket, resting on the bridge,
+  when the lid is home, 0.3 mm from the tooth one way and the stop the other. Pushed in 3.3 mm, they pass under
+  the teeth.
+* Four **springs**: tongues 7 mm wide and up to 40 mm long, cut from the frame along the long sides with 1 mm
+  slits, growing from the end bars towards the middle - printed flat, so they bend the strong way. A post on
+  each one's end reaches past where the box of tissues' bottom is when it is set against the cover's top, by
+  0.8, 1.5 or 2.2 mm (Gentle, Snug, Firm): they press on the box, and push the lid out onto the bridges.
+* A frame 12 mm wide - a 4 mm rim, then the springs, and between their ends the frame is whole - with end
+  bars 12 mm wide. A solid lid has a panel between the springs, joined to the end bars. On the end bar the
+  lid slides towards is a low **arrow**, pointing that way.
+
+So the lid is held on flat faces by the stiffest parts of the cover, which it loads only along themselves; it
+can't slide back without being pushed in against the box of tissues; and turned round, its ears meet the
+catches, so it goes in only one way.
 
 The **pot** is built on the grid, then the rows and columns that lie within 0.02 mm of the straight line
 between their neighbours are left out – on a box most of them, on a twisting vase few – and **saving**
@@ -493,10 +501,10 @@ closed top comes to a point over a small ceiling (drawn and banded too), a wall 
 it should, a face's holes and nose are where they should be and print without support, and a design sized
 for a head fits it – the masks and helmet a head 57 cm round; that a tissue box cover clears its box of
 tissues by the room to spare everywhere inside, with its hole through the bottom layers alone, holes and
-bands and all, and that its lid, tried against the cover as it prints – plain, lace and lumpy – goes in
-beside the rails and lifts off there, slides home touching nothing but by its latch, and once home is caught
-by all four rails when pulled down, by the latch when pushed back, by the stop when pushed on and by the rails
-sideways; that colours by a function come as closed
+bands and all, and that its lid, tried against the cover as it prints – plain, lace and lumpy – is laid in
+short of home clear of everything, slides home under the teeth when pushed in, touching nothing, and once home
+is caught by the bridges when pulled out, by the teeth when slid back without being pushed in, by the stops
+when slid on and by the walls sideways, and goes in only one way round; that colours by a function come as closed
 parts, one per filament, each just where the formula puts it and together the plastic of the whole – on a
 plain box, a textured twist and Voronoi lace – and that a seamless vase or facets stay one colour; and that
 the web version's Python, put
